@@ -21,6 +21,7 @@ if %errorlevel% neq 0 (
     echo [WARNING] gh-pages push had issues, continuing with main branch...
 )
 cd ..
+xcopy /s /y /q web\dist\* . >nul
 
 echo.
 echo [3/3] Committing and pushing main branch...
