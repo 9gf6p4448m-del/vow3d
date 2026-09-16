@@ -3,14 +3,14 @@ import * as THREE from 'three';
 // --- Scene, Camera, Renderer Setup ---
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0c14);
-scene.fog = new THREE.FogExp2(0x0a0c14, 0.025);
+scene.background = new THREE.Color(0x0a0c16);
+scene.fog = new THREE.FogExp2(0x0a0c16, 0.022);
 
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 22, 16);
+const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 24, 18);
 camera.lookAt(0, 0, 0);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
@@ -18,27 +18,21 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 container.appendChild(renderer.domElement);
 
 // --- Lighting ---
-const ambientLight = new THREE.AmbientLight(0x404b69, 1.2);
+const ambientLight = new THREE.AmbientLight(0x5a6988, 1.4);
 scene.add(ambientLight);
 
-const sunLight = new THREE.DirectionalLight(0x90caf9, 2.0);
-sunLight.position.set(15, 30, 20);
+const sunLight = new THREE.DirectionalLight(0xaad4ff, 2.2);
+sunLight.position.set(18, 32, 22);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.width = 1024;
 sunLight.shadow.mapSize.height = 1024;
-sunLight.shadow.camera.near = 0.5;
-sunLight.shadow.camera.far = 80;
-sunLight.shadow.camera.left = -25;
-sunLight.shadow.camera.right = 25;
-sunLight.shadow.camera.top = 25;
-sunLight.shadow.camera.bottom = -25;
 scene.add(sunLight);
 
-// --- Arena Floor (Hexagonal Leyline Grid) ---
-const floorGeo = new THREE.PlaneGeometry(60, 60);
+// --- Arena Floor ---
+const floorGeo = new THREE.PlaneGeometry(70, 70);
 const floorMat = new THREE.MeshStandardMaterial({
-  color: 0x121520,
-  roughness: 0.8,
+  color: 0x111420,
+  roughness: 0.85,
   metalness: 0.2,
 });
 const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -46,204 +40,180 @@ floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-// Grid Helper
-const gridHelper = new THREE.GridHelper(60, 30, 0x00f2fe, 0x1e293b);
+// Grid Overlay
+const gridHelper = new THREE.GridHelper(70, 35, 0x00f2fe, 0x1a233a);
 gridHelper.position.y = 0.02;
 scene.add(gridHelper);
 
-// --- Leyline Spires (Glowing Hex Nodes) ---
+// --- Leyline Spires (Energy Nodes) ---
 const spirePositions = [
-  new THREE.Vector3(-10, 0, -8),
-  new THREE.Vector3(10, 0, -8),
-  new THREE.Vector3(0, 0, 5),
+  new THREE.Vector3(-12, 0, -10),
+  new THREE.Vector3(12, 0, -10),
+  new THREE.Vector3(0, 0, 8),
 ];
-
 spirePositions.forEach((pos, idx) => {
-  const baseGeo = new THREE.CylinderGeometry(1.6, 2.0, 0.4, 6);
-  const baseMat = new THREE.MeshStandardMaterial({ color: 0x2d3748, roughness: 0.4 });
-  const base = new THREE.Mesh(baseGeo, baseMat);
-  base.position.copy(pos);
-  base.position.y = 0.2;
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.8, 2.2, 0.5, 6),
+    new THREE.MeshStandardMaterial({ color: 0x242d42, roughness: 0.5 })
+  );
+  base.position.set(pos.x, 0.25, pos.z);
   scene.add(base);
 
-  const crystalGeo = new THREE.OctahedronGeometry(0.8, 0);
-  const crystalMat = new THREE.MeshStandardMaterial({
-    color: 0x00f2fe,
-    emissive: 0x00f2fe,
-    emissiveIntensity: 0.8,
-    roughness: 0.1
-  });
-  const crystal = new THREE.Mesh(crystalGeo, crystalMat);
-  crystal.position.set(pos.x, 2.2, pos.z);
-  crystal.castShadow = true;
+  const crystal = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.9, 0),
+    new THREE.MeshStandardMaterial({
+      color: 0x00f2fe,
+      emissive: 0x00f2fe,
+      emissiveIntensity: 0.9,
+      roughness: 0.1
+    })
+  );
+  crystal.position.set(pos.x, 2.4, pos.z);
+  crystal.userData = { initialY: 2.4, phase: idx * 2 };
   scene.add(crystal);
-
-  // Animate crystal hovering
-  crystal.userData = { initialY: 2.2, phase: idx * 2 };
 });
 
 // --- Entities ---
 // 1. Player (Cyan Hero)
 const playerGroup = new THREE.Group();
-const bodyGeo = new THREE.CapsuleGeometry(0.6, 1.2, 8, 16);
-const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00f2fe, roughness: 0.3, metalness: 0.7 });
-const playerMesh = new THREE.Mesh(bodyGeo, bodyMat);
-playerMesh.position.y = 1.2;
+const bodyGeo = new THREE.CapsuleGeometry(0.65, 1.3, 8, 16);
+const playerMat = new THREE.MeshStandardMaterial({ color: 0x00f2fe, roughness: 0.2, metalness: 0.8 });
+const playerMesh = new THREE.Mesh(bodyGeo, playerMat);
+playerMesh.position.y = 1.3;
 playerMesh.castShadow = true;
 playerGroup.add(playerMesh);
 
-// Player Direction Visor
-const visorGeo = new THREE.BoxGeometry(0.4, 0.25, 0.5);
-const visorMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-const visorMesh = new THREE.Mesh(visorGeo, visorMat);
-visorMesh.position.set(0, 1.5, 0.5);
+// Player Visor
+const visorMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(0.45, 0.3, 0.6),
+  new THREE.MeshBasicMaterial({ color: 0xffffff })
+);
+visorMesh.position.set(0, 1.6, 0.5);
 playerGroup.add(visorMesh);
 
-// Selection Ring
-const ringGeo = new THREE.RingGeometry(0.9, 1.1, 32);
-const ringMat = new THREE.MeshBasicMaterial({ color: 0x00f2fe, side: THREE.DoubleSide });
-const playerRing = new THREE.Mesh(ringGeo, ringMat);
+// Player Ground Ring
+const ringGeo = new THREE.RingGeometry(1.0, 1.25, 32);
+const playerRing = new THREE.Mesh(
+  ringGeo,
+  new THREE.MeshBasicMaterial({ color: 0x00f2fe, side: THREE.DoubleSide })
+);
 playerRing.rotation.x = -Math.PI / 2;
 playerRing.position.y = 0.05;
 playerGroup.add(playerRing);
 
-playerGroup.position.set(0, 0, 8);
+playerGroup.position.set(0, 0, 10);
 scene.add(playerGroup);
 
 // 2. Enemy Hero (Crimson PvP Target)
 const enemyHeroGroup = new THREE.Group();
-const enemyBodyMat = new THREE.MeshStandardMaterial({ color: 0xff3b30, roughness: 0.3, metalness: 0.6 });
-const enemyMesh = new THREE.Mesh(bodyGeo, enemyBodyMat);
-enemyMesh.position.y = 1.2;
+const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff3344, roughness: 0.3, metalness: 0.7 });
+const enemyMesh = new THREE.Mesh(bodyGeo, enemyMat);
+enemyMesh.position.y = 1.3;
 enemyMesh.castShadow = true;
 enemyHeroGroup.add(enemyMesh);
 
-const enemyRing = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xff3b30, side: THREE.DoubleSide }));
+const enemyRing = new THREE.Mesh(
+  ringGeo,
+  new THREE.MeshBasicMaterial({ color: 0xff3344, side: THREE.DoubleSide })
+);
 enemyRing.rotation.x = -Math.PI / 2;
 enemyRing.position.y = 0.05;
 enemyHeroGroup.add(enemyRing);
 
-enemyHeroGroup.position.set(0, 0, -5);
-enemyHeroGroup.userData = { type: 'Hero', name: '敵方英雄 (PvP)', maxHp: 1000, hp: 1000 };
+enemyHeroGroup.position.set(0, 0, -4);
+enemyHeroGroup.userData = {
+  type: 'Hero',
+  name: '敵方英雄 (PvP)',
+  maxHp: 1200,
+  hp: 1200,
+  mesh: enemyMesh,
+  origMat: enemyMat,
+};
 scene.add(enemyHeroGroup);
 
 // 3. Minion (Golden PvE Target)
 const minionGroup = new THREE.Group();
-const minionGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-const minionMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.5, metalness: 0.5 });
-const minionMesh = new THREE.Mesh(minionGeo, minionMat);
-minionMesh.position.y = 0.5;
+const minionMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, roughness: 0.4, metalness: 0.6 });
+const minionMesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), minionMat);
+minionMesh.position.y = 0.6;
 minionMesh.castShadow = true;
 minionGroup.add(minionMesh);
-minionGroup.position.set(-6, 0, 0);
-minionGroup.userData = { type: 'Minion', name: '地脈魔偶 (PvE)', maxHp: 300, hp: 300 };
+
+const minionRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.7, 0.9, 24),
+  new THREE.MeshBasicMaterial({ color: 0xffcc00, side: THREE.DoubleSide })
+);
+minionRing.rotation.x = -Math.PI / 2;
+minionRing.position.y = 0.05;
+minionGroup.add(minionRing);
+
+minionGroup.position.set(-7, 0, 2);
+minionGroup.userData = {
+  type: 'Minion',
+  name: '地脈石偶 (PvE)',
+  maxHp: 500,
+  hp: 500,
+  mesh: minionMesh,
+  origMat: minionMat,
+};
 scene.add(minionGroup);
 
-// Targets list
 const combatTargets = [enemyHeroGroup, minionGroup];
 
-// --- Walls Storage ---
+// Target Lock Ring (indicates selected target)
+const targetLockRing = new THREE.Mesh(
+  new THREE.RingGeometry(1.3, 1.55, 32),
+  new THREE.MeshBasicMaterial({ color: 0xffd700, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
+);
+targetLockRing.rotation.x = -Math.PI / 2;
+targetLockRing.position.y = 0.08;
+scene.add(targetLockRing);
+
+// --- 3D Ghost Wall (Live Aiming Preview) ---
+const ghostWallGroup = new THREE.Group();
+const ghostWallWidth = 1.0;
+const ghostWallLength = 6.0;
+const ghostWallHeight = 2.4;
+
+const ghostPillars = 3;
+for (let i = 0; i < ghostPillars; i++) {
+  const gMesh = new THREE.Mesh(
+    new THREE.BoxGeometry((ghostWallLength / ghostPillars) * 0.92, ghostWallHeight, ghostWallWidth),
+    new THREE.MeshBasicMaterial({
+      color: 0x00f2fe,
+      transparent: true,
+      opacity: 0.45,
+      wireframe: false
+    })
+  );
+  gMesh.position.set((i - 1) * (ghostWallLength / ghostPillars), ghostWallHeight / 2, 0);
+  ghostWallGroup.add(gMesh);
+}
+// Aim Trajectory Line
+const aimLineMat = new THREE.LineBasicMaterial({ color: 0x00f2fe, transparent: true, opacity: 0.7 });
+const aimLineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+const aimLine = new THREE.Line(aimLineGeo, aimLineMat);
+scene.add(aimLine);
+
+ghostWallGroup.visible = false;
+aimLine.visible = false;
+scene.add(ghostWallGroup);
+
+// --- Active Physical Stone Walls Storage ---
 const activeWalls = [];
 
-// --- Game State & Cadence Core ---
-const CADENCE = {
-  JUST_FRAME_MS: 120,      // 120ms 完美銜接窗口
-  FLICK_MIN_DIST: 15,      // 15px 微彈指門檻
-  FLICK_MAX_DIST: 80,      // 彈指上限
-  DASH_DISTANCE: 3.2,      // 滑步衝刺距離
-  ANTI_MASH_THRESHOLD: 3,  // 0.3秒內最多允許 2 次點擊
-  ANTI_MASH_WINDOW: 300,
-  JAM_PENALTY_MS: 250,     // 卡刀硬直時間
-};
-
-let playerState = {
-  targetPos: playerGroup.position.clone(),
-  isMoving: false,
-  moveSpeed: 7.5,
-  attackTarget: null,
-  attackRange: 4.5,
-  isAttacking: false,
-  attackCooldown: 0,
-  attackInterval: 0.85,
-  
-  // 走A 節奏窗口
-  justFrameActive: false,
-  justFrameStartTime: 0,
-  lastTargetHit: null,
-  comboCount: 0,
-
-  // 防亂點卡刀
-  clickTimestamps: [],
-  isJammed: false,
-  jammedUntil: 0,
-};
-
-// UI Elements
-const cadenceRingEl = document.getElementById('cadence-ring');
-const comboBannerEl = document.getElementById('combo-banner');
-const jamAlertEl = document.getElementById('jam-alert');
-const runeButtonEl = document.getElementById('rune-button');
-
-// Raycaster & Coordinates
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-
-// --- Attack Visual Effect ---
-function spawnSlashEffect(fromPos, toPos, isCrit) {
-  const dir = new THREE.Vector3().subVectors(toPos, fromPos).normalize();
-  const hitPoint = new THREE.Vector3().copy(toPos).add(new THREE.Vector3(0, 1.0, 0));
-
-  const beamGeo = new THREE.CylinderGeometry(0.08, 0.18, hitPoint.distanceTo(fromPos), 8);
-  const beamMat = new THREE.MeshBasicMaterial({ color: isCrit ? 0xffd700 : 0x00f2fe });
-  const beam = new THREE.Mesh(beamGeo, beamMat);
-
-  beam.position.copy(fromPos).lerp(hitPoint, 0.5);
-  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-  scene.add(beam);
-
-  // Flash ring at impact
-  const impactGeo = new THREE.SphereGeometry(0.35, 8, 8);
-  const impactMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const impact = new THREE.Mesh(impactGeo, impactMat);
-  impact.position.copy(hitPoint);
-  scene.add(impact);
-
-  setTimeout(() => {
-    scene.remove(beam);
-    scene.remove(impact);
-    beam.geometry.dispose();
-    beam.material.dispose();
-    impact.geometry.dispose();
-    impact.material.dispose();
-  }, 100);
-}
-
-// --- Spawn OBB Stone Wall ---
-function spawnStoneWall(startPoint, endPoint) {
-  const length = Math.max(startPoint.distanceTo(endPoint), 2.5);
-  const mid = new THREE.Vector3().addVectors(startPoint, endPoint).multiplyScalar(0.5);
-  const dir = new THREE.Vector3().subVectors(endPoint, startPoint).normalize();
-  const angle = Math.atan2(dir.x, dir.z);
-
-  const wallWidth = 1.0;
-  const wallHeight = 2.4;
-
+function spawnStoneWall(position, angle) {
   const group = new THREE.Group();
-  group.position.set(mid.x, 0, mid.z);
+  group.position.set(position.x, -ghostWallHeight, position.z); // Start underground for erupt effect
   group.rotation.y = angle;
 
-  // 3 Pillar Blocks
-  const segments = 3;
-  const segLength = length / segments;
-  for (let i = 0; i < segments; i++) {
-    const geo = new THREE.BoxGeometry(segLength * 0.95, wallHeight, wallWidth);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x4a5568,
-      roughness: 0.9,
-      metalness: 0.1,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set((i - 1) * segLength, wallHeight / 2, 0);
+  const segLength = ghostWallLength / ghostPillars;
+  for (let i = 0; i < ghostPillars; i++) {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(segLength * 0.95, ghostWallHeight, ghostWallWidth),
+      new THREE.MeshStandardMaterial({ color: 0x3b4458, roughness: 0.85, metalness: 0.15 })
+    );
+    mesh.position.set((i - 1) * segLength, ghostWallHeight / 2, 0);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -253,77 +223,269 @@ function spawnStoneWall(startPoint, endPoint) {
 
   const wallObj = {
     group,
-    mid,
-    length,
-    width: wallWidth,
+    pos: position.clone(),
     angle,
+    length: ghostWallLength,
+    width: ghostWallWidth,
+    targetY: 0,
+    currentY: -ghostWallHeight,
     birthTime: performance.now(),
-    duration: 5000,
+    duration: 5500, // 5.5s decay
   };
   activeWalls.push(wallObj);
 
-  // Dust VFX & Haptic
-  if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+  // Eruption Haptic & Sound feel
+  if (navigator.vibrate) navigator.vibrate([40, 20, 60]);
+  spawnDamageText(position, '⚡ 岩壁升起！', 'dash');
 }
 
-// --- Wall Collision Detection ---
 function checkWallCollision(newPos) {
   for (const wall of activeWalls) {
-    const dx = newPos.x - wall.mid.x;
-    const dz = newPos.z - wall.mid.z;
-    // Rotate relative point back
+    if (wall.currentY < -0.5) continue; // Not fully risen yet
+    const dx = newPos.x - wall.pos.x;
+    const dz = newPos.z - wall.pos.z;
     const cos = Math.cos(-wall.angle);
     const sin = Math.sin(-wall.angle);
     const localX = cos * dx - sin * dz;
     const localZ = sin * dx + cos * dz;
 
-    const halfL = wall.length / 2 + 0.6; // player radius
-    const halfW = wall.width / 2 + 0.6;
-
+    const halfL = wall.length / 2 + 0.7;
+    const halfW = wall.width / 2 + 0.7;
     if (Math.abs(localX) < halfL && Math.abs(localZ) < halfW) {
-      return true; // Colliding with wall
+      return true;
     }
   }
   return false;
 }
 
-// --- Input Handling & Touch Gestures ---
-let touchStartPoint = null;
-let touchStartTime = 0;
-let isAimingRune = false;
-let runeVectorLine = null;
-let runeAimStart = null;
-let runeAimEnd = null;
+// --- Ghost Dash Trails (殘影特效) ---
+function spawnGhostTrail(pos, rotY) {
+  for (let step = 1; step <= 2; step++) {
+    const clone = playerMesh.clone();
+    clone.material = new THREE.MeshBasicMaterial({
+      color: 0x00f2fe,
+      transparent: true,
+      opacity: 0.5 - step * 0.15,
+    });
+    clone.position.copy(pos);
+    clone.position.y = 1.3;
+    clone.rotation.y = rotY;
+    scene.add(clone);
 
-function getGroundPoint(screenX, screenY) {
-  mouse.x = (screenX / window.innerWidth) * 2 - 1;
-  mouse.y = -(screenY / window.innerHeight) * 2 + 1;
-  raycaster.setFromCamera(mouse, camera);
-  const intersects = raycaster.intersectObject(floor);
-  if (intersects.length > 0) {
-    return intersects[0].point;
+    const fadeStart = performance.now();
+    const interval = setInterval(() => {
+      const elapsed = performance.now() - fadeStart;
+      if (elapsed > 250) {
+        scene.remove(clone);
+        clone.geometry.dispose();
+        clone.material.dispose();
+        clearInterval(interval);
+      } else {
+        clone.material.opacity = (1 - elapsed / 250) * 0.4;
+      }
+    }, 30);
   }
-  return null;
 }
 
-function getIntersectedTarget(screenX, screenY) {
-  mouse.x = (screenX / window.innerWidth) * 2 - 1;
-  mouse.y = -(screenY / window.innerHeight) * 2 + 1;
-  raycaster.setFromCamera(mouse, camera);
+// --- Floating UI Elements (HP bars & Damage popups) ---
+const hpLayer = document.getElementById('hp-layer');
+const guideTextEl = document.getElementById('guide-text');
+const comboBannerEl = document.getElementById('combo-banner');
+const jamAlertEl = document.getElementById('jam-alert');
+const cadenceRingEl = document.getElementById('cadence-ring');
+const attackPulseRingEl = document.getElementById('attack-pulse-ring');
+const aimToastEl = document.getElementById('aim-toast');
 
-  const meshes = [];
-  combatTargets.forEach(tgt => tgt.traverse(child => {
-    if (child.isMesh) {
-      child.userData.parentEntity = tgt;
-      meshes.push(child);
+function spawnDamageText(worldPos, text, type = 'normal') {
+  const screenPos = worldPos.clone().project(camera);
+  const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+  const y = (-(screenPos.y * 0.5) + 0.5) * window.innerHeight;
+
+  const el = document.createElement('div');
+  el.className = `damage-popup ${type}`;
+  el.innerText = text;
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  hpLayer.appendChild(el);
+
+  setTimeout(() => { el.remove(); }, 800);
+}
+
+// Entity HP Bars
+const hpBarElements = [];
+function createHpBar(entity, label, isEnemy, isMinion) {
+  const wrap = document.createElement('div');
+  wrap.className = 'hp-bar-wrap';
+  const labelEl = document.createElement('div');
+  labelEl.className = 'hp-label';
+  labelEl.innerText = label;
+  const fill = document.createElement('div');
+  fill.className = `hp-bar-fill ${isEnemy ? 'enemy' : (isMinion ? 'minion' : '')}`;
+  wrap.appendChild(labelEl);
+  wrap.appendChild(fill);
+  hpLayer.appendChild(wrap);
+
+  hpBarElements.push({ entity, wrap, fill });
+}
+
+createHpBar(playerGroup, '我方英雄', false, false);
+createHpBar(enemyHeroGroup, '敵方英雄 (PvP)', true, false);
+createHpBar(minionGroup, '野怪魔偶 (PvE)', false, true);
+
+function updateHpBars() {
+  hpBarElements.forEach(item => {
+    const pos = item.entity.position.clone().add(new THREE.Vector3(0, 2.5, 0));
+    const screenPos = pos.project(camera);
+    const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-(screenPos.y * 0.5) + 0.5) * window.innerHeight;
+    item.wrap.style.left = `${x}px`;
+    item.wrap.style.top = `${y}px`;
+
+    if (item.entity.userData.maxHp) {
+      const pct = Math.max(0, (item.entity.userData.hp / item.entity.userData.maxHp) * 100);
+      item.fill.style.width = `${pct}%`;
     }
-  }));
+  });
+}
 
-  const intersects = raycaster.intersectObjects(meshes);
-  if (intersects.length > 0) {
-    return intersects[0].object.userData.parentEntity;
+// --- Player State & Cadence Core ---
+const CADENCE = {
+  JUST_FRAME_MS: 380,     // 寬容節奏窗口 380ms
+  DASH_DISTANCE: 3.8,     // 殘影滑步距離
+  ANTI_MASH_THRESHOLD: 4, // 0.3秒最多 3 次點擊
+  ANTI_MASH_WINDOW: 320,
+  JAM_PENALTY_MS: 300,
+};
+
+let playerState = {
+  moveSpeed: 8.0,
+  isMoving: false,
+  moveVector: new THREE.Vector2(0, 0), // from joystick
+  targetWalkPos: null,               // from ground tap
+  attackTarget: enemyHeroGroup,       // default lock
+  attackRange: 4.8,
+  attackCooldown: 0,
+  attackInterval: 0.82,
+
+  // 走A 節奏判定
+  justFrameActive: false,
+  justFrameStart: 0,
+  comboCount: 0,
+
+  // 防亂點卡刀
+  clickTimestamps: [],
+  isJammed: false,
+  jammedUntil: 0,
+};
+
+// --- Attack Visual Effect ---
+function executeAttack(target) {
+  if (!target) return;
+  playerState.attackCooldown = playerState.attackInterval;
+
+  // Face target
+  playerGroup.lookAt(target.position.x, playerGroup.position.y, target.position.z);
+
+  // Attack beam VFX
+  const hitPoint = target.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+  const startPoint = playerGroup.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+  const dir = new THREE.Vector3().subVectors(hitPoint, startPoint).normalize();
+
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.09, 0.22, startPoint.distanceTo(hitPoint), 8),
+    new THREE.MeshBasicMaterial({ color: 0x00f2fe })
+  );
+  beam.position.copy(startPoint).lerp(hitPoint, 0.5);
+  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  scene.add(beam);
+
+  setTimeout(() => {
+    scene.remove(beam);
+    beam.geometry.dispose();
+    beam.material.dispose();
+  }, 100);
+
+  // Damage Calculation
+  const isCrit = Math.random() < 0.25;
+  const dmg = isCrit ? 260 : 140;
+  target.userData.hp = Math.max(0, target.userData.hp - dmg);
+  if (target.userData.hp === 0) {
+    target.userData.hp = target.userData.maxHp; // respawn dummy
   }
-  return null;
+
+  spawnDamageText(target.position, isCrit ? `💥 暴擊 -${dmg}` : `-${dmg}`, isCrit ? 'crit' : 'normal');
+
+  // Flash white on hit
+  if (target.userData.mesh) {
+    target.userData.mesh.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    setTimeout(() => {
+      target.userData.mesh.material = target.userData.origMat;
+    }, 90);
+  }
+
+  // Open Just-Frame Cadence Window!
+  playerState.justFrameActive = true;
+  playerState.justFrameStart = performance.now();
+
+  // Pulse rings
+  attackPulseRingEl.style.opacity = '1';
+  attackPulseRingEl.style.transform = 'scale(1.25)';
+  cadenceRingEl.style.opacity = '1';
+  cadenceRingEl.style.transform = 'translate(-50%, -50%) scale(1.6)';
+
+  guideTextEl.innerHTML = `🔥 <span>節奏命中！</span> 立即推搖桿或滑動 ➔ 觸發 <span>【滑步衝刺走A】</span>！`;
+
+  setTimeout(() => {
+    if (playerState.justFrameActive) {
+      playerState.justFrameActive = false;
+      attackPulseRingEl.style.opacity = '0';
+      cadenceRingEl.style.opacity = '0';
+      cadenceRingEl.style.transform = 'translate(-50%, -50%) scale(0.3)';
+      guideTextEl.innerHTML = `左手推搖桿走位 • 點右下 <span>【普攻】</span> 攻擊 • 命中後推搖桿立即 <span>【滑步走A】</span>`;
+    }
+  }, CADENCE.JUST_FRAME_MS);
+}
+
+// --- Trigger Micro-Flick Stutter-Step (走A滑步) ---
+function tryTriggerStutterDash(dashDir) {
+  if (!playerState.justFrameActive) return false;
+  const elapsed = performance.now() - playerState.justFrameStart;
+  if (elapsed > CADENCE.JUST_FRAME_MS) return false;
+
+  // Compute dash destination
+  const dest = playerGroup.position.clone().add(
+    new THREE.Vector3(dashDir.x, 0, dashDir.z).normalize().multiplyScalar(CADENCE.DASH_DISTANCE)
+  );
+
+  if (!checkWallCollision(dest)) {
+    // Spawn Ghost Afterimages
+    spawnGhostTrail(playerGroup.position, playerGroup.rotation.y);
+
+    // Instant Dash
+    playerGroup.position.copy(dest);
+    playerState.targetWalkPos = null;
+
+    // Haptic & Visuals
+    if (navigator.vibrate) navigator.vibrate([25, 15, 25]);
+    playerState.comboCount++;
+    comboBannerEl.innerText = `★ PERFECT 走A x${playerState.comboCount} (後搖取消) ★`;
+    comboBannerEl.style.opacity = '1';
+    comboBannerEl.style.transform = 'translateX(-50%) scale(1.2)';
+    setTimeout(() => {
+      comboBannerEl.style.opacity = '0';
+      comboBannerEl.style.transform = 'translateX(-50%) scale(1.0)';
+    }, 700);
+
+    spawnDamageText(playerGroup.position, `⚡ 完美滑步 x${playerState.comboCount}!`, 'dash');
+
+    // Reset backswing & grant attack speed boost!
+    playerState.attackCooldown = 0.12;
+    playerState.justFrameActive = false;
+    attackPulseRingEl.style.opacity = '0';
+    cadenceRingEl.style.opacity = '0';
+    return true;
+  }
+  return false;
 }
 
 // --- Anti-Mashing Check ---
@@ -333,158 +495,183 @@ function checkAntiMashing() {
   playerState.clickTimestamps.push(now);
 
   if (playerState.clickTimestamps.length >= CADENCE.ANTI_MASH_THRESHOLD) {
-    // Trigger Jam!
     playerState.isJammed = true;
     playerState.jammedUntil = now + CADENCE.JAM_PENALTY_MS;
     playerState.comboCount = 0;
-    
     jamAlertEl.style.opacity = '1';
-    setTimeout(() => { jamAlertEl.style.opacity = '0'; }, CADENCE.JAM_PENALTY_MS + 200);
-
     if (navigator.vibrate) navigator.vibrate(100);
+    setTimeout(() => { jamAlertEl.style.opacity = '0'; }, CADENCE.JAM_PENALTY_MS + 200);
     return true;
   }
   return false;
 }
 
-// --- Execute Attack ---
-function executeAttack(target) {
-  if (!target) return;
-  playerState.isAttacking = true;
-  playerState.attackCooldown = playerState.attackInterval;
+// --- Left Joystick Implementation ---
+const joystickZone = document.getElementById('joystick-zone');
+const joystickThumb = document.getElementById('joystick-thumb');
+let joystickActive = false;
+let joystickCenter = { x: 0, y: 0 };
+const maxRadius = 45;
 
-  // Face target
-  playerGroup.lookAt(target.position.x, playerGroup.position.y, target.position.z);
+joystickZone.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  joystickActive = true;
+  const rect = joystickZone.getBoundingClientRect();
+  joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  handleJoystickMove(e.clientX, e.clientY);
+});
 
-  // Visual beam
-  spawnSlashEffect(playerGroup.position, target.position, false);
+window.addEventListener('pointermove', (e) => {
+  if (!joystickActive) return;
+  handleJoystickMove(e.clientX, e.clientY);
+});
 
-  // Open 120ms Just-Frame Window for Micro-Flick Stutter-Step
-  playerState.justFrameActive = true;
-  playerState.justFrameStartTime = performance.now();
-  playerState.lastTargetHit = target;
+function handleJoystickMove(clientX, clientY) {
+  const dx = clientX - joystickCenter.x;
+  const dy = clientY - joystickCenter.y;
+  const dist = Math.hypot(dx, dy);
+  const clampedDist = Math.min(dist, maxRadius);
+  const angle = Math.atan2(dy, dx);
 
-  // Show UI ring on screen
-  const screenPos = target.position.clone().project(camera);
-  const screenX = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
-  const screenY = (-(screenPos.y * 0.5) + 0.5) * window.innerHeight;
-  cadenceRingEl.style.left = `${screenX}px`;
-  cadenceRingEl.style.top = `${screenY}px`;
-  cadenceRingEl.style.opacity = '1';
-  cadenceRingEl.style.transform = 'translate(-50%, -50%) scale(1.4)';
+  const thumbX = Math.cos(angle) * clampedDist;
+  const thumbY = Math.sin(angle) * clampedDist;
+  joystickThumb.style.transform = `translate(${thumbX}px, ${thumbY}px)`;
 
-  setTimeout(() => {
-    playerState.justFrameActive = false;
-    cadenceRingEl.style.opacity = '0';
-    cadenceRingEl.style.transform = 'translate(-50%, -50%) scale(0.5)';
-  }, CADENCE.JUST_FRAME_MS);
-}
+  if (clampedDist > 10) {
+    // Normal movement vector (screen X -> 3D X, screen Y -> 3D Z)
+    playerState.moveVector.set(dx / dist, dy / dist);
+    playerState.targetWalkPos = null;
 
-// --- Micro-Flick Trigger ---
-function tryTriggerMicroFlick(deltaX, deltaY) {
-  const flickDist = Math.hypot(deltaX, deltaY);
-  if (flickDist < CADENCE.FLICK_MIN_DIST || flickDist > CADENCE.FLICK_MAX_DIST) return false;
-
-  const now = performance.now();
-  const timeSinceHit = now - playerState.justFrameStartTime;
-
-  if (playerState.justFrameActive && timeSinceHit <= CADENCE.JUST_FRAME_MS) {
-    // Only Hero (PvP) permits Micro-Dash
-    const target = playerState.lastTargetHit;
-    if (target && target.userData.type === 'Hero') {
-      // Dash in swipe direction
-      const swipeAngle = Math.atan2(deltaY, deltaX);
-      const forward = new THREE.Vector3(Math.cos(swipeAngle), 0, Math.sin(swipeAngle));
-      const dashDest = playerGroup.position.clone().add(forward.multiplyScalar(CADENCE.DASH_DISTANCE));
-
-      if (!checkWallCollision(dashDest)) {
-        playerGroup.position.copy(dashDest);
-        playerState.targetPos.copy(dashDest);
-        playerState.isMoving = false;
-        
-        // Haptic feedback & combo increment
-        if (navigator.vibrate) navigator.vibrate(25);
-        playerState.comboCount++;
-        comboBannerEl.innerText = `★ PERFECT CADENCE x${playerState.comboCount} ★`;
-        comboBannerEl.style.opacity = '1';
-        setTimeout(() => { comboBannerEl.style.opacity = '0'; }, 800);
-
-        // Cancel remaining backswing
-        playerState.attackCooldown = 0.15;
-        playerState.justFrameActive = false;
-        return true;
-      }
+    // If Just-Frame cadence is open, moving joystick immediately triggers the Micro-Dash!
+    if (playerState.justFrameActive) {
+      tryTriggerStutterDash(new THREE.Vector3(playerState.moveVector.x, 0, playerState.moveVector.y));
     }
+  } else {
+    playerState.moveVector.set(0, 0);
   }
-  return false;
 }
 
-// --- Screen Events ---
-window.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('#rune-button')) return;
+window.addEventListener('pointerup', () => {
+  if (!joystickActive) return;
+  joystickActive = false;
+  joystickThumb.style.transform = 'translate(0px, 0px)';
+  playerState.moveVector.set(0, 0);
+});
+
+// --- Attack Button Implementation ---
+const attackBtn = document.getElementById('attack-button');
+attackBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
   if (checkAntiMashing()) return;
 
-  touchStartPoint = { x: e.clientX, y: e.clientY };
-  touchStartTime = performance.now();
-
-  const target = getIntersectedTarget(e.clientX, e.clientY);
-  if (target) {
-    playerState.attackTarget = target;
-    playerState.isMoving = false;
-  } else {
-    const pt = getGroundPoint(e.clientX, e.clientY);
-    if (pt) {
-      playerState.attackTarget = null;
-      playerState.targetPos.copy(pt);
-      playerState.isMoving = true;
+  // Auto-target nearest enemy if not selected
+  let nearest = enemyHeroGroup;
+  let minDist = playerGroup.position.distanceTo(enemyHeroGroup.position);
+  combatTargets.forEach(tgt => {
+    const d = playerGroup.position.distanceTo(tgt.position);
+    if (d < minDist) {
+      minDist = d;
+      nearest = tgt;
     }
+  });
+  playerState.attackTarget = nearest;
+
+  // If in range, attack immediately!
+  if (minDist <= playerState.attackRange) {
+    if (playerState.attackCooldown <= 0) {
+      executeAttack(nearest);
+    }
+  } else {
+    // Walk into range
+    playerState.targetWalkPos = nearest.position.clone();
   }
 });
 
-window.addEventListener('pointerup', (e) => {
-  if (!touchStartPoint) return;
-  const deltaX = e.clientX - touchStartPoint.x;
-  const deltaY = e.clientY - touchStartPoint.y;
+// --- Rune Wall (Smart 3D Aiming & Placement) ---
+const runeBtn = document.getElementById('rune-button');
+let isAimingRune = false;
+let runeTouchStart = { x: 0, y: 0 };
+let runeTargetPos = new THREE.Vector3();
+let runeAngle = 0;
 
-  // Check if this was a micro-flick
-  tryTriggerMicroFlick(deltaX, deltaY);
-  touchStartPoint = null;
-});
-
-// --- Rune Button & Vector Wall Aiming ---
-const aimLineMat = new THREE.LineBasicMaterial({ color: 0x00f2fe, linewidth: 3 });
-const aimLineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
-runeVectorLine = new THREE.Line(aimLineGeo, aimLineMat);
-runeVectorLine.visible = false;
-scene.add(runeVectorLine);
-
-runeButtonEl.addEventListener('pointerdown', (e) => {
+runeBtn.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   isAimingRune = true;
-  runeAimStart = playerGroup.position.clone();
-  runeAimEnd = playerGroup.position.clone();
-  runeVectorLine.visible = true;
+  runeTouchStart = { x: e.clientX, y: e.clientY };
+
+  // Place ghost wall 4m in front of player initially
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(playerGroup.quaternion);
+  runeTargetPos.copy(playerGroup.position).add(forward.multiplyScalar(4.5));
+  runeAngle = playerGroup.rotation.y;
+
+  ghostWallGroup.position.set(runeTargetPos.x, 0.1, runeTargetPos.z);
+  ghostWallGroup.rotation.y = runeAngle;
+  ghostWallGroup.visible = true;
+  aimLine.visible = true;
+  aimToastEl.style.display = 'block';
+
+  if (navigator.vibrate) navigator.vibrate(20);
 });
 
 window.addEventListener('pointermove', (e) => {
   if (!isAimingRune) return;
-  const pt = getGroundPoint(e.clientX, e.clientY);
-  if (pt) {
-    runeAimEnd = pt;
+  const deltaX = e.clientX - runeTouchStart.x;
+  const deltaY = e.clientY - runeTouchStart.y;
+  const dragDist = Math.hypot(deltaX, deltaY);
+
+  if (dragDist > 10) {
+    // Thumb drag vector maps directly to 3D aim offset
+    const aimAngle = Math.atan2(deltaY, deltaX);
+    const aimDist = Math.min(dragDist * 0.06, 7.5); // Max 7.5m cast range
+
+    const offset = new THREE.Vector3(Math.cos(aimAngle), 0, Math.sin(aimAngle)).multiplyScalar(aimDist);
+    runeTargetPos.copy(playerGroup.position).add(offset);
+    runeAngle = aimAngle + Math.PI / 2; // Wall is perpendicular to aim vector!
+
+    ghostWallGroup.position.set(runeTargetPos.x, 0.1, runeTargetPos.z);
+    ghostWallGroup.rotation.y = runeAngle;
+
+    // Update trajectory line
     const pts = [
-      new THREE.Vector3(runeAimStart.x, 0.2, runeAimStart.z),
-      new THREE.Vector3(runeAimEnd.x, 0.2, runeAimEnd.z)
+      new THREE.Vector3(playerGroup.position.x, 0.2, playerGroup.position.z),
+      new THREE.Vector3(runeTargetPos.x, 0.2, runeTargetPos.z)
     ];
-    runeVectorLine.geometry.setFromPoints(pts);
+    aimLine.geometry.setFromPoints(pts);
   }
 });
 
 window.addEventListener('pointerup', (e) => {
   if (!isAimingRune) return;
   isAimingRune = false;
-  runeVectorLine.visible = false;
-  if (runeAimStart && runeAimEnd && runeAimStart.distanceTo(runeAimEnd) > 1.5) {
-    spawnStoneWall(runeAimStart, runeAimEnd);
+  ghostWallGroup.visible = false;
+  aimLine.visible = false;
+  aimToastEl.style.display = 'none';
+
+  const deltaX = e.clientX - runeTouchStart.x;
+  const deltaY = e.clientY - runeTouchStart.y;
+  if (Math.hypot(deltaX, deltaY) > 15) {
+    spawnStoneWall(runeTargetPos, runeAngle);
+  }
+});
+
+// --- Swipe on Screen for Free Dash ---
+let screenTouchStart = null;
+window.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#joystick-zone') || e.target.closest('#action-zone')) return;
+  screenTouchStart = { x: e.clientX, y: e.clientY };
+});
+
+window.addEventListener('pointerup', (e) => {
+  if (!screenTouchStart) return;
+  const dx = e.clientX - screenTouchStart.x;
+  const dy = e.clientY - screenTouchStart.y;
+  screenTouchStart = null;
+
+  if (Math.hypot(dx, dy) > 20) {
+    // Swipe detected
+    if (playerState.justFrameActive) {
+      tryTriggerStutterDash(new THREE.Vector3(dx, 0, dy));
+    }
   }
 });
 
@@ -500,7 +687,7 @@ const clock = new THREE.Clock();
 
 function animate() {
   requestAnimationFrame(animate);
-  const delta = clock.getDelta();
+  const delta = Math.min(clock.getDelta(), 0.1);
   const now = performance.now();
 
   // Handle Jam
@@ -509,57 +696,77 @@ function animate() {
       playerState.isJammed = false;
     } else {
       renderer.render(scene, camera);
+      updateHpBars();
       return;
     }
   }
 
-  // Attack cooldown countdown
+  // Attack cooldown
   if (playerState.attackCooldown > 0) {
     playerState.attackCooldown -= delta;
   }
 
-  // Combat Targeting & Auto-attack
+  // Target lock ring animation
   if (playerState.attackTarget) {
-    const dist = playerGroup.position.distanceTo(playerState.attackTarget.position);
-    if (dist <= playerState.attackRange) {
-      playerState.isMoving = false;
-      if (playerState.attackCooldown <= 0) {
-        executeAttack(playerState.attackTarget);
-      }
-    } else {
-      // Approach target
-      playerState.targetPos.copy(playerState.attackTarget.position);
-      playerState.isMoving = true;
-    }
+    targetLockRing.position.set(
+      playerState.attackTarget.position.x,
+      0.08,
+      playerState.attackTarget.position.z
+    );
+    targetLockRing.rotation.z += 0.03;
+    targetLockRing.visible = true;
+  } else {
+    targetLockRing.visible = false;
   }
 
-  // Movement Logic
-  if (playerState.isMoving) {
-    const currentPos = playerGroup.position.clone();
-    const moveDir = new THREE.Vector3().subVectors(playerState.targetPos, currentPos);
-    moveDir.y = 0;
-    const dist = moveDir.length();
+  // Movement Handling: 1. Joystick
+  if (playerState.moveVector.lengthSq() > 0.01) {
+    const moveDir = new THREE.Vector3(playerState.moveVector.x, 0, playerState.moveVector.y).normalize();
+    const nextPos = playerGroup.position.clone().add(moveDir.multiplyScalar(playerState.moveSpeed * delta));
 
-    if (dist > 0.15) {
-      moveDir.normalize();
-      const step = moveDir.multiplyScalar(playerState.moveSpeed * delta);
-      const nextPos = currentPos.clone().add(step);
-
+    if (!checkWallCollision(nextPos)) {
+      playerGroup.position.copy(nextPos);
+      playerGroup.lookAt(playerGroup.position.x + moveDir.x, playerGroup.position.y, playerGroup.position.z + moveDir.z);
+    }
+  }
+  // Movement Handling: 2. Tap to Walk
+  else if (playerState.targetWalkPos) {
+    const dir = new THREE.Vector3().subVectors(playerState.targetWalkPos, playerGroup.position);
+    dir.y = 0;
+    if (dir.length() > 0.2) {
+      dir.normalize();
+      const nextPos = playerGroup.position.clone().add(dir.multiplyScalar(playerState.moveSpeed * delta));
       if (!checkWallCollision(nextPos)) {
         playerGroup.position.copy(nextPos);
-        playerGroup.lookAt(playerGroup.position.x + moveDir.x, playerGroup.position.y, playerGroup.position.z + moveDir.z);
+        playerGroup.lookAt(playerGroup.position.x + dir.x, playerGroup.position.y, playerGroup.position.z + dir.z);
       } else {
-        playerState.isMoving = false;
+        playerState.targetWalkPos = null;
       }
     } else {
-      playerState.isMoving = false;
+      playerState.targetWalkPos = null;
     }
   }
 
-  // Camera Follow
-  camera.position.x = THREE.MathUtils.lerp(camera.position.x, playerGroup.position.x, 0.08);
-  camera.position.z = THREE.MathUtils.lerp(camera.position.z, playerGroup.position.z + 16, 0.08);
-  camera.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+  // Animate Physical Stone Walls Erupting & Sinking
+  for (let i = activeWalls.length - 1; i >= 0; i--) {
+    const wall = activeWalls[i];
+    const age = now - wall.birthTime;
+
+    // Erupt animation (rise quickly in 0.2s)
+    if (wall.currentY < wall.targetY) {
+      wall.currentY = Math.min(wall.targetY, wall.currentY + delta * 12.0);
+      wall.group.position.y = wall.currentY;
+    }
+
+    // Decay animation (sink after duration)
+    if (age > wall.duration) {
+      wall.group.position.y -= delta * 3.5;
+      if (wall.group.position.y < -ghostWallHeight - 1.0) {
+        scene.remove(wall.group);
+        activeWalls.splice(i, 1);
+      }
+    }
+  }
 
   // Animate Leyline Crystals
   scene.traverse((obj) => {
@@ -569,18 +776,13 @@ function animate() {
     }
   });
 
-  // Wall Lifespan and Decay Sink Animation
-  for (let i = activeWalls.length - 1; i >= 0; i--) {
-    const wall = activeWalls[i];
-    const age = now - wall.birthTime;
-    if (age > wall.duration) {
-      wall.group.position.y -= delta * 3.0;
-      if (wall.group.position.y < -3.0) {
-        scene.remove(wall.group);
-        activeWalls.splice(i, 1);
-      }
-    }
-  }
+  // Camera Follow Player Smoothly
+  camera.position.x = THREE.MathUtils.lerp(camera.position.x, playerGroup.position.x, 0.08);
+  camera.position.z = THREE.MathUtils.lerp(camera.position.z, playerGroup.position.z + 18, 0.08);
+  camera.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+
+  // Sync Overhead Health Bars
+  updateHpBars();
 
   renderer.render(scene, camera);
 }

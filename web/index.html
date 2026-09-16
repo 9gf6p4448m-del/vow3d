@@ -10,44 +10,115 @@
   <link rel="manifest" href="./manifest.json" />
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
-    body, html { width: 100%; height: 100%; overflow: hidden; background: #0c0d12; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; touch-action: none; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #08090d; font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", Roboto, sans-serif; touch-action: none; }
     #canvas-container { width: 100%; height: 100%; position: absolute; left: 0; top: 0; }
     
     /* 遊戲 HUD */
-    #hud { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
-    .status-bar { position: absolute; top: 20px; left: 24px; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
-    .status-bar h1 { font-size: 20px; font-weight: 800; letter-spacing: 2px; color: #4facfe; margin-bottom: 4px; }
-    .status-bar p { font-size: 13px; color: #a0aec0; }
+    #hud { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; }
     
+    /* 頂部教學與狀態導引 */
+    .top-guide { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); background: rgba(12, 16, 28, 0.85); border: 1px solid rgba(0, 242, 254, 0.4); border-radius: 24px; padding: 8px 20px; display: flex; align-items: center; gap: 12px; backdrop-filter: blur(8px); box-shadow: 0 4px 20px rgba(0,0,0,0.6); pointer-events: auto; max-width: 92%; }
+    .guide-badge { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #000; font-size: 11px; font-weight: 900; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; white-space: nowrap; }
+    .guide-text { color: #e2e8f0; font-size: 13px; font-weight: 600; line-height: 1.3; white-space: nowrap; }
+    .guide-text span { color: #ffd700; font-weight: 800; }
+
+    /* 浮動傷害與連擊標題 */
+    #combo-banner { position: absolute; top: 72px; left: 50%; transform: translateX(-50%); color: #ffd700; font-size: 18px; font-weight: 900; opacity: 0; transition: opacity 0.15s, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); text-shadow: 0 0 12px rgba(255,215,0,0.8); pointer-events: none; letter-spacing: 1px; }
+    #jam-alert { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); color: #ff3344; font-size: 26px; font-weight: 900; opacity: 0; pointer-events: none; transition: opacity 0.15s; text-shadow: 0 0 20px rgba(255,51,68,0.9); letter-spacing: 2px; }
+
     /* 走A 節奏光環反饋 */
-    #cadence-ring { position: absolute; width: 80px; height: 80px; border: 3px solid #00f2fe; border-radius: 50%; pointer-events: none; opacity: 0; transform: translate(-50%, -50%) scale(0.5); transition: opacity 0.1s, transform 0.15s ease-out; }
+    #cadence-ring { position: absolute; width: 100px; height: 100px; border: 4px solid #00f2fe; border-radius: 50%; pointer-events: none; opacity: 0; transform: translate(-50%, -50%) scale(0.3); transition: opacity 0.08s, transform 0.2s ease-out; box-shadow: 0 0 25px #00f2fe; }
+
+    /* 左下角：虛擬移動搖桿 */
+    #joystick-zone { position: absolute; left: 24px; bottom: 24px; width: 150px; height: 150px; pointer-events: auto; touch-action: none; }
+    #joystick-base { width: 100%; height: 100%; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, rgba(20,25,38,0.5) 100%); border: 2px solid rgba(255,255,255,0.15); position: relative; backdrop-filter: blur(4px); }
+    #joystick-thumb { width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle, #00f2fe 0%, #0072ff 100%); position: absolute; left: calc(50% - 28px); top: calc(50% - 28px); box-shadow: 0 0 16px rgba(0,242,254,0.6); pointer-events: none; transition: transform 0.04s ease-out; }
+    .joystick-label { position: absolute; bottom: -20px; width: 100%; text-align: center; color: rgba(255,255,255,0.4); font-size: 11px; font-weight: 600; }
+
+    /* 右側操作輪盤群 */
+    #action-zone { position: absolute; right: 24px; bottom: 24px; width: 200px; height: 200px; pointer-events: none; }
     
-    /* 右下角地脈符印 */
-    #rune-button { position: absolute; right: 28px; bottom: 32px; width: 76px; height: 76px; border-radius: 50%; background: radial-gradient(circle, rgba(79,172,254,0.3) 0%, rgba(0,0,0,0.7) 100%); border: 2px solid #4facfe; box-shadow: 0 0 15px rgba(79,172,254,0.4); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; pointer-events: auto; touch-action: none; }
-    #rune-button span { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
-    #rune-button small { font-size: 9px; color: #cbd5e0; margin-top: 2px; }
-    #rune-button:active { transform: scale(0.92); border-color: #00f2fe; box-shadow: 0 0 25px #00f2fe; }
-    
-    /* 擊中與連擊提示 */
-    #combo-banner { position: absolute; top: 20px; right: 28px; color: #ffd700; font-size: 16px; font-weight: 900; opacity: 0; transition: opacity 0.2s; text-shadow: 0 0 10px rgba(255,215,0,0.6); }
-    #jam-alert { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); color: #ff4757; font-size: 24px; font-weight: 900; opacity: 0; pointer-events: none; transition: opacity 0.2s; text-shadow: 0 0 12px rgba(255,71,87,0.8); }
+    /* 大普攻按鈕 */
+    #attack-button { position: absolute; right: 10px; bottom: 10px; width: 84px; height: 84px; border-radius: 50%; background: radial-gradient(circle, #ff416c 0%, #8a0b29 100%); border: 3px solid #ff4b2b; box-shadow: 0 0 20px rgba(255,65,108,0.5); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; pointer-events: auto; touch-action: none; transition: transform 0.08s, box-shadow 0.08s; }
+    #attack-button:active { transform: scale(0.92); box-shadow: 0 0 35px #ff416c; }
+    #attack-button span { font-size: 16px; font-weight: 900; letter-spacing: 1px; }
+    #attack-button small { font-size: 9px; color: #ffb8b8; margin-top: 1px; }
+
+    /* 普攻按鈕上的走A節奏提示外圈 */
+    #attack-pulse-ring { position: absolute; width: 104px; height: 104px; border-radius: 50%; border: 3px solid #ffd700; opacity: 0; pointer-events: none; box-shadow: 0 0 15px #ffd700; transform: scale(0.9); transition: opacity 0.1s, transform 0.15s; }
+
+    /* 岩壁按鈕 (可拖動瞄準) */
+    #rune-button { position: absolute; right: 110px; bottom: 35px; width: 68px; height: 68px; border-radius: 50%; background: radial-gradient(circle, #38ef7d 0%, #11998e 100%); border: 2.5px solid #00f2fe; box-shadow: 0 0 16px rgba(0,242,254,0.4); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; pointer-events: auto; touch-action: none; transition: transform 0.08s; }
+    #rune-button:active { transform: scale(0.92); box-shadow: 0 0 30px #00f2fe; }
+    #rune-button span { font-size: 13px; font-weight: 900; }
+    #rune-button small { font-size: 9px; color: #d4fc79; margin-top: 1px; }
+
+    /* 瞄準中的即時提示懸浮卡片 */
+    #aim-toast { position: absolute; top: 120px; left: 50%; transform: translateX(-50%); background: rgba(0, 242, 254, 0.2); border: 1.5px solid #00f2fe; color: #fff; padding: 6px 16px; border-radius: 16px; font-size: 12px; font-weight: 700; display: none; backdrop-filter: blur(6px); box-shadow: 0 0 20px rgba(0,242,254,0.4); pointer-events: none; z-index: 100; }
+
+    /* 傷害飄字容器 */
+    .damage-popup { position: absolute; color: #ff3b30; font-size: 20px; font-weight: 900; text-shadow: 0 0 8px rgba(0,0,0,0.9), 0 0 12px rgba(255,59,48,0.8); pointer-events: none; animation: floatUp 0.8s ease-out forwards; transform: translate(-50%, -50%); z-index: 50; }
+    .damage-popup.crit { color: #ffd700; font-size: 26px; text-shadow: 0 0 15px rgba(255,215,0,0.9); }
+    .damage-popup.dash { color: #00f2fe; font-size: 18px; text-shadow: 0 0 15px rgba(0,242,254,0.9); }
+
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translate(-50%, 0) scale(0.8); }
+      20% { transform: translate(-50%, -15px) scale(1.3); }
+      100% { opacity: 0; transform: translate(-50%, -45px) scale(1.0); }
+    }
+
+    /* 頭頂血條樣式 */
+    .hp-bar-wrap { position: absolute; width: 64px; height: 7px; background: rgba(0,0,0,0.7); border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); pointer-events: none; transform: translate(-50%, -50%); }
+    .hp-bar-fill { height: 100%; border-radius: 3px; background: #00f2fe; width: 100%; transition: width 0.15s ease-out; }
+    .hp-bar-fill.enemy { background: #ff3b30; }
+    .hp-bar-fill.minion { background: #ffd700; }
+    .hp-label { position: absolute; top: -14px; width: 100%; text-align: center; color: #fff; font-size: 10px; font-weight: 800; text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
   </style>
 </head>
 <body>
   <div id="canvas-container"></div>
   <div id="hud">
-    <div class="status-bar">
-      <h1>VOW 誓約</h1>
-      <p>點擊目標攻擊 • 命中瞬間向外輕彈滑步 (PvP) • 右下符印拖曳拉出石牆</p>
+    <!-- 頂部即時操作指引 -->
+    <div class="top-guide">
+      <div class="guide-badge">操作指南</div>
+      <div class="guide-text" id="guide-text">
+        左手推搖桿走位 • 點右下 <span>【普攻】</span> 攻擊 • 命中後推搖桿立即 <span>【滑步走A】</span>
+      </div>
     </div>
-    <div id="combo-banner">★ PERFECT CADENCE x1 ★</div>
+
+    <div id="combo-banner">★ PERFECT CADENCE 走A成功！ ★</div>
     <div id="jam-alert">⚠️ 卡刀硬直！(ANTI-MASHING)</div>
     <div id="cadence-ring"></div>
-    <div id="rune-button">
-      <span>岩壁</span>
-      <small>拖曳塑形</small>
+    <div id="aim-toast">📐 正在瞄準：地面藍色虛影即為石牆落點，鬆開立即升起！</div>
+
+    <!-- 左手搖桿 -->
+    <div id="joystick-zone">
+      <div id="joystick-base">
+        <div id="joystick-thumb"></div>
+      </div>
+      <div class="joystick-label">移動 • 彈指走A</div>
     </div>
+
+    <!-- 右側按鈕群 -->
+    <div id="action-zone">
+      <!-- 普攻按鈕 -->
+      <div id="attack-button">
+        <div id="attack-pulse-ring"></div>
+        <span>普攻</span>
+        <small>鎖定目標</small>
+      </div>
+
+      <!-- 岩壁按鈕 -->
+      <div id="rune-button">
+        <span>岩壁</span>
+        <small>拖動瞄準</small>
+      </div>
+    </div>
+
+    <!-- 動態血條容器 -->
+    <div id="hp-layer"></div>
   </div>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
