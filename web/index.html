@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#111115" />
+  <title>VOW 誓約</title>
+  <link rel="manifest" href="/manifest.json" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #0c0d12; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; touch-action: none; }
+    #canvas-container { width: 100%; height: 100%; position: absolute; left: 0; top: 0; }
+    
+    /* 遊戲 HUD */
+    #hud { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+    .status-bar { position: absolute; top: 20px; left: 24px; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+    .status-bar h1 { font-size: 20px; font-weight: 800; letter-spacing: 2px; color: #4facfe; margin-bottom: 4px; }
+    .status-bar p { font-size: 13px; color: #a0aec0; }
+    
+    /* 走A 節奏光環反饋 */
+    #cadence-ring { position: absolute; width: 80px; height: 80px; border: 3px solid #00f2fe; border-radius: 50%; pointer-events: none; opacity: 0; transform: translate(-50%, -50%) scale(0.5); transition: opacity 0.1s, transform 0.15s ease-out; }
+    
+    /* 右下角地脈符印 */
+    #rune-button { position: absolute; right: 28px; bottom: 32px; width: 76px; height: 76px; border-radius: 50%; background: radial-gradient(circle, rgba(79,172,254,0.3) 0%, rgba(0,0,0,0.7) 100%); border: 2px solid #4facfe; box-shadow: 0 0 15px rgba(79,172,254,0.4); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; pointer-events: auto; touch-action: none; }
+    #rune-button span { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+    #rune-button small { font-size: 9px; color: #cbd5e0; margin-top: 2px; }
+    #rune-button:active { transform: scale(0.92); border-color: #00f2fe; box-shadow: 0 0 25px #00f2fe; }
+    
+    /* 擊中與連擊提示 */
+    #combo-banner { position: absolute; top: 20px; right: 28px; color: #ffd700; font-size: 16px; font-weight: 900; opacity: 0; transition: opacity 0.2s; text-shadow: 0 0 10px rgba(255,215,0,0.6); }
+    #jam-alert { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); color: #ff4757; font-size: 24px; font-weight: 900; opacity: 0; pointer-events: none; transition: opacity 0.2s; text-shadow: 0 0 12px rgba(255,71,87,0.8); }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="hud">
+    <div class="status-bar">
+      <h1>VOW 誓約</h1>
+      <p>點擊目標攻擊 • 命中瞬間向外輕彈滑步 (PvP) • 右下符印拖曳拉出石牆</p>
+    </div>
+    <div id="combo-banner">★ PERFECT CADENCE x1 ★</div>
+    <div id="jam-alert">⚠️ 卡刀硬直！(ANTI-MASHING)</div>
+    <div id="cadence-ring"></div>
+    <div id="rune-button">
+      <span>岩壁</span>
+      <small>拖曳塑形</small>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

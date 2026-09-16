@@ -1,4 +1,4 @@
-﻿# Unity
+# Unity
 /[Ll]ibrary/
 /[Tt]emp/
 /[Oo]bj/
@@ -24,3 +24,8 @@
 # OS generated
 .DS_Store
 Thumbs.db
+
+# Web PWA
+web/node_modules/
+web/dist/
+

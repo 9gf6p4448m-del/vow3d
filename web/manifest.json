@@ -1,0 +1,17 @@
+{
+  "name": "VOW 誓約",
+  "short_name": "VOW",
+  "description": "跨平台硬核動態地貌競技 MOBA",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#0c0d12",
+  "theme_color": "#111115",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
