@@ -126,7 +126,10 @@ graph TD
    - **`防偷點機制`**：迷霧加入 **受擊顯影 (Damage Revelation，受到傷害立即顯形 1.5 秒)**；且在**蒸氣迷霧內引導晶塔速度減半 (佔點懲罰)**，徹底杜絕無交互「霧中偷點流」。
 3. **風 + 火 = 擴散火浪 (Firestorm Shockwave)**：
    - 朝燃燒區域釋放風系衝擊，將烈焰呈 60° 扇形向前推進 6 米，造成 1.5 倍直接爆發傷害。
-* **視覺清晰度鐵律 (Visual Clarity Rule)**：所有元素反應區域具備極度清晰的發光邊界（Distinct Visual Outlines），保證 5v5 團戰中技能判定 0.1 秒直觀可辨，絕不產生視覺雜訊。
+* **視覺清晰度與技能預警鐵律 (Visual Clarity & Skill Telegraph Rule)**：
+  - **指向性投射指示 (Line Telegraph)**：帶有英雄身位朝向引導線與高對比發光箭頭，拖曳/點擊時在地面即時動態投射。
+  - **範圍法陣預警 (Zone Telegraph)**：清晰邊界外環（Distinct High-Contrast Rim）搭配吸附外衝動畫（Snap Motion），敵我法術邊界在 0.1 秒內一目了然，絕不產生模糊光污染。
+  - **打擊反饋金字塔**：普通平A輕微刀光與微震 ➔ 元素 Combo 觸發 45ms 打擊頓挫（Hitstop）與創傷震屏 ➔ 暴擊/斬殺觸發高對比瞬時閃白（Screen Flash）與地面持久焦痕貼花。
 
 ---
 

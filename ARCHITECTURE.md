@@ -194,5 +194,80 @@ public interface IPlayerStateMachine
 
 ---
 
+## 陸、 技能預警指示器與戰鬥打擊反饋架構 (Skill Telegraph & Combat Feedback Architecture)
+
+為實現頂級競技 MOBA 的技能可讀性與《隻狼》般硬核打擊感，借鑒並吸納 `HandCastAbility` 的指示器與程序化反饋管線，規範 Unity URP 下的技能預警與打擊系統：
+
+### 1. 技能預警指示器介面：`ISkillTelegraphService`
+```csharp
+using UnityEngine;
+using System;
+
+public enum TelegraphShape
+{
+    LineCast,   // 線性技能投射箭頭 (如長矛穿刺、箭矢彈道)
+    ZoneCast    // 範圍技能法陣 (如冰霜牢獄、落雷轟炸)
+}
+
+public interface ISkillTelegraphService
+{
+    TelegraphShape ActiveShape { get; }
+    bool IsAiming { get; }
+    
+    // 開啟預警指示器：設定基礎長度、寬度或半徑
+    void ShowLineIndicator(Vector3 origin, Vector3 direction, float length, float width);
+    void ShowZoneIndicator(Vector3 center, float radius, float edgeThickness);
+    
+    // 更新瞄準位置 (滑鼠牽引或左/右微輪盤瞄準)
+    void UpdateAimTransform(Vector3 currentAimPosition);
+    
+    // 隱藏與釋放指示器 (0 GC，回收至對象池)
+    void HideIndicator();
+    
+    // 指示器邊界動畫：外衝吸附 (Snap Animation) 與邊界高光
+    void TriggerSnapFeedback();
+}
+```
+
+### 2. 戰鬥打擊反饋管理器：`ICombatFeedbackService`
+```csharp
+using UnityEngine;
+using System;
+
+public interface ICombatFeedbackService
+{
+    // 1. 創傷阻尼震屏 (Camera Shake)
+    // trauma: 0.0 ~ 1.0，平方衰減，頻率與三軸旋轉分離，支援優先級覆蓋
+    void RequestCameraShake(float trauma, float duration = 0.2f);
+
+    // 2. 打擊頓挫幀 (Hitstop / Hit Pause)
+    // 普攻/暴擊命中瞬間短暫凍結攻擊者與受擊者動畫幀 (30ms~60ms)，強化刀刀入肉感，完美對齊 220ms 目押窗口
+    void TriggerHitstop(float durationMs);
+
+    // 3. 高對比度受擊閃白 (Screen Flash)
+    // 暴擊/斬殺時的全螢幕微閃，內建防光敏癲癇 (Photosensitivity Safe) 與溫控自動降級
+    void TriggerScreenFlash(Color flashColor, float durationMs = 50f);
+
+    // 4. 地面殘留打擊貼花 (Impact Decals)
+    // 技能重擊、地裂、冰霜附著殘留，從對象池取出，壽命結束後平滑溶解回收
+    void SpawnGroundDecal(Vector3 worldPosition, DecalType type, float duration = 3.0f);
+}
+
+public enum DecalType
+{
+    ScorchCrater,   // 烈焰焦痕
+    FrostCrack,     // 冰霜裂紋
+    VoidRupture     // 虛空地裂
+}
+```
+
+### 3. 高效能渲染與對象池合約 (Instancing & Pooling Protocol)
+* **GPU 實例化破碎 (Instanced Shatter Mesh)**：
+  冰雕碎裂、岩石崩解等大量碎片，嚴禁使用獨立 GameObject，必須透過 `Graphics.RenderMeshInstanced` 單次 Draw Call 繪製，位置與朝向由 GPU 頂點著色器計算。
+* **預熱與零運行時 GC (Zero-Alloc Policy)**：
+  所有指示器 Quad/Mesh、貼花 Prefab、粒子系統均在場景載入時完成靜態預熱（Prewarm），戰鬥中嚴禁動態 Instantiation。
+
+---
+
 > **簽署生效**：  
 > 本架構書與 GDD v3.4.1 共同構成《VOW 誓約》最高技術標準。所有使用 Claude Code、Codex 或人工編寫的程式碼，均需通過本架構書中定義的介面規範與單元測試。
