@@ -267,6 +267,15 @@ public enum DecalType
 * **預熱與零運行時 GC (Zero-Alloc Policy)**：
   所有指示器 Quad/Mesh、貼花 Prefab、粒子系統均在場景載入時完成靜態預熱（Prewarm），戰鬥中嚴禁動態 Instantiation。
 
+### 4. 資產與動畫落地標準 (Asset & Animation Pipeline Specification)
+* **Phase 1 灰盒角色與手感驗證**：
+  - **強制標準 Humanoid 骨骼**：英雄載體強制採用標準 Unity **Humanoid FBX**（首選 Mixamo Y-Bot / X-Bot 或 Unity Starter Assets 測試人偶），嚴禁以純代碼移動未帶骨骼的膠囊體代替真實動畫。
+  - **動畫事件契約 (Animation Event Contract)**：普攻揮砍/射擊動作必須在精確傷害判定幀掛載 **`OnAttackHit()`** 事件，用於喚醒 `ICombatFeedbackService`（30~60ms 頓挫）並開啟 220ms 目押走A窗口。
+  - **灰盒動作清單**：僅引入標準切片（`Idle`, `Run`, `Attack`, `Dash`, `Hit`），嚴禁在 Phase 1 導入未經剪輯的複雜混合動作。
+* **Phase 2+ 正式資產量產標準**：
+  - **英雄與角色管線**：優先採用 **Meshy / Tripo3D** 依 2D 概念圖生成風格化高精白模 ➔ 於 Blender 檢驗手肘與肩胛等關節環線（Joint Loops）以防極限形變塌陷 ➔ 綁定標準 Humanoid 骨架導入 Unity。
+  - **場景與障礙物管線**：符印石牆（`IRuneWall`）、防禦塔與地貌道具優先採用 **Sloyd / Tripo3D** 參數化生成，面數嚴格收斂在 3,000~6,000 面，確保手機端 120 FPS 渲染預算。
+
 ---
 
 > **簽署生效**：  
