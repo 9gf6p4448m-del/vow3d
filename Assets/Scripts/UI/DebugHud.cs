@@ -19,7 +19,7 @@ namespace Vow.UI
         private const float Pad = 8f;
         private const float Row = 22f;
         private const float PanelWidth = 250f;
-        private const float InfoRows = 7f;
+        private const float InfoRows = 8f;
 
         private static readonly string[] StateNames = Enum.GetNames(typeof(PlayerState));
 
@@ -167,6 +167,9 @@ namespace Vow.UI
             float x = Pad * 2f;
             float valueX = x + 84f;
             float y = Pad * 1.5f;
+
+            GUI.Label(new Rect(x, y, PanelWidth - Pad * 2f, Row), VowVersion.Label, _label);
+            y += Row;
 
             GUI.Label(new Rect(x, y, 84f, Row), "FPS", _label);
             GUI.Label(new Rect(valueX, y, 160f, Row), IntStringCache.Get(_fps), _label);

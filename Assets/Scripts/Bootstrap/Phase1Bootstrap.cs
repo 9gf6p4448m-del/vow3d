@@ -30,7 +30,14 @@ namespace Vow.Bootstrap
         {
             // 紅線 6：畫面與輸入鎖定 120Hz（輸入取樣頻率由 PlayerInputService 設定 InputSystem.pollingFrequency）。
             QualitySettings.vSyncCount = 0;
-            Application.targetFrameRate = TargetFrameRate;
+
+            int frameRate = TargetFrameRate;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // 瀏覽器例外：WebGL 一旦指定幀率，Unity 會改用 setTimeout 排程而不是 requestAnimationFrame，畫面反而卡頓。
+            // -1 = 交給瀏覽器跟著螢幕刷新率跑（120Hz 螢幕就是 120）。網頁版僅供試玩，120Hz 的正式驗收以原生建置為準。
+            frameRate = -1;
+#endif
+            Application.targetFrameRate = frameRate;
 
             ResolveMissingReferences();
         }
