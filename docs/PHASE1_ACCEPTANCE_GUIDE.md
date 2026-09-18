@@ -11,7 +11,7 @@
 
 | 項目 | 狀態 | 證據 |
 |------|------|------|
-| 手感核心邏輯（狀態機、目押窗口、預輸入緩衝、指令佇列、攻擊週期、充能、動能衰減、手勢換算、輸入路由、觸控槽位、震屏） | **已驗證** | 62 個 NUnit 測試：dotnet 下全綠，**Unity 2022.3.62f1 Test Runner (EditMode) 下也全綠**。另做突變測試（故意改壞實作 11 種），對應測試全部變紅 |
+| 手感核心邏輯（狀態機、目押窗口、預輸入緩衝、指令佇列、攻擊週期、充能、動能衰減、手勢換算、輸入路由、觸控槽位、震屏） | **已驗證** | 62 個 NUnit 測試：dotnet 下全綠，**Unity 2022.3.62f1 Test Runner (EditMode) 下也全綠**。另做突變測試：`python Tools/DotnetCheck/mutation_check.py` 把實作故意改壞 12 種，12 種都使對應測試變紅、還原後全綠 |
 | 在 Unity Editor 內實際編譯、套件解析、asmdef 解析 | **已驗證** | batchmode 首次開專案 exit 0、0 個 `error CS`、我方程式碼 0 警告；`Library/ScriptAssemblies/` 產出全部 8 個 `Vow.*.dll` |
 | `#if VOW_HAS_URP` 區塊（建立 URP 管線資產） | **已驗證** | `Vow.Editor.rsp` 內含 `-define:VOW_HAS_URP` 與 `GreyboxAssetFactory.cs`，編譯通過；實跑後產出 `VOW_URP.asset`（Forward+）並寫入 GraphicsSettings |
 | `VOW/Phase 1/Build Greybox Scene` 實跑 | **已驗證** | batchmode `-executeMethod` exit 0、無例外；產出場景、NavMesh 資產（非空）、AnimatorController、5 支切片、9 顆材質；場景內 `NavMeshObstacle` 元件 0 個；`activeInputHandler: 1` |
@@ -29,6 +29,7 @@
 
 重跑驗證：
 
+- 突變檢查（不需要 Unity，約 2 分鐘）：`python Tools/DotnetCheck/mutation_check.py`，結束碼 0＝全部突變都被抓到
 - 不需要 Unity：雙擊 `Tools/DotnetCheck/verify.bat`（需 .NET 8 SDK 與 `../vow-toolchain/refs` 參考組件）
 - 需要 Unity（把 `<U>` 換成 `"C:\Program Files\Unity\Hub\Editor\2022.3.62f1\Editor\Unity.exe"`，`<P>` 換成本專案路徑）：
   - 重建場景：`<U> -batchmode -quit -projectPath <P> -executeMethod Vow.EditorTools.VOWPhase1SceneBuilder.Build -logFile build.log`

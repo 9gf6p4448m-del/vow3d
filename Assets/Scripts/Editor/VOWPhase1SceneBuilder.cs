@@ -45,7 +45,7 @@ namespace Vow.EditorTools
             // NavMesh 在「只有地板」的時候烘焙：石牆、木樁、英雄都還不存在，所以烘出來的是一整片無洞的靜態網格。
             // 石牆之後被打碎也不需要重烘——它從頭到尾就不在 NavMesh 裡（紅線 5：零 carving、零執行期烘焙）。
             BakeStaticNavMesh(ground);
-            CreateArenaBoundary(); // 必須在烘焙之後：邊界牆不得進入 NavMesh
+            CreateArenaBoundary(tuning.BodyRadius); // 必須在烘焙之後：邊界牆不得進入 NavMesh
 
             HeroController hero = CreateHero(tuning, materials.Hero);
             CreateDummy(new Vector3(0f, 0f, 6f), materials.Dummy, materials.Bar);
@@ -124,16 +124,18 @@ namespace Vow.EditorTools
 
         // 場地四周的隱形邊界（只有 BoxCollider、沒有 Renderer）。微滑步與步行的位移都經 SphereCast 裁切，
         // 有了實體邊界，英雄就不可能被滑出平台、掉出 NavMesh——不需要依賴 NavMeshAgent 夾回位置的行為。
-        private static void CreateArenaBoundary()
+        private static void CreateArenaBoundary(float bodyRadius)
         {
             const float height = 3f;
             const float thickness = 1f;
 
-            // 牆的內面不能貼齊地板邊緣：NavMesh 烘焙會依 agent 半徑（預設 0.5m）從邊緣往內侵蝕，可走範圍只到 ±19.5。
-            // 若牆內面在 ±20，英雄中心最遠可到 ±19.63，會落在「牆內、NavMesh 外」的 0.13m 窄帶。
-            // 內縮 0.2m 後英雄中心最遠 ±(19.8 − 0.35 − 0.02) = ±19.43，永遠在 NavMesh 之內。
-            const float inset = 0.2f;
-            float half = ArenaSize * 0.5f - inset;
+            // 牆的內面不能貼齊地板邊緣：NavMesh 烘焙會依 agent 半徑從邊緣往內侵蝕（預設 Humanoid agent = 0.5m，
+            // PlayMode 測試實測 NavMesh 邊界在 ±19.5），若牆內面在 ±20，英雄中心會落進「牆內、NavMesh 外」的窄帶。
+            // 牆內面由 BodyRadius 推導，使「牆擋住時的英雄中心」恆落在 NavMesh 邊界內側 margin 處——
+            // 日後調整 BodyRadius 並重建場景，這個關係仍然成立。
+            const float navMeshErosion = 0.5f;
+            const float margin = 0.05f;
+            float half = ArenaSize * 0.5f - navMeshErosion + bodyRadius - margin;
 
             GameObject root = new GameObject("ArenaBoundary");
             for (int i = 0; i < 4; i++)

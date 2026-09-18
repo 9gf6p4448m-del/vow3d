@@ -28,7 +28,7 @@ namespace Vow.Input
     public sealed class TouchGestureRouter
     {
         public const int MaxTouches = 10;
-        private const int EndedHistorySize = 8;
+        private const int EndedHistorySize = MaxTouches; // 最壞情況：10 根手指同一幀全部放開
 
         private readonly InputRoutingManager _routing;
         private readonly ITouchGestureSink _sink;

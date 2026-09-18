@@ -28,3 +28,5 @@ Tools/DotnetCheck/**/obj/
 .vs/
 .vscode/
 .idea/
+
+Tools/DotnetCheck/**/TestResults/
