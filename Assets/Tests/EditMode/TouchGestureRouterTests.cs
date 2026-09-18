@@ -35,6 +35,11 @@ namespace Vow.Tests
                 UiTaps++;
                 Events.Add("ui:" + regionId);
             }
+
+            public void OnRuneDragUpdated(float screenDirX, float screenDirY, float distance01) { Events.Add("rune-drag"); }
+            public void OnRuneQuickCast() { Events.Add("rune-quick"); }
+            public void OnRuneReleased(float screenDirX, float screenDirY, float distance01) { Events.Add("rune-release"); }
+            public void OnRuneCancelled() { Events.Add("rune-cancel"); }
         }
 
         private static TouchGestureRouter NewRouter(ControlMode mode, out RecordingSink sink, out int buttonId)

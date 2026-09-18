@@ -7,6 +7,7 @@ namespace Vow.Input
     {
         Rejected,     // 落在邊緣防誤觸死區
         UiRegion,     // 落在已登記的 UI 區域：事件到此為止，不向下滲透給世界層（移動／普攻）
+        Rune,         // 右下地脈符印：整段觸控歸符印手勢所有，拖到世界上空也不會變成點地或微彈
         Pip,          // 模式 B 左下微輪盤
         World         // 點地、點目標、模式 A 微彈
     }
@@ -31,7 +32,7 @@ namespace Vow.Input
     }
 
     // 觸控事件的唯一分流點：每根手指在按下的瞬間被指派一條路由，之後整段觸控生命週期都歸該路由所有。
-    // 判定順序即優先序：邊緣死區 → UI 區域 → 微輪盤 → 世界。
+    // 判定順序即優先序：邊緣死區 → UI 區域 → 符印 → 微輪盤 → 世界。
     // 不依賴 UnityEngine，可直接在 dotnet 下測試。
     public sealed class InputRoutingManager
     {
@@ -43,6 +44,11 @@ namespace Vow.Input
 
         private ScreenRegion _pipZone;
         private bool _hasPipZone;
+
+        private ScreenRegion _runeZone;
+        private bool _hasRuneZone;
+        private ScreenRegion _runeCancelZone;
+        private bool _hasRuneCancelZone;
 
         public float EdgeMarginPixels = GestureMath.EdgeDeadzonePixels;
 
@@ -74,6 +80,24 @@ namespace Vow.Input
             _hasPipZone = true;
         }
 
+        public void SetRuneZone(ScreenRegion zone)
+        {
+            _runeZone = zone;
+            _hasRuneZone = true;
+        }
+
+        // 取消區只在符印拖曳中有意義：它不參與 Route()，平時點在這塊上面仍是一般的世界觸控。
+        public void SetRuneCancelZone(ScreenRegion zone)
+        {
+            _runeCancelZone = zone;
+            _hasRuneCancelZone = true;
+        }
+
+        public bool IsInRuneCancelZone(float x, float y)
+        {
+            return _hasRuneCancelZone && _runeCancelZone.Contains(x, y);
+        }
+
         public TouchRoute Route(float x, float y, float screenWidth, float screenHeight, ControlMode mode, out int uiRegionId)
         {
             uiRegionId = -1;
@@ -89,6 +113,9 @@ namespace Vow.Input
                     return TouchRoute.UiRegion;
                 }
             }
+
+            if (_hasRuneZone && _runeZone.Contains(x, y))
+                return TouchRoute.Rune;
 
             if (mode == ControlMode.ModeB_DualZonePip && _hasPipZone && _pipZone.Contains(x, y))
                 return TouchRoute.Pip;

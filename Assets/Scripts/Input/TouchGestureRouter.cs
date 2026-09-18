@@ -18,6 +18,12 @@ namespace Vow.Input
         void OnWorldTap(float screenX, float screenY);
         void OnCadenceFlick(float screenDirX, float screenDirY);
         void OnUiRegionTapped(int regionId);
+
+        // 地脈符印（GDD §參-1）。方向為螢幕座標的單位向量，拉伸量 0~1。
+        void OnRuneDragUpdated(float screenDirX, float screenDirY, float distance01);
+        void OnRuneQuickCast();
+        void OnRuneReleased(float screenDirX, float screenDirY, float distance01);
+        void OnRuneCancelled();
     }
 
     // 多指觸控的槽位管理與相位狀態機。不依賴 UnityEngine／InputSystem，可在 dotnet 下直接測試——
@@ -46,12 +52,14 @@ namespace Vow.Input
         private int _endedCursor;
 
         private MicroVectorPip _pip;
+        private RuneGestureTracker _rune;
         private ControlMode _activeMode;
 
         public float ScreenWidth;
         public float ScreenHeight;
         public float MinRadiusPixels;
         public float MaxFlickSeconds = 0.25f;
+        public float RuneSaturationPixels;
 
         public TouchGestureRouter(InputRoutingManager routing, ITouchGestureSink sink, ControlMode initialMode)
         {
@@ -68,6 +76,9 @@ namespace Vow.Input
         public float PipDirX => _pip.DirX;
         public float PipDirY => _pip.DirY;
 
+        public bool IsRuneHeld => _rune.Held;
+        public bool IsRuneDragging => _rune.Held && _rune.Dragging;
+
         public ControlMode ActiveMode
         {
             get => _activeMode;
@@ -76,6 +87,7 @@ namespace Vow.Input
                 if (_activeMode == value) return;
                 _activeMode = value;
                 _pip.End();
+                EmitRune(_rune.Cancel());
 
                 // 切換模式時，還按在螢幕上的手指一律「作廢」而非「釋放」：槽位留著、路由改成 Rejected，直到它真的離開螢幕。
                 // 若直接釋放槽位，下一幀這根手指會被當成新按下；在模式 B 下世界觸控是按下即送出，英雄會憑空朝那根手指走過去。
@@ -167,6 +179,11 @@ namespace Vow.Input
                     else _pip.Begin(touchId, x, y);
                     break;
 
+                case TouchRoute.Rune:
+                    if (_rune.Held) _slotRoute[slot] = TouchRoute.Rejected; // 符印一次只認一根手指
+                    else _rune.Begin(touchId, x, y);
+                    break;
+
                 case TouchRoute.World:
                     if (_activeMode == ControlMode.ModeB_DualZonePip)
                     {
@@ -190,6 +207,10 @@ namespace Vow.Input
                     _pip.Move(x, y, MinRadiusPixels);
                     break;
 
+                case TouchRoute.Rune:
+                    EmitRune(_rune.Move(x, y, MinRadiusPixels, RuneSaturationPixels));
+                    break;
+
                 case TouchRoute.World:
                     if (_trackers[slot].Move(x, y, now, MinRadiusPixels, MaxFlickSeconds) == GestureOutcome.Flick)
                         _sink.OnCadenceFlick(_trackers[slot].FlickDirX, _trackers[slot].FlickDirY);
@@ -201,6 +222,10 @@ namespace Vow.Input
         {
             switch (_slotRoute[slot])
             {
+                case TouchRoute.Rune:
+                    EmitRune(_rune.End(x, y, MinRadiusPixels, RuneSaturationPixels, _routing.IsInRuneCancelZone(x, y)));
+                    break;
+
                 case TouchRoute.Pip:
                     _pip.End();
                     break;
@@ -224,8 +249,20 @@ namespace Vow.Input
         private void CancelTouch(int slot)
         {
             if (_slotRoute[slot] == TouchRoute.Pip) _pip.End();
+            if (_slotRoute[slot] == TouchRoute.Rune) EmitRune(_rune.Cancel());
             _trackers[slot].Cancel();
             _slotUsed[slot] = false;
+        }
+
+        private void EmitRune(RuneGestureOutcome outcome)
+        {
+            switch (outcome)
+            {
+                case RuneGestureOutcome.DragUpdated: _sink.OnRuneDragUpdated(_rune.DirX, _rune.DirY, _rune.Distance01); break;
+                case RuneGestureOutcome.QuickCast: _sink.OnRuneQuickCast(); break;
+                case RuneGestureOutcome.Released: _sink.OnRuneReleased(_rune.DirX, _rune.DirY, _rune.Distance01); break;
+                case RuneGestureOutcome.Cancelled: _sink.OnRuneCancelled(); break;
+            }
         }
 
         // ───────────────────────── 槽位 ─────────────────────────

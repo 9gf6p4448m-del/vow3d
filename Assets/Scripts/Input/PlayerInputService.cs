@@ -14,7 +14,7 @@ namespace Vow.Input
     // IPlayerInputService 的 New Input System 實作（EnhancedTouch 讀觸控；滑鼠左鍵被當成一根手指餵進同一個路由）。
     // 本類別只做轉接：EnhancedTouch → TouchGestureRouter（純邏輯、有測試）→ 射線判定 → 對外事件。
     // 手勢怎麼判、手指槽位怎麼管，全部在 TouchGestureRouter。
-    public sealed class PlayerInputService : MonoBehaviour, IPlayerInputService, ITouchGestureSink
+    public sealed class PlayerInputService : MonoBehaviour, IPlayerInputService, IRuneCastInput, ITouchGestureSink
     {
         private const float FallbackDpi = 160f;
         private const float PipZoneMillimeters = 42f;
@@ -25,6 +25,7 @@ namespace Vow.Input
 
         [SerializeField] private Camera _worldCamera;
         [SerializeField] private ControlMode _initialMode = ControlMode.ModeA_FullScreenFlick;
+        [SerializeField] private float _runeSaturationMillimeters = 14f; // 與 RuneTuning.DragSaturationMillimeters 同值，由場景建置器寫入
 
         private readonly InputRoutingManager _routing = new InputRoutingManager();
         private TouchGestureRouter _router;
@@ -43,10 +44,11 @@ namespace Vow.Input
         public event Action<ICombatTarget> OnCombatTargetSelected;
         public event Action<Vector2> OnCadenceVectorFlicked;
 
-        // 符印事件屬 Phase 2（冷庫協議）。契約保留、Phase 1 不發；空的 add/remove 避免編譯器對「從未使用的事件」提出警告。
-        public event Action<Vector2, float> OnRuneVectorDragUpdated { add { } remove { } }
-        public event Action OnRuneQuickCastTriggered { add { } remove { } }
-        public event Action OnRuneCastCancelled { add { } remove { } }
+        // 地脈符印（GDD §參-1）。手勢怎麼判在 RuneGestureTracker；符印區由 RuneButtonView 登記到 Routing。
+        public event Action<Vector2, float> OnRuneVectorDragUpdated;
+        public event Action OnRuneQuickCastTriggered;
+        public event Action OnRuneCastCancelled;
+        public event Action<Vector2, float> OnRuneCastReleased;
 
         // 已登記的 UI 區域被點擊（HUD 按鈕走這裡，不另接 EventSystem——全專案只有一條輸入路徑）。
         public event Action<int> OnUiRegionTapped;
@@ -61,6 +63,8 @@ namespace Vow.Input
         public bool HasPipVector => Router.HasPipVector;
         public Vector2 PipOrigin => new Vector2(Router.PipOriginX, Router.PipOriginY);
         public Vector2 PipDirection => new Vector2(Router.PipDirX, Router.PipDirY);
+
+        public bool IsRuneDragging => Router.IsRuneDragging;
 
         public ControlMode ActiveMode
         {
@@ -193,6 +197,7 @@ namespace Vow.Input
             router.ScreenWidth = _lastScreenWidth;
             router.ScreenHeight = _lastScreenHeight;
             router.MinRadiusPixels = _minRadiusPx;
+            router.RuneSaturationPixels = GestureMath.MillimetersToPixels(_runeSaturationMillimeters, dpi, FallbackDpi);
         }
 
         // 模式 B：微輪盤推著的期間每幀送出方向。狀態機的 120ms 預輸入緩衝會自然吃到「命中前最後一刻」的那一筆，
@@ -229,6 +234,26 @@ namespace Vow.Input
         void ITouchGestureSink.OnUiRegionTapped(int regionId)
         {
             OnUiRegionTapped?.Invoke(regionId);
+        }
+
+        void ITouchGestureSink.OnRuneDragUpdated(float screenDirX, float screenDirY, float distance01)
+        {
+            OnRuneVectorDragUpdated?.Invoke(new Vector2(screenDirX, screenDirY), distance01);
+        }
+
+        void ITouchGestureSink.OnRuneQuickCast()
+        {
+            OnRuneQuickCastTriggered?.Invoke();
+        }
+
+        void ITouchGestureSink.OnRuneReleased(float screenDirX, float screenDirY, float distance01)
+        {
+            OnRuneCastReleased?.Invoke(new Vector2(screenDirX, screenDirY), distance01);
+        }
+
+        void ITouchGestureSink.OnRuneCancelled()
+        {
+            OnRuneCastCancelled?.Invoke();
         }
 
         public void OnWorldTap(float screenX, float screenY)
