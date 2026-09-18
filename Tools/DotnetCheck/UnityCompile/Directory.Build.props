@@ -1,0 +1,21 @@
+<Project>
+  <!-- Unity 腳本的 compile-only 檢查：每個 asmdef 對應一個 csproj，ProjectReference 與 asmdef 的 references 一一對應，
+       所以這裡編得過 = API 名稱／簽章正確 + 模組依賴方向沒有違規。
+       參考組件是 stripped reference assembly（只有簽章），只能編譯、不能執行。
+       UnityRefsDir 可用 -p:UnityRefsDir=... 覆寫；日後裝了 Unity 可直接指向 Editor\Data\Managed\UnityEngine。 -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);UNITY_2022_3_OR_NEWER;UNITY_EDITOR</DefineConstants>
+    <UnityRefsDir Condition="'$(UnityRefsDir)' == ''">$(MSBuildThisFileDirectory)..\..\..\..\vow-toolchain\refs</UnityRefsDir>
+    <AssetsDir>$(MSBuildThisFileDirectory)..\..\..\Assets</AssetsDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(UnityRefsDir)\UnityEngine.dll"><Private>false</Private></Reference>
+    <Reference Include="$(UnityRefsDir)\UnityEngine.*.dll"><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

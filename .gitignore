@@ -1,3 +1,30 @@
 # OS generated
 .DS_Store
 Thumbs.db
+
+# dotnet 檢查工具的建置產物
+Tools/DotnetCheck/**/bin/
+Tools/DotnetCheck/**/obj/
+
+# Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+*.csproj
+!Tools/DotnetCheck/**/*.csproj
+*.sln
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.vs/
+.vscode/
+.idea/

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Vow.Editor</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(AssetsDir)/Scripts/Editor/**/*.cs" />
+    <Reference Include="$(UnityRefsDir)/Unity.AI.Navigation.dll"><Private>false</Private></Reference>
+    <Reference Include="$(UnityRefsDir)/UnityEditor.dll"><Private>false</Private></Reference>
+    <ProjectReference Include="../Vow.Core/Vow.Core.csproj" />
+    <ProjectReference Include="../Vow.Input/Vow.Input.csproj" />
+    <ProjectReference Include="../Vow.Combat/Vow.Combat.csproj" />
+    <ProjectReference Include="../Vow.Animation/Vow.Animation.csproj" />
+    <ProjectReference Include="../Vow.UI/Vow.UI.csproj" />
+    <ProjectReference Include="../Vow.Bootstrap/Vow.Bootstrap.csproj" />
+  </ItemGroup>
+</Project>

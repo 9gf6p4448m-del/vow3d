@@ -1,0 +1,362 @@
+using Unity.AI.Navigation;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.AI;
+using UnityEngine.SceneManagement;
+using Vow.Bootstrap;
+using Vow.Combat;
+using Vow.Combat.Feedback;
+using Vow.Core;
+using Vow.Input;
+using Vow.UI;
+
+namespace Vow.EditorTools
+{
+    // 一鍵生成 Phase 1 灰盒場景：40m x 40m 棋盤格平地、靜態預烘焙 NavMesh、1 英雄、1 木樁、2 面測試石牆、鏡頭與全部服務。
+    // 可重複執行：每次都從空場景重建並覆寫同一路徑，不會累積殘留物件。
+    public static class VOWPhase1SceneBuilder
+    {
+        private const string ScenePath = "Assets/Scenes/VOW_Phase1_Greybox.unity";
+        private const string NavMeshDataPath = "Assets/Scenes/VOW_Phase1_NavMesh.asset";
+        private const string TuningPath = "Assets/Settings/HeroTuning.asset";
+
+        private const float ArenaSize = 40f;
+        private const int IgnoreRaycastLayer = 2;
+
+        [MenuItem("VOW/Phase 1/Build Greybox Scene")]
+        public static void Build()
+        {
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+
+            GreyboxAssetFactory.EnsureFolder("Assets/Scenes");
+            GreyboxAssetFactory.EnsureFolder(GreyboxAssetFactory.SettingsFolder);
+            GreyboxAssetFactory.EnsureRenderPipeline();
+            EnsureNewInputSystemBackend();
+
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            Materials materials = CreateMaterials();
+            HeroTuningAsset tuning = EnsureTuningAsset();
+
+            CreateLight();
+            GameObject ground = CreateGround(materials.Ground);
+
+            // NavMesh 在「只有地板」的時候烘焙：石牆、木樁、英雄都還不存在，所以烘出來的是一整片無洞的靜態網格。
+            // 石牆之後被打碎也不需要重烘——它從頭到尾就不在 NavMesh 裡（紅線 5：零 carving、零執行期烘焙）。
+            BakeStaticNavMesh(ground);
+            CreateArenaBoundary(); // 必須在烘焙之後：邊界牆不得進入 NavMesh
+
+            HeroController hero = CreateHero(tuning, materials.Hero);
+            CreateDummy(new Vector3(0f, 0f, 6f), materials.Dummy, materials.Bar);
+            CreateWall("TestWall_A", new Vector3(-7f, 0f, 3f), 0f, materials.Wall, materials.Bar);
+            CreateWall("TestWall_B", new Vector3(7f, 0f, 3f), 90f, materials.Wall, materials.Bar);
+
+            Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
+            CreateSystems(hero, camera, rig, shakePivot, materials);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene, ScenePath);
+            AddSceneToBuildSettings(ScenePath);
+            AssetDatabase.SaveAssets();
+
+            Debug.Log("[VOW] Phase 1 灰盒場景已生成：" + ScenePath + "。按 Play 即可測試。");
+        }
+
+        // ───────────────────────── 資產 ─────────────────────────
+
+        private struct Materials
+        {
+            public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines;
+        }
+
+        private static Materials CreateMaterials()
+        {
+            Texture2D checker = GreyboxAssetFactory.EnsureCheckerTexture();
+            return new Materials
+            {
+                // 貼圖為 2x2 格；tiling = 邊長 / 2 → 每格恰好 1 公尺
+                Ground = GreyboxAssetFactory.EnsureLitMaterial("VOW_Ground", Color.white, checker, ArenaSize * 0.5f),
+                Hero = GreyboxAssetFactory.EnsureLitMaterial("VOW_Hero", new Color(0.25f, 0.55f, 0.95f)),
+                Dummy = GreyboxAssetFactory.EnsureLitMaterial("VOW_Dummy", new Color(0.72f, 0.52f, 0.32f)),
+                Wall = GreyboxAssetFactory.EnsureLitMaterial("VOW_Wall", new Color(0.45f, 0.43f, 0.4f)),
+                Bar = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_OverheadBar", Color.white, false, true),
+                Flash = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ScreenFlash", new Color(1f, 1f, 1f, 0f), true, true),
+                Decal = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_GroundDecal", new Color(0f, 0f, 0f, 0.8f), true, true),
+                Telegraph = GreyboxAssetFactory.EnsureVertexColorMaterial("VOW_Telegraph"),
+                HitboxLines = GreyboxAssetFactory.EnsureGlLineMaterial("VOW_HitboxLines")
+            };
+        }
+
+        private static HeroTuningAsset EnsureTuningAsset()
+        {
+            HeroTuningAsset tuning = AssetDatabase.LoadAssetAtPath<HeroTuningAsset>(TuningPath);
+            if (tuning != null) return tuning; // 已存在就沿用：測試者調過的手感數值不可被重建場景洗掉
+
+            tuning = ScriptableObject.CreateInstance<HeroTuningAsset>();
+            AssetDatabase.CreateAsset(tuning, TuningPath);
+            return tuning;
+        }
+
+        // ───────────────────────── 場景物件 ─────────────────────────
+
+        private static void CreateLight()
+        {
+            GameObject lightObject = new GameObject("Directional Light");
+            Light light = lightObject.AddComponent<Light>();
+            light.type = LightType.Directional;
+            light.intensity = 1.1f;
+            light.shadows = LightShadows.Soft;
+            lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+        }
+
+        private static GameObject CreateGround(Material material)
+        {
+            // 用 Cube（BoxCollider）而非 Plane（MeshCollider）：ARCHITECTURE §壹 規定碰撞器一律 Primitive
+            GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            ground.name = "Ground_40x40";
+            ground.transform.position = new Vector3(0f, -0.1f, 0f);
+            ground.transform.localScale = new Vector3(ArenaSize, 0.2f, ArenaSize);
+            ground.isStatic = true;
+            ground.GetComponent<Renderer>().sharedMaterial = material;
+            return ground;
+        }
+
+        // 場地四周的隱形邊界（只有 BoxCollider、沒有 Renderer）。微滑步與步行的位移都經 SphereCast 裁切，
+        // 有了實體邊界，英雄就不可能被滑出平台、掉出 NavMesh——不需要依賴 NavMeshAgent 夾回位置的行為。
+        private static void CreateArenaBoundary()
+        {
+            const float height = 3f;
+            const float thickness = 1f;
+
+            // 牆的內面不能貼齊地板邊緣：NavMesh 烘焙會依 agent 半徑（預設 0.5m）從邊緣往內侵蝕，可走範圍只到 ±19.5。
+            // 若牆內面在 ±20，英雄中心最遠可到 ±19.63，會落在「牆內、NavMesh 外」的 0.13m 窄帶。
+            // 內縮 0.2m 後英雄中心最遠 ±(19.8 − 0.35 − 0.02) = ±19.43，永遠在 NavMesh 之內。
+            const float inset = 0.2f;
+            float half = ArenaSize * 0.5f - inset;
+
+            GameObject root = new GameObject("ArenaBoundary");
+            for (int i = 0; i < 4; i++)
+            {
+                bool alongX = i < 2;
+                float sign = i % 2 == 0 ? 1f : -1f;
+
+                GameObject wall = new GameObject("Boundary_" + i);
+                wall.transform.SetParent(root.transform, false);
+                wall.layer = IgnoreRaycastLayer; // 不擋點擊射線；HeroLocomotion 的 SphereCast 用 AllLayers，所以仍擋得住身體
+                wall.transform.position = alongX
+                    ? new Vector3(sign * (half + thickness * 0.5f), height * 0.5f, 0f)
+                    : new Vector3(0f, height * 0.5f, sign * (half + thickness * 0.5f));
+
+                BoxCollider box = wall.AddComponent<BoxCollider>();
+                box.size = alongX
+                    ? new Vector3(thickness, height, ArenaSize + thickness * 2f)
+                    : new Vector3(ArenaSize + thickness * 2f, height, thickness);
+            }
+        }
+
+        private static void BakeStaticNavMesh(GameObject ground)
+        {
+            NavMeshSurface surface = ground.AddComponent<NavMeshSurface>();
+            surface.collectObjects = CollectObjects.All; // 此刻場景裡有 Collider 的只有地板
+            surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
+            surface.BuildNavMesh();
+
+            if (surface.navMeshData == null)
+                throw new System.InvalidOperationException("[VOW] NavMesh 烘焙失敗：navMeshData 為 null");
+
+            AssetDatabase.DeleteAsset(NavMeshDataPath);
+            AssetDatabase.CreateAsset(surface.navMeshData, NavMeshDataPath);
+        }
+
+        private static HeroController CreateHero(HeroTuningAsset tuning, Material placeholderMaterial)
+        {
+            GameObject hero = new GameObject("Hero_Player");
+            hero.transform.position = Vector3.zero;
+
+            CapsuleCollider capsule = hero.AddComponent<CapsuleCollider>();
+            capsule.center = new Vector3(0f, 0.9f, 0f);
+            capsule.height = 1.8f;
+            capsule.radius = tuning.BodyRadius;
+
+            NavMeshAgent agent = hero.AddComponent<NavMeshAgent>();
+            agent.radius = tuning.BodyRadius;
+            agent.height = 1.8f;
+            agent.obstacleAvoidanceType = ObstacleAvoidanceType.NoObstacleAvoidance;
+
+            hero.AddComponent<HeroLocomotion>();
+            hero.AddComponent<MicroCadenceMover>();
+            HeroController controller = hero.AddComponent<HeroController>();
+            SetReference(controller, "_tuningAsset", tuning);
+
+            HeroRigFactory.HeroRig rig = HeroRigFactory.Build(tuning.Combat.WindupSeconds, placeholderMaterial);
+            rig.ModelInstance.transform.SetParent(hero.transform, false);
+
+            // Ignore Raycast：點擊射線穿過自己的英雄，點在英雄身上＝點到他腳下的地板
+            SetLayerRecursively(hero, IgnoreRaycastLayer);
+            return controller;
+        }
+
+        private static void CreateDummy(Vector3 position, Material material, Material barMaterial)
+        {
+            GameObject dummy = GameObject.CreatePrimitive(PrimitiveType.Capsule); // 自帶 CapsuleCollider
+            dummy.name = "Dummy_Target";
+            dummy.transform.position = position + Vector3.up;
+            dummy.GetComponent<Renderer>().sharedMaterial = material;
+
+            DummyTarget target = dummy.AddComponent<DummyTarget>();
+            SetFloat(target, "_maxHealth", 600f);
+            SetEnum(target, "_faction", (int)Faction.RedTeam);
+
+            TargetOverheadDisplay overhead = dummy.AddComponent<TargetOverheadDisplay>();
+            SetReference(overhead, "_barMaterial", barMaterial);
+            SetFloat(overhead, "_height", 1.6f);
+        }
+
+        private static void CreateWall(string name, Vector3 position, float yawDegrees, Material material, Material barMaterial)
+        {
+            GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube); // 自帶 BoxCollider
+            wall.name = name;
+            wall.transform.position = position + Vector3.up * 1.25f;
+            wall.transform.rotation = Quaternion.Euler(0f, yawDegrees, 0f);
+            wall.transform.localScale = new Vector3(4f, 2.5f, 0.6f);
+            wall.GetComponent<Renderer>().sharedMaterial = material;
+
+            TestWallTarget target = wall.AddComponent<TestWallTarget>();
+            SetFloat(target, "_maxHealth", 300f);
+            SetEnum(target, "_faction", (int)Faction.DestructibleWall);
+
+            TargetOverheadDisplay overhead = wall.AddComponent<TargetOverheadDisplay>();
+            SetReference(overhead, "_barMaterial", barMaterial);
+            SetFloat(overhead, "_height", 1.9f); // 自石牆中心 (y=1.25) 起算，落在牆頂上方
+        }
+
+        private static Camera CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot)
+        {
+            GameObject rigObject = new GameObject("CameraRig");
+            rig = rigObject.AddComponent<FollowCameraRig>();
+
+            shakePivot = new GameObject("ShakePivot").transform;
+            shakePivot.SetParent(rigObject.transform, false);
+
+            GameObject cameraObject = new GameObject("Main Camera");
+            cameraObject.tag = "MainCamera";
+            cameraObject.transform.SetParent(shakePivot, false);
+
+            Camera camera = cameraObject.AddComponent<Camera>();
+            camera.fieldOfView = 40f;
+            camera.nearClipPlane = 0.3f;
+            camera.farClipPlane = 200f;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color(0.16f, 0.17f, 0.2f);
+            cameraObject.AddComponent<AudioListener>();
+
+            rigObject.transform.rotation = Quaternion.Euler(52f, 0f, 0f);
+            rigObject.transform.position = new Vector3(0f, 13.4f, -10.5f);
+            return camera;
+        }
+
+        private static void CreateSystems(HeroController hero, Camera camera, FollowCameraRig rig, Transform shakePivot, Materials materials)
+        {
+            GameObject systems = new GameObject("VOW_Systems");
+
+            PlayerInputService input = systems.AddComponent<PlayerInputService>();
+            SetReference(input, "_worldCamera", camera);
+
+            CombatFeedbackService feedback = systems.AddComponent<CombatFeedbackService>();
+            SetReference(feedback, "_shakePivot", shakePivot);
+            SetReference(feedback, "_camera", camera);
+            SetReference(feedback, "_flashMaterial", materials.Flash);
+            SetReference(feedback, "_decalMaterial", materials.Decal);
+
+            SkillTelegraphService telegraph = systems.AddComponent<SkillTelegraphService>();
+            SetReference(telegraph, "_lineMaterial", materials.Telegraph);
+
+            HitboxVisualizer hitboxes = systems.AddComponent<HitboxVisualizer>();
+            SetReference(hitboxes, "_lineMaterial", materials.HitboxLines);
+            DebugHud hud = systems.AddComponent<DebugHud>();
+            CadenceAimPreview aimPreview = systems.AddComponent<CadenceAimPreview>();
+
+            Phase1Bootstrap bootstrap = systems.AddComponent<Phase1Bootstrap>();
+            SetReference(bootstrap, "_hero", hero);
+            SetReference(bootstrap, "_input", input);
+            SetReference(bootstrap, "_feedback", feedback);
+            SetReference(bootstrap, "_telegraph", telegraph);
+            SetReference(bootstrap, "_cameraRig", rig);
+            SetReference(bootstrap, "_camera", camera);
+            SetReference(bootstrap, "_hud", hud);
+            SetReference(bootstrap, "_hitboxes", hitboxes);
+            SetReference(bootstrap, "_aimPreview", aimPreview);
+        }
+
+        // ───────────────────────── 專案設定 ─────────────────────────
+
+        // Active Input Handling：0 = 舊版、1 = Input System Package (New)、2 = Both。
+        // 舊版 (0) 之下 EnhancedTouch 收不到任何事件；改設定後必須重啟 Editor 才生效。
+        private static void EnsureNewInputSystemBackend()
+        {
+            Object[] assets = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/ProjectSettings.asset");
+            if (assets == null || assets.Length == 0) return;
+
+            SerializedObject settings = new SerializedObject(assets[0]);
+            SerializedProperty handler = settings.FindProperty("activeInputHandler");
+            if (handler == null || handler.intValue != 0) return;
+
+            handler.intValue = 1;
+            settings.ApplyModifiedProperties();
+            Debug.LogWarning("[VOW] 已將 Active Input Handling 切換為 Input System Package (New)。請重新啟動 Unity Editor 後再按 Play。");
+        }
+
+        private static void AddSceneToBuildSettings(string scenePath)
+        {
+            EditorBuildSettingsScene[] scenes = EditorBuildSettings.scenes;
+            for (int i = 0; i < scenes.Length; i++)
+                if (scenes[i].path == scenePath) return;
+
+            EditorBuildSettingsScene[] updated = new EditorBuildSettingsScene[scenes.Length + 1];
+            scenes.CopyTo(updated, 0);
+            updated[scenes.Length] = new EditorBuildSettingsScene(scenePath, true);
+            EditorBuildSettings.scenes = updated;
+        }
+
+        // ───────────────────────── 序列化欄位接線 ─────────────────────────
+        // 欄位名打錯時 FindProperty 會回 null；這裡一律丟例外，絕不允許「場景看起來建好了、其實引用是空的」。
+
+        private static SerializedProperty RequireProperty(SerializedObject serialized, string propertyName)
+        {
+            SerializedProperty property = serialized.FindProperty(propertyName);
+            if (property == null)
+                throw new System.InvalidOperationException(
+                    "[VOW] " + serialized.targetObject.GetType().Name + " 沒有序列化欄位 '" + propertyName + "'");
+            return property;
+        }
+
+        private static void SetReference(Object target, string propertyName, Object value)
+        {
+            SerializedObject serialized = new SerializedObject(target);
+            RequireProperty(serialized, propertyName).objectReferenceValue = value;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void SetFloat(Object target, string propertyName, float value)
+        {
+            SerializedObject serialized = new SerializedObject(target);
+            RequireProperty(serialized, propertyName).floatValue = value;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        // 寫 intValue（列舉的數值）而非 enumValueIndex（宣告順序）：日後有人替列舉指定明碼值時，兩者會不同而靜默寫錯。
+        private static void SetEnum(Object target, string propertyName, int enumValue)
+        {
+            SerializedObject serialized = new SerializedObject(target);
+            RequireProperty(serialized, propertyName).intValue = enumValue;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void SetLayerRecursively(GameObject root, int layer)
+        {
+            root.layer = layer;
+            foreach (Transform child in root.transform) SetLayerRecursively(child.gameObject, layer);
+        }
+    }
+}

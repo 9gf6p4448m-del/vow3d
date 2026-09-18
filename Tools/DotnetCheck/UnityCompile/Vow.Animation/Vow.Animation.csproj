@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Vow.Animation</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(AssetsDir)/Scripts/Animation/**/*.cs" />
+    <ProjectReference Include="../Vow.Core/Vow.Core.csproj" />
+  </ItemGroup>
+</Project>

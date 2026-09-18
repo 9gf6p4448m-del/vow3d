@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Vow.Bootstrap</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(AssetsDir)/Scripts/Bootstrap/**/*.cs" />
+    <ProjectReference Include="../Vow.Core/Vow.Core.csproj" />
+    <ProjectReference Include="../Vow.Input/Vow.Input.csproj" />
+    <ProjectReference Include="../Vow.Combat/Vow.Combat.csproj" />
+    <ProjectReference Include="../Vow.UI/Vow.UI.csproj" />
+  </ItemGroup>
+</Project>

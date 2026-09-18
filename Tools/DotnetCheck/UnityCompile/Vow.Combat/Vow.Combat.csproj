@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Vow.Combat</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(AssetsDir)/Scripts/Combat/**/*.cs" />
+    <ProjectReference Include="../Vow.Core/Vow.Core.csproj" />
+  </ItemGroup>
+</Project>

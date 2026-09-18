@@ -1,0 +1,16 @@
+{
+    "name": "Vow.Animation",
+    "rootNamespace": "Vow.Animation",
+    "references": [
+        "Vow.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

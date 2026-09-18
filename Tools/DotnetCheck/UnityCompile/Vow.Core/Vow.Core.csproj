@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Vow.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(AssetsDir)/Scripts/Core/**/*.cs" />
+  </ItemGroup>
+</Project>

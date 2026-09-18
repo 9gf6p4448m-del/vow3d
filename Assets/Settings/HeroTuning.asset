@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3eb3e422ea6da6a45aa3a550ad238c8e, type: 3}
+  m_Name: HeroTuning
+  m_EditorClassIdentifier: 
+  Combat:
+    WindupSeconds: 0.25
+    CadenceWindowSeconds: 0.22
+    InputBufferSeconds: 0.12
+    RecoverySeconds: 0.15
+    AttackPeriodSeconds: 0.8
+    WindupWatchdogSeconds: 0.6
+    MinWindupFractionForHit: 0.5
+    MaxCharges: 3
+    ChargeRecoverySeconds: 2.5
+    ChainWindowSeconds: 1
+    DashDistances:
+    - 1.4
+    - 0.9
+    - 0.5
+    DashDurationSeconds: 0.12
+  MoveSpeed: 5.5
+  TurnSpeedDegreesPerSecond: 1080
+  BodyRadius: 0.35
+  AttackRange: 5
+  AttackDamage: 60
+  HitstopMilliseconds: 40
+  BasicAttackTrauma: 0.2
+  WallBreakTrauma: 0.8

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Vow.Input</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(AssetsDir)/Scripts/Input/**/*.cs" />
+    <Reference Include="$(UnityRefsDir)/Unity.InputSystem.dll"><Private>false</Private></Reference>
+    <ProjectReference Include="../Vow.Core/Vow.Core.csproj" />
+  </ItemGroup>
+</Project>

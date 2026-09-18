@@ -1,0 +1,16 @@
+{
+    "name": "Vow.Combat",
+    "rootNamespace": "Vow.Combat",
+    "references": [
+        "Vow.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

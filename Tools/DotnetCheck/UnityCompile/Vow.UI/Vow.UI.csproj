@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Vow.UI</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(AssetsDir)/Scripts/UI/**/*.cs" />
+    <ProjectReference Include="../Vow.Core/Vow.Core.csproj" />
+    <ProjectReference Include="../Vow.Input/Vow.Input.csproj" />
+  </ItemGroup>
+</Project>

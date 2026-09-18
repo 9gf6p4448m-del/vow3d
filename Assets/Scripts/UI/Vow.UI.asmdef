@@ -1,0 +1,17 @@
+{
+    "name": "Vow.UI",
+    "rootNamespace": "Vow.UI",
+    "references": [
+        "Vow.Core",
+        "Vow.Input"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 純邏輯層測試：刻意「不引用任何 UnityEngine 組件」。這個專案編得過，本身就是 Core/Logic 純度的證明。
+       測試原始碼與 Unity Test Runner (EditMode) 共用同一份 Assets/Tests/EditMode/*.cs。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\..\Assets\Scripts\Core\Logic\**\*.cs" LinkBase="Logic" />
+    <Compile Include="..\..\..\Assets\Scripts\Core\Contracts\IPlayerStateMachine.cs" LinkBase="Contracts" />
+    <Compile Include="../../../Assets/Scripts/Core/Contracts/ControlMode.cs" LinkBase="Contracts" />
+    <Compile Include="../../../Assets/Scripts/Input/InputRoutingManager.cs" LinkBase="Input" />
+    <Compile Include="../../../Assets/Scripts/Input/TouchGestureRouter.cs" LinkBase="Input" />
+    <Compile Include="..\..\..\Assets\Tests\EditMode\**\*.cs" LinkBase="Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
+  </ItemGroup>
+
+</Project>
