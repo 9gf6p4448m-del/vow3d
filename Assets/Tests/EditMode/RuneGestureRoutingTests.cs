@@ -12,12 +12,16 @@ namespace Vow.Tests
         private const float H = 1290f;
         private const float MinRadius = 63.4f;    // 3.5mm @ 460dpi
         private const float Saturation = 253.5f;  // 14mm @ 460dpi
+        private const float TapSlop = 135.8f;     // 7.5mm @ 460dpi
+        private const float PxPerMm = 460f / 25.4f;
 
-        // 符印按鈕在右下角；取消區在它正上方
-        private const float RuneX = 2500f;
-        private const float RuneY = 250f;
-        private static readonly ScreenRegion RuneZone = new ScreenRegion(2350f, 100f, 2650f, 400f);
-        private static readonly ScreenRegion CancelZone = new ScreenRegion(2350f, 450f, 2650f, 600f);
+        // 幾何一律取自正式的版面計算，不手寫：手寫的取消區曾經緊貼按鈕，把「往上拉到一半就被判成取消」寫成了期望行為。
+        private static readonly RuneButtonLayout Layout = RuneButtonLayout.Compute(W, H, PxPerMm, Saturation);
+        private static readonly ScreenRegion RuneZone = Layout.Button;
+        private static readonly ScreenRegion CancelZone = Layout.CancelZone;
+        private static readonly float RuneX = (RuneZone.XMin + RuneZone.XMax) * 0.5f;
+        private static readonly float RuneY = (RuneZone.YMin + RuneZone.YMax) * 0.5f;
+        private static readonly float CancelY = (CancelZone.YMin + CancelZone.YMax) * 0.5f;
 
         private sealed class RuneSink : ITouchGestureSink
         {
@@ -59,7 +63,8 @@ namespace Vow.Tests
                 ScreenWidth = W,
                 ScreenHeight = H,
                 MinRadiusPixels = MinRadius,
-                RuneSaturationPixels = Saturation
+                RuneSaturationPixels = Saturation,
+                RuneTapSlopPixels = TapSlop
             };
         }
 
@@ -162,7 +167,8 @@ namespace Vow.Tests
 
             Frame(router, 0.0, 1, TouchPhaseKind.Began, RuneX, RuneY, 0.0);
             Frame(router, 0.1, 1, TouchPhaseKind.Moved, RuneX, RuneY + 280f, 0.0);
-            Frame(router, 0.2, 1, TouchPhaseKind.Ended, RuneX, RuneY + 280f, 0.0); // y=530，落在取消區內
+            Frame(router, 0.3, 1, TouchPhaseKind.Moved, RuneX, CancelY, 0.0);
+            Frame(router, 0.4, 1, TouchPhaseKind.Ended, RuneX, CancelY, 0.0);
 
             Assert.AreEqual(1, sink.Cancels);
             Assert.AreEqual(0, sink.Releases);
@@ -173,11 +179,106 @@ namespace Vow.Tests
         {
             TouchGestureRouter router = NewRouter(ControlMode.ModeA_FullScreenFlick, out RuneSink sink);
 
-            Frame(router, 0.00, 1, TouchPhaseKind.Began, RuneX, 530f, 0.0);
-            Frame(router, 0.05, 1, TouchPhaseKind.Ended, RuneX, 530f, 0.0);
+            Frame(router, 0.00, 1, TouchPhaseKind.Began, RuneX, CancelY, 0.0);
+            Frame(router, 0.05, 1, TouchPhaseKind.Ended, RuneX, CancelY, 0.0);
 
             Assert.AreEqual(1, sink.WorldTaps, "取消區只在符印拖曳中有意義，平時不得吃掉戰場點擊");
             Assert.AreEqual(0, sink.Cancels);
+        }
+
+        // 審查 r1-C1：拖曳原點是手指按下的位置。不論按在按鈕的哪個角落，往任何方向拉滿都必須還放得出牆——
+        // 尤其是螢幕上方，那是英雄前方、最需要封路的方向。
+        [Test]
+        public void FullStretchInAnyDirection_FromAnywhereOnTheButton_StillReleases()
+        {
+            float[] originsX = { RuneZone.XMin + 1f, RuneX, RuneZone.XMax - 1f };
+            float[] originsY = { RuneZone.YMin + 1f, RuneY, RuneZone.YMax - 1f };
+
+            foreach (float ox in originsX)
+            foreach (float oy in originsY)
+            for (int step = 0; step < 16; step++)
+            {
+                double angle = step * System.Math.PI / 8.0;
+                float tx = ox + (float)System.Math.Cos(angle) * Saturation;
+                float ty = oy + (float)System.Math.Sin(angle) * Saturation;
+                if (tx < 0f || tx > W || ty < 0f) continue; // 手指拖不出螢幕
+
+                TouchGestureRouter router = NewRouter(ControlMode.ModeA_FullScreenFlick, out RuneSink sink);
+                Frame(router, 0.0, 1, TouchPhaseKind.Began, ox, oy, 0.0);
+                Frame(router, 0.3, 1, TouchPhaseKind.Moved, tx, ty, 0.0);
+                Frame(router, 0.5, 1, TouchPhaseKind.Ended, tx, ty, 0.0);
+
+                string where = "原點 (" + ox + "," + oy + ")、角度 " + (step * 22.5) + "°";
+                Assert.AreEqual(1, sink.Releases, "拉滿後鬆手必須成牆：" + where);
+                Assert.AreEqual(0, sink.Cancels, "拉滿不得落進取消區：" + where);
+                Assert.AreEqual(1f, sink.ReleaseDistance01, 1e-3, where);
+            }
+        }
+
+        // 審查 r1-H3：短促輕點時拇指在螢幕上滾動，位移越過 3.5mm 再回來（或沒回來）都很常見。
+        [Test]
+        public void QuickTapWithThumbRoll_IsStillAQuickCast()
+        {
+            // (滾出多遠, 放開時離原點多遠)
+            float[,] rolls =
+            {
+                { 80f, 20f },   // 滾出 4.4mm、放開時回到 1.1mm：舊版判成「取消」＝按了沒反應
+                { 80f, 80f },   // 滾出 4.4mm 就放開：舊版在錯的方位立一面 2m 的牆
+                { 130f, 0f }    // 接近 7.5mm 的上限
+            };
+
+            for (int i = 0; i < rolls.GetLength(0); i++)
+            {
+                TouchGestureRouter router = NewRouter(ControlMode.ModeA_FullScreenFlick, out RuneSink sink);
+
+                Frame(router, 0.00, 1, TouchPhaseKind.Began, RuneX, RuneY, 0.0);
+                Frame(router, 0.05, 1, TouchPhaseKind.Moved, RuneX - rolls[i, 0], RuneY, 0.0);
+                Frame(router, 0.12, 1, TouchPhaseKind.Ended, RuneX - rolls[i, 1], RuneY, 0.0);
+
+                Assert.AreEqual(1, sink.QuickCasts, "短促輕點不得因為拇指滾動而被吃掉（案例 " + i + "）");
+                Assert.AreEqual(0, sink.Cancels, "案例 " + i);
+                Assert.AreEqual(0, sink.Releases, "案例 " + i);
+                Assert.AreEqual(0, sink.WorldTaps, "案例 " + i);
+            }
+        }
+
+        [Test]
+        public void ThumbRollForgiveness_DoesNotSwallowDeliberateGestures()
+        {
+            // 慢：拖出 4.4mm、停 0.3 秒看虛影、滑回原點放手＝取消（不是輕點）
+            TouchGestureRouter router = NewRouter(ControlMode.ModeA_FullScreenFlick, out RuneSink slow);
+            Frame(router, 0.00, 1, TouchPhaseKind.Began, RuneX, RuneY, 0.0);
+            Frame(router, 0.10, 1, TouchPhaseKind.Moved, RuneX - 80f, RuneY, 0.0);
+            Frame(router, 0.40, 1, TouchPhaseKind.Ended, RuneX - 20f, RuneY, 0.0);
+            Assert.AreEqual(1, slow.Cancels);
+            Assert.AreEqual(0, slow.QuickCasts);
+
+            // 快但遠：0.1 秒內甩出 8.8mm＝拖曳施法（不是輕點）
+            router = NewRouter(ControlMode.ModeA_FullScreenFlick, out RuneSink far);
+            Frame(router, 0.00, 1, TouchPhaseKind.Began, RuneX, RuneY, 0.0);
+            Frame(router, 0.10, 1, TouchPhaseKind.Ended, RuneX - 160f, RuneY, 0.0);
+            Assert.AreEqual(1, far.Releases);
+            Assert.AreEqual(0, far.QuickCasts);
+        }
+
+        [TestCase(2796f, 1290f, 460f)]  // 6.7 吋旗艦
+        [TestCase(2400f, 1080f, 395f)]
+        [TestCase(1280f, 600f, 160f)]   // WebGL 回報 dpi=0 時的 fallback
+        public void Layout_KeepsTheButtonOffTheEdge_AndTheCancelZoneOutOfReach_OnEveryScreen(float w, float h, float dpi)
+        {
+            float pxPerMm = dpi / 25.4f;
+            float saturation = 14f * pxPerMm;
+            RuneButtonLayout layout = RuneButtonLayout.Compute(w, h, pxPerMm, saturation);
+
+            Assert.IsFalse(Vow.Core.Logic.GestureMath.IsInEdgeDeadzone(layout.Button.XMax, layout.Button.YMin, w, h, Vow.Core.Logic.GestureMath.EdgeDeadzonePixels),
+                "整顆按鈕必須在邊緣防誤觸死區之外");
+            Assert.GreaterOrEqual(w - layout.Button.XMax, 4f * pxPerMm - 0.01f, "離右緣至少 4mm（避開系統手勢列）");
+            Assert.AreEqual(16f * pxPerMm, layout.Button.XMax - layout.Button.XMin, 0.01f);
+            Assert.AreEqual(16f * pxPerMm, layout.Button.YMax - layout.Button.YMin, 0.01f);
+
+            Assert.Greater(layout.CancelZone.YMin, layout.Button.YMax + saturation, "從按鈕上緣往上拉滿，仍不得碰到取消區");
+            Assert.LessOrEqual(layout.CancelZone.YMax, h, "取消區必須整個在螢幕內");
+            Assert.Greater(layout.CancelZone.YMax - layout.CancelZone.YMin, 8f * pxPerMm, "取消區要大到拇指放得進去");
         }
 
         [Test]

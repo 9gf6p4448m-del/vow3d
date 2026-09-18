@@ -6,7 +6,7 @@ namespace Vow.Core.Logic
     {
         None,
         DragUpdated,  // 拖曳中：DirX／DirY／Distance01 已更新
-        QuickCast,    // 從未拖出門檻就離手
+        QuickCast,    // 輕點：從未拖出門檻就離手，或只是拇指在短促點擊中滾了一下
         Released,     // 拖曳後在取消區之外離手
         Cancelled     // 拖曳後滑回原點、滑進取消區離手，或觸控被系統中斷
     }
@@ -20,20 +20,24 @@ namespace Vow.Core.Logic
         public int TouchId;
         public float OriginX;
         public float OriginY;
-        public bool Dragging;      // 曾經拖出門檻（之後就不可能再是 QuickCast）
+        public double StartTime;
+        public bool Dragging;      // 曾經拖出門檻
         public bool InsideOrigin;  // 拖曳後又滑回原點門檻內＝取消區
+        public float MaxReach;     // 整段手勢離原點最遠的距離（像素）
         public float DirX;
         public float DirY;
         public float Distance01;
 
-        public void Begin(int touchId, float x, float y)
+        public void Begin(int touchId, float x, float y, double time)
         {
             Held = true;
             TouchId = touchId;
             OriginX = x;
             OriginY = y;
+            StartTime = time;
             Dragging = false;
             InsideOrigin = true;
+            MaxReach = 0f;
             DirX = 0f;
             DirY = 0f;
             Distance01 = 0f;
@@ -46,6 +50,7 @@ namespace Vow.Core.Logic
             float dx = x - OriginX;
             float dy = y - OriginY;
             double dist = Math.Sqrt((double)dx * dx + (double)dy * dy);
+            if (dist > MaxReach) MaxReach = (float)dist;
 
             if (dist < dragThresholdPx)
             {
@@ -65,7 +70,8 @@ namespace Vow.Core.Logic
             return RuneGestureOutcome.DragUpdated;
         }
 
-        public RuneGestureOutcome End(float x, float y, float dragThresholdPx, float saturationPx, bool inCancelZone)
+        public RuneGestureOutcome End(float x, float y, double time, float dragThresholdPx, float saturationPx,
+            float tapSlopPx, double tapMaxSeconds, bool inCancelZone)
         {
             if (!Held) return RuneGestureOutcome.None;
 
@@ -74,6 +80,11 @@ namespace Vow.Core.Logic
             Held = false;
 
             if (!Dragging) return RuneGestureOutcome.QuickCast;
+
+            // 短促點擊時拇指會在螢幕上滾動，位移常常越過 3.5mm 的拖曳門檻。若把它當成拖曳，結果不是「滑回原點＝取消」
+            // （按了沒反應＝吃指令），就是在錯的方位立一面最短距離的牆——兩者都毀掉緊急防禦。夠快、滾得夠小，就是輕點。
+            if (time - StartTime <= tapMaxSeconds && MaxReach <= tapSlopPx) return RuneGestureOutcome.QuickCast;
+
             if (InsideOrigin || inCancelZone) return RuneGestureOutcome.Cancelled;
             return RuneGestureOutcome.Released;
         }

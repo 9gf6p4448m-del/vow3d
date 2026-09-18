@@ -116,8 +116,8 @@ MUTATIONS = [
      "return Dragging ? RuneGestureOutcome.Cancelled : RuneGestureOutcome.QuickCast;",
      "SystemCancelDuringDrag_Cancels_AndBeforeDragStaysSilent"),
     ("U6", "符印可被兩根手指同時持有", INPUT + "TouchGestureRouter.cs",
-     "if (_rune.Held) _slotRoute[slot] = TouchRoute.Rejected; // 符印一次只認一根手指\n                    else _rune.Begin(touchId, x, y);",
-     "_rune.Begin(touchId, x, y);",
+     "if (_rune.Held) _slotRoute[slot] = TouchRoute.Rejected; // 符印一次只認一根手指\n                    else _rune.Begin(touchId, x, y, now);",
+     "_rune.Begin(touchId, x, y, now);",
      "WhileRuneIsHeld_SecondFingerOnRuneIsIgnored_AndWorldTapsStillWork"),
     ("W1", "石牆壽命不倒數（永久水泥牆）", LOGIC + "RuneWallLogic.cs",
      "            RemainingLifespan -= deltaSeconds;\n", "",
@@ -147,6 +147,17 @@ MUTATIONS = [
      "float t = distance01 < 0f ? 0f : (distance01 > 1f ? 1f : distance01);",
      "float t = distance01;",
      "DragCast_MapsStretchToTwoThroughEightMetres"),
+    ("U7", "短促輕點的拇指滾動被當成拖曳（按了沒反應）", LOGIC + "RuneGestureTracker.cs",
+     "if (time - StartTime <= tapMaxSeconds && MaxReach <= tapSlopPx) return RuneGestureOutcome.QuickCast;", "",
+     "QuickTapWithThumbRoll_IsStillAQuickCast"),
+    ("U8", "只看時間不看位移：快速甩出的拖曳被吞成輕點", LOGIC + "RuneGestureTracker.cs",
+     "if (time - StartTime <= tapMaxSeconds && MaxReach <= tapSlopPx) return RuneGestureOutcome.QuickCast;",
+     "if (time - StartTime <= tapMaxSeconds) return RuneGestureOutcome.QuickCast;",
+     "ThumbRollForgiveness_DoesNotSwallowDeliberateGestures"),
+    ("U9", "取消區緊貼按鈕（往上拉到一半就被判成取消）", INPUT + "RuneButtonLayout.cs",
+     "float cancelBottom = layout.Button.YMax + saturationPixels + CancelClearanceMillimeters * pixelsPerMillimeter;",
+     "float cancelBottom = layout.Button.YMax + CancelClearanceMillimeters * pixelsPerMillimeter;",
+     "FullStretchInAnyDirection_FromAnywhereOnTheButton_StillReleases"),
 ]
 
 

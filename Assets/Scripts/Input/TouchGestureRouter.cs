@@ -60,6 +60,8 @@ namespace Vow.Input
         public float MinRadiusPixels;
         public float MaxFlickSeconds = 0.25f;
         public float RuneSaturationPixels;
+        public float RuneTapSlopPixels;            // 短促輕點容許的拇指滾動量
+        public double RuneTapMaxSeconds = 0.2;
 
         public TouchGestureRouter(InputRoutingManager routing, ITouchGestureSink sink, ControlMode initialMode)
         {
@@ -181,7 +183,7 @@ namespace Vow.Input
 
                 case TouchRoute.Rune:
                     if (_rune.Held) _slotRoute[slot] = TouchRoute.Rejected; // 符印一次只認一根手指
-                    else _rune.Begin(touchId, x, y);
+                    else _rune.Begin(touchId, x, y, now);
                     break;
 
                 case TouchRoute.World:
@@ -223,7 +225,8 @@ namespace Vow.Input
             switch (_slotRoute[slot])
             {
                 case TouchRoute.Rune:
-                    EmitRune(_rune.End(x, y, MinRadiusPixels, RuneSaturationPixels, _routing.IsInRuneCancelZone(x, y)));
+                    EmitRune(_rune.End(x, y, now, MinRadiusPixels, RuneSaturationPixels, RuneTapSlopPixels, RuneTapMaxSeconds,
+                        _routing.IsInRuneCancelZone(x, y)));
                     break;
 
                 case TouchRoute.Pip:

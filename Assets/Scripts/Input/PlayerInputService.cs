@@ -65,6 +65,8 @@ namespace Vow.Input
         public Vector2 PipDirection => new Vector2(Router.PipDirX, Router.PipDirY);
 
         public bool IsRuneDragging => Router.IsRuneDragging;
+        public float RuneSaturationPixels => Router.RuneSaturationPixels;
+        public float PixelsPerMillimeter => GestureMath.MillimetersToPixels(1f, Screen.dpi, FallbackDpi);
 
         public ControlMode ActiveMode
         {
@@ -198,6 +200,7 @@ namespace Vow.Input
             router.ScreenHeight = _lastScreenHeight;
             router.MinRadiusPixels = _minRadiusPx;
             router.RuneSaturationPixels = GestureMath.MillimetersToPixels(_runeSaturationMillimeters, dpi, FallbackDpi);
+            router.RuneTapSlopPixels = _maxRadiusPx; // 7.5mm：與微彈的飽和半徑同一把尺
         }
 
         // 模式 B：微輪盤推著的期間每幀送出方向。狀態機的 120ms 預輸入緩衝會自然吃到「命中前最後一刻」的那一筆，

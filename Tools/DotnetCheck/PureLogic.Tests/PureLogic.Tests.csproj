@@ -16,6 +16,7 @@
     <Compile Include="../../../Assets/Scripts/Core/Contracts/ControlMode.cs" LinkBase="Contracts" />
     <Compile Include="../../../Assets/Scripts/Input/InputRoutingManager.cs" LinkBase="Input" />
     <Compile Include="../../../Assets/Scripts/Input/TouchGestureRouter.cs" LinkBase="Input" />
+    <Compile Include="../../../Assets/Scripts/Input/RuneButtonLayout.cs" LinkBase="Input" />
     <Compile Include="..\..\..\Assets\Tests\EditMode\**\*.cs" LinkBase="Tests" />
   </ItemGroup>
 
