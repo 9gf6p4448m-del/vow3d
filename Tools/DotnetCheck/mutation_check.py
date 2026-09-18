@@ -73,7 +73,36 @@ MUTATIONS = [
     ("R4", "不回收消失的手指（槽位洩漏）", INPUT + "TouchGestureRouter.cs",
      "if (_slotUsed[i] && !_slotSeen[i]) CancelTouch(i);", "if (false) CancelTouch(i);",
      "FingerVanishingWithoutEnded_FreesItsSlot_SoSlotsNeverLeak"),
+    ("N1", "延遲注入形同虛設（事件立即到期）", LOGIC + "DelayedEventQueue.cs",
+     "double due = now + (delaySeconds > 0.0 ? delaySeconds : 0.0);", "double due = now;",
+     "Event_IsNeverDeliveredBeforeItsDelayElapses"),
+    ("N2", "延遲佇列後進先出（後發的指令先到）", LOGIC + "DelayedEventQueue.cs",
+     "            item = _items[_head];\n            _items[_head] = default; // 釋放可能持有的物件引用\n"
+     "            _head = (_head + 1) % _items.Length;\n            _count--;\n            return true;",
+     "            int last = (_head + _count - 1) % _items.Length;\n            item = _items[last];\n"
+     "            _items[last] = default;\n            _count--;\n            return true;",
+     "Order_IsPreserved_EvenWhenALaterEventDrawsAShorterDelay"),
+    ("N3", "延遲佇列滿了就丟事件（吃指令）", LOGIC + "DelayedEventQueue.cs",
+     "                evicted = _items[_head];\n", "",
+     "WhenFull_TheOldestEventIsHandedBack_NothingIsEverDropped"),
+    ("H1", "重震也被疲勞節流", LOGIC + "HapticFatiguePolicy.cs",
+     "if (cue == HapticCue.CadenceDash || cue == HapticCue.WallBreak) return HapticStrength.Heavy;",
+     "if (cue == HapticCue.WallBreak) return HapticStrength.Heavy;",
+     "DashAndWallBreak_AreAlwaysHeavy_NeverThrottled"),
+    ("H2", "普攻輕震永不靜音", LOGIC + "HapticFatiguePolicy.cs",
+     "return _consecutiveBasicHits <= LightPulsesBeforeMute ? HapticStrength.Light : HapticStrength.None;",
+     "return HapticStrength.Light;",
+     "BasicAttacks_BuzzLightlyThreeTimes_ThenGoQuiet_UntilThePlayerRests"),
+    ("H3", "停手後疲勞不重置", LOGIC + "HapticFatiguePolicy.cs",
+     "if (_hasHitBefore && now - _lastBasicHitTime >= ResetAfterIdleSeconds) _consecutiveBasicHits = 0;", "",
+     "BasicAttacks_BuzzLightlyThreeTimes_ThenGoQuiet_UntilThePlayerRests"),
 ]
+
+
+def write_text(path, text, crlf):
+    if crlf:
+        text = text.replace("\n", "\r\n")
+    io.open(path, "w", encoding="utf-8", newline="").write(text)
 
 
 def run_tests():
@@ -96,15 +125,17 @@ def main():
     caught = 0
     for code, title, rel, original, broken, must_fail in MUTATIONS:
         path = os.path.join(ROOT, rel)
-        source = io.open(path, encoding="utf-8").read()
+        raw = io.open(path, encoding="utf-8", newline="").read()
+        crlf = "\r\n" in raw  # 記下原檔的行尾格式，還原時照原樣寫回，跑完不弄髒工作區
+        source = raw.replace("\r\n", "\n")
         if source.count(original) != 1:
             print("%s  SKIP（找不到唯一的原文，突變定義已過期）：%s" % (code, title))
             continue
         try:
-            io.open(path, "w", encoding="utf-8", newline="\n").write(source.replace(original, broken))
+            write_text(path, source.replace(original, broken), crlf)
             total, failed = run_tests()
         finally:
-            io.open(path, "w", encoding="utf-8", newline="\n").write(source)
+            write_text(path, source, crlf)
 
         ok = must_fail in failed
         caught += ok

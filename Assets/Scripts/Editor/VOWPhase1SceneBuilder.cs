@@ -195,6 +195,17 @@ namespace Vow.EditorTools
             HeroRigFactory.HeroRig rig = HeroRigFactory.Build(tuning.Combat.WindupSeconds, placeholderMaterial);
             rig.ModelInstance.transform.SetParent(hero.transform, false);
 
+            if (rig.IsHumanoid)
+            {
+                // 匯入的 FBX 材質是內建管線的 Standard shader，在 URP 下會渲染成粉紅色；灰盒階段統一換成英雄的 URP 材質
+                foreach (Renderer modelRenderer in rig.ModelInstance.GetComponentsInChildren<Renderer>(true))
+                {
+                    Material[] overridden = new Material[modelRenderer.sharedMaterials.Length];
+                    for (int i = 0; i < overridden.Length; i++) overridden[i] = placeholderMaterial;
+                    modelRenderer.sharedMaterials = overridden;
+                }
+            }
+
             // Ignore Raycast：點擊射線穿過自己的英雄，點在英雄身上＝點到他腳下的地板
             SetLayerRecursively(hero, IgnoreRaycastLayer);
             return controller;
@@ -266,6 +277,10 @@ namespace Vow.EditorTools
             PlayerInputService input = systems.AddComponent<PlayerInputService>();
             SetReference(input, "_worldCamera", camera);
 
+            NetworkLatencySimulator latency = systems.AddComponent<NetworkLatencySimulator>();
+            SetReference(latency, "_inner", input);
+            HapticFeedbackService haptics = systems.AddComponent<HapticFeedbackService>();
+
             CombatFeedbackService feedback = systems.AddComponent<CombatFeedbackService>();
             SetReference(feedback, "_shakePivot", shakePivot);
             SetReference(feedback, "_camera", camera);
@@ -283,6 +298,8 @@ namespace Vow.EditorTools
             Phase1Bootstrap bootstrap = systems.AddComponent<Phase1Bootstrap>();
             SetReference(bootstrap, "_hero", hero);
             SetReference(bootstrap, "_input", input);
+            SetReference(bootstrap, "_latency", latency);
+            SetReference(bootstrap, "_haptics", haptics);
             SetReference(bootstrap, "_feedback", feedback);
             SetReference(bootstrap, "_telegraph", telegraph);
             SetReference(bootstrap, "_cameraRig", rig);

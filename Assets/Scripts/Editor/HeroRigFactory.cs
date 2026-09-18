@@ -9,7 +9,8 @@ namespace Vow.EditorTools
 {
     // 英雄載體的資產管線（ARCHITECTURE §陸-4）。
     //
-    // 首選：Assets/Art/Characters 內的 Mixamo Humanoid FBX。角色 FBX（含蒙皮網格）自建 Humanoid Avatar，
+    // 目前隨專案附的是 KayKit Character Pack: Adventurers 的 Knight.fbx（CC0，授權檔在同資料夾），可自由換成別的 Humanoid FBX。
+    // 首選：Assets/Art/Characters 內的 Humanoid FBX（Mixamo 或其他）。角色 FBX（含蒙皮網格）自建 Humanoid Avatar，
     //       其餘動作 FBX 依檔名關鍵字對應到 Idle/Run/Attack/Dash/Hit 五個切片並共用該 Avatar；
     //       Attack 切片自動掛上 OnAttackHit() 動畫事件，Animator 的 Attack 狀態播放速度自動校正成「事件恰在前搖 0.25s 觸發」。
     // 後備：找不到 FBX 時，產生一具「依 Humanoid 骨骼命名與階層搭建」的方塊佔位骨架與 5 支程式生成的切片，
@@ -22,6 +23,13 @@ namespace Vow.EditorTools
 
         // Attack 切片的傷害判定幀位置（佔整支動畫的比例）。Mixamo 揮砍類動作的命中點多落在 35%~45%。
         private const float AttackHitNormalizedTime = 0.4f;
+
+        // 指名優先的切片名稱（KayKit Adventurers 的 take 名；其他資產對不上時自動退回關鍵字比對）
+        private static readonly string[] IdlePreferred = { "Idle", "Unarmed_Idle" };
+        private static readonly string[] RunPreferred = { "Running_A", "Running_B", "Run" };
+        private static readonly string[] AttackPreferred = { "1H_Melee_Attack_Slice_Horizontal", "1H_Melee_Attack_Chop", "Unarmed_Melee_Attack_Punch_A" };
+        private static readonly string[] DashPreferred = { "Dodge_Forward" };
+        private static readonly string[] HitPreferred = { "Hit_A", "Hit_B" };
 
         private static readonly string[] IdleKeywords = { "idle" };
         private static readonly string[] RunKeywords = { "run", "jog", "sprint" };
@@ -49,6 +57,15 @@ namespace Vow.EditorTools
         }
 
         // ───────────────────────── Humanoid FBX 路線 ─────────────────────────
+
+        // 一個候選切片：來自哪個 FBX、是該 FBX 匯入設定裡的第幾個 clip、叫什麼名字。
+        private struct ClipCandidate
+        {
+            public string ModelPath;
+            public int Index;
+            public string ClipName;
+            public string FileName;
+        }
 
         private static bool TryBuildFromHumanoidFbx(float windupSeconds, out HeroRig rig, out string reason)
         {
@@ -94,20 +111,36 @@ namespace Vow.EditorTools
             Avatar avatar = FindSubAsset<Avatar>(characterPath);
             if (avatar == null || !avatar.isValid || !avatar.isHuman)
             {
-                reason = "角色 FBX 無法建立有效的 Humanoid Avatar：" + characterPath;
+                reason = "角色 FBX 無法建立有效的 Humanoid Avatar（骨架自動對應失敗）：" + characterPath;
                 return false;
             }
 
-            // 2) 動作切片：依檔名關鍵字配對
-            AnimationClip idle = ImportClip(modelPaths, IdleKeywords, avatar, true, false);
-            AnimationClip run = ImportClip(modelPaths, RunKeywords, avatar, true, false);
-            AnimationClip attack = ImportClip(modelPaths, AttackKeywords, avatar, false, true);
-            AnimationClip dash = ImportClip(modelPaths, DashKeywords, avatar, false, false);
-            AnimationClip hit = ImportClip(modelPaths, HitKeywords, avatar, false, false);
+            // 2) 動作切片。兩種資產形態都支援：
+            //    - 一個 FBX 內含多個 take（KayKit 等）：比對 take 名稱
+            //    - 一個動作一個 FBX（Mixamo：clip 一律叫 mixamo.com）：比對檔名
+            List<ClipCandidate> candidates = CollectCandidates(modelPaths);
+            ClipCandidate? idleC = Pick(candidates, IdlePreferred, IdleKeywords);
+            ClipCandidate? runC = Pick(candidates, RunPreferred, RunKeywords);
+            ClipCandidate? attackC = Pick(candidates, AttackPreferred, AttackKeywords);
+            ClipCandidate? dashC = Pick(candidates, DashPreferred, DashKeywords);
+            ClipCandidate? hitC = Pick(candidates, HitPreferred, HitKeywords);
 
+            if (idleC == null || runC == null || attackC == null)
+            {
+                reason = "缺少必要切片（至少需要名稱或檔名含 idle／run／attack 的動作）";
+                return false;
+            }
+
+            ConfigureClips(modelPaths, avatar, characterPath, idleC, runC, attackC, dashC, hitC);
+
+            AnimationClip idle = LoadClip(idleC.Value);
+            AnimationClip run = LoadClip(runC.Value);
+            AnimationClip attack = LoadClip(attackC.Value);
+            AnimationClip dash = dashC != null ? LoadClip(dashC.Value) : null;
+            AnimationClip hit = hitC != null ? LoadClip(hitC.Value) : null;
             if (idle == null || run == null || attack == null)
             {
-                reason = "缺少必要切片（至少需要檔名含 idle／run／attack 的動作 FBX）";
+                reason = "切片重新匯入後載入失敗";
                 return false;
             }
             if (dash == null) dash = run;   // 灰盒容忍：沒有滑步動作時先借用跑步
@@ -123,62 +156,124 @@ namespace Vow.EditorTools
             animator.avatar = avatar;
             animator.runtimeAnimatorController = controller;
             animator.applyRootMotion = false;   // 位移一律由狀態機與 NavMesh 決定，動畫不得推動角色
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 
             rig = new HeroRig { ModelInstance = instance, IsHumanoid = true };
             reason = null;
-            Debug.Log("[VOW] 已採用 Humanoid FBX：" + characterPath);
+            Debug.Log("[VOW] 已採用 Humanoid FBX：" + characterPath + "（idle=" + idle.name + " run=" + run.name +
+                      " attack=" + attack.name + " dash=" + dash.name + " hit=" + hit.name + "）");
             return true;
         }
 
-        private static AnimationClip ImportClip(List<string> modelPaths, string[] keywords, Avatar avatar, bool loop, bool addHitEvent)
+        private static List<ClipCandidate> CollectCandidates(List<string> modelPaths)
+        {
+            List<ClipCandidate> result = new List<ClipCandidate>();
+            foreach (string path in modelPaths)
+            {
+                ModelImporter importer = (ModelImporter)AssetImporter.GetAtPath(path);
+                ModelImporterClipAnimation[] clips = importer.clipAnimations;
+                if (clips == null || clips.Length == 0) clips = importer.defaultClipAnimations;
+                if (clips == null) continue;
+
+                string fileName = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
+                for (int i = 0; i < clips.Length; i++)
+                    result.Add(new ClipCandidate { ModelPath = path, Index = i, ClipName = clips[i].name, FileName = fileName });
+            }
+            return result;
+        }
+
+        // 優先序：① 指名的切片名稱（完全相符）② 切片名稱含關鍵字（取名稱最短的，避免 "2H_Melee_Idle" 搶走 "Idle"）③ 檔名含關鍵字。
+        private static ClipCandidate? Pick(List<ClipCandidate> candidates, string[] preferredNames, string[] keywords)
+        {
+            foreach (string preferred in preferredNames)
+                foreach (ClipCandidate c in candidates)
+                    if (string.Equals(c.ClipName, preferred, System.StringComparison.OrdinalIgnoreCase)) return c;
+
+            ClipCandidate? best = null;
+            foreach (ClipCandidate c in candidates)
+            {
+                if (!ContainsAny(c.ClipName.ToLowerInvariant(), keywords)) continue;
+                if (best == null || c.ClipName.Length < best.Value.ClipName.Length) best = c;
+            }
+            if (best != null) return best;
+
+            foreach (ClipCandidate c in candidates)
+                if (ContainsAny(c.FileName, keywords)) return c;
+            return null;
+        }
+
+        // 同一個 FBX 可能同時供應好幾個切片：每個 FBX 只改一次匯入設定、只重新匯入一次。
+        private static void ConfigureClips(List<string> modelPaths, Avatar avatar, string characterPath,
+            ClipCandidate? idle, ClipCandidate? run, ClipCandidate? attack, ClipCandidate? dash, ClipCandidate? hit)
         {
             foreach (string path in modelPaths)
             {
-                string fileName = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
-                if (!ContainsAny(fileName, keywords)) continue;
-
                 ModelImporter importer = (ModelImporter)AssetImporter.GetAtPath(path);
                 ModelImporterClipAnimation[] clips = importer.clipAnimations;
                 if (clips == null || clips.Length == 0) clips = importer.defaultClipAnimations;
                 if (clips == null || clips.Length == 0) continue;
 
+                bool touched = false;
+                touched |= Configure(clips, path, idle, true, false);
+                touched |= Configure(clips, path, run, true, false);
+                touched |= Configure(clips, path, attack, false, true);
+                touched |= Configure(clips, path, dash, false, false);
+                touched |= Configure(clips, path, hit, false, false);
+                if (!touched) continue;
+
                 if (importer.animationType != ModelImporterAnimationType.Human)
                 {
                     importer.animationType = ModelImporterAnimationType.Human;
-                    // 純動作 FBX 沒有網格，骨架定義沿用角色 FBX 的 Avatar
-                    if (AssetDatabase.LoadAssetAtPath<GameObject>(path).GetComponentInChildren<SkinnedMeshRenderer>(true) == null)
+                    if (path != characterPath)
                     {
+                        // 純動作 FBX 沒有網格，骨架定義沿用角色 FBX 的 Avatar
                         importer.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
                         importer.sourceAvatar = avatar;
                     }
                 }
 
-                ModelImporterClipAnimation clip = clips[0];
-                clip.loopTime = loop;
-                clip.lockRootRotation = true;
-                clip.lockRootHeightY = true;
-                clip.lockRootPositionXZ = true;   // 原地動畫：位移交給程式
-                clip.keepOriginalOrientation = true;
-                clip.keepOriginalPositionY = true;
-                clip.keepOriginalPositionXZ = true;
-
-                if (addHitEvent)
-                {
-                    // ModelImporter 的事件時間是 0~1 的正規化時間
-                    clip.events = new[]
-                    {
-                        new AnimationEvent { functionName = HeroAnimatorContract.AttackHitEvent, time = AttackHitNormalizedTime }
-                    };
-                }
-
-                clips[0] = clip;
                 importer.clipAnimations = clips;
                 importer.SaveAndReimport();
-
-                AnimationClip imported = FindSubAsset<AnimationClip>(path);
-                if (imported != null) return imported;
             }
-            return null;
+        }
+
+        private static bool Configure(ModelImporterClipAnimation[] clips, string path, ClipCandidate? candidate, bool loop, bool addHitEvent)
+        {
+            if (candidate == null || candidate.Value.ModelPath != path) return false;
+
+            ModelImporterClipAnimation clip = clips[candidate.Value.Index];
+            clip.loopTime = loop;
+            clip.lockRootRotation = true;
+            clip.lockRootHeightY = true;
+            clip.lockRootPositionXZ = true;   // 原地動畫：位移交給程式
+            clip.keepOriginalOrientation = true;
+            clip.keepOriginalPositionY = true;
+            clip.keepOriginalPositionXZ = true;
+
+            if (addHitEvent)
+            {
+                // ModelImporter 的事件時間是 0~1 的正規化時間
+                clip.events = new[]
+                {
+                    new AnimationEvent { functionName = HeroAnimatorContract.AttackHitEvent, time = AttackHitNormalizedTime }
+                };
+            }
+
+            clips[candidate.Value.Index] = clip;
+            return true;
+        }
+
+        private static AnimationClip LoadClip(ClipCandidate candidate)
+        {
+            AnimationClip fallback = null;
+            foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(candidate.ModelPath))
+            {
+                AnimationClip clip = asset as AnimationClip;
+                if (clip == null || clip.name.StartsWith("__preview__")) continue;
+                if (clip.name == candidate.ClipName) return clip;
+                if (fallback == null) fallback = clip;
+            }
+            return fallback;
         }
 
         private static T FindSubAsset<T>(string path) where T : Object
@@ -300,6 +395,9 @@ namespace Vow.EditorTools
             Animator animator = model.AddComponent<Animator>();
             animator.runtimeAnimatorController = BuildController(idle, run, attack, dash, hit, 1f);
             animator.applyRootMotion = false;
+            // FBX 預製物的 Animator 預設是 CullUpdateTransforms（渲染器不可見就不更新骨頭，但動畫事件照發）。
+            // 玩家英雄永遠在畫面內、而且遊戲邏輯依賴它的動畫事件，一律 AlwaysAnimate，行為才不會隨「看不看得見」改變。
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 
             return new HeroRig { ModelInstance = model, IsHumanoid = false };
         }

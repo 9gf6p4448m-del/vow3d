@@ -16,6 +16,8 @@ namespace Vow.Bootstrap
 
         [SerializeField] private HeroController _hero;
         [SerializeField] private PlayerInputService _input;
+        [SerializeField] private NetworkLatencySimulator _latency;
+        [SerializeField] private HapticFeedbackService _haptics;
         [SerializeField] private CombatFeedbackService _feedback;
         [SerializeField] private SkillTelegraphService _telegraph;
         [SerializeField] private FollowCameraRig _cameraRig;
@@ -55,7 +57,16 @@ namespace Vow.Bootstrap
             for (int i = 0; i < targets.Length; i++) _targets.Register(targets[i]);
 
             _input.Initialize(_targets, _camera);
-            _hero.Initialize(_input, _feedback, _camera);
+
+            // 英雄訂閱的是延遲注入層（預設 OFF＝同一呼叫內直通）；HUD 與預警箭頭讀的仍是真正的輸入服務——
+            // 它們屬於本地表現，不該跟著模擬的網路延遲一起變慢。
+            IPlayerInputService heroInput = _input;
+            if (_latency != null)
+            {
+                _latency.Initialize(_input);
+                heroInput = _latency;
+            }
+            _hero.Initialize(heroInput, _feedback, _camera, _haptics);
 
             if (_feedback != null)
             {
@@ -67,7 +78,7 @@ namespace Vow.Bootstrap
             }
 
             if (_cameraRig != null) _cameraRig.SetTarget(_hero.transform);
-            if (_hud != null) _hud.Initialize(_hero, _input, _hitboxes);
+            if (_hud != null) _hud.Initialize(_hero, _input, _hitboxes, _latency);
             if (_aimPreview != null) _aimPreview.Initialize(_hero, _input, _telegraph, _camera);
         }
 
@@ -87,6 +98,8 @@ namespace Vow.Bootstrap
         {
             if (_hero == null) _hero = FindObjectOfType<HeroController>();
             if (_input == null) _input = FindObjectOfType<PlayerInputService>();
+            if (_latency == null) _latency = FindObjectOfType<NetworkLatencySimulator>();
+            if (_haptics == null) _haptics = FindObjectOfType<HapticFeedbackService>();
             if (_feedback == null) _feedback = FindObjectOfType<CombatFeedbackService>();
             if (_telegraph == null) _telegraph = FindObjectOfType<SkillTelegraphService>();
             if (_cameraRig == null) _cameraRig = FindObjectOfType<FollowCameraRig>();

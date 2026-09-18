@@ -6,6 +6,7 @@ using UnityEngine.AI;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using Vow.Combat;
+using Vow.Combat.Feedback;
 using Vow.Core;
 
 namespace Vow.Tests.PlayMode
@@ -19,23 +20,10 @@ namespace Vow.Tests.PlayMode
     {
         private const string SceneName = "VOW_Phase1_Greybox";
 
-        private sealed class ScriptedInput : IPlayerInputService
-        {
-            public ControlMode ActiveMode { get; set; }
-            public event Action<Vector3> OnMoveDestinationSelected;
-            public event Action<ICombatTarget> OnCombatTargetSelected;
-            public event Action<Vector2> OnCadenceVectorFlicked;
-            public event Action<Vector2, float> OnRuneVectorDragUpdated { add { } remove { } }
-            public event Action OnRuneQuickCastTriggered { add { } remove { } }
-            public event Action OnRuneCastCancelled { add { } remove { } }
-
-            public void TapGround(Vector3 point) { OnMoveDestinationSelected?.Invoke(point); }
-            public void TapTarget(ICombatTarget target) { OnCombatTargetSelected?.Invoke(target); }
-            public void Flick(Vector2 screenDirection) { OnCadenceVectorFlicked?.Invoke(screenDirection); }
-        }
-
         private HeroController _hero;
         private ScriptedInput _input;
+        private RecordingHaptics _haptics;
+        private CombatFeedbackService _feedback;
 
         private IEnumerator LoadScene()
         {
@@ -48,7 +36,9 @@ namespace Vow.Tests.PlayMode
 
             // 以腳本化輸入取代真實觸控：驗的是輸入之後的整條鏈路，觸控辨識本身已有 TouchGestureRouter 的測試
             _input = new ScriptedInput();
-            _hero.Initialize(_input, UnityEngine.Object.FindObjectOfType<Vow.Combat.Feedback.CombatFeedbackService>(), Camera.main);
+            _haptics = new RecordingHaptics();
+            _feedback = UnityEngine.Object.FindObjectOfType<CombatFeedbackService>();
+            _hero.Initialize(_input, _feedback, Camera.main, _haptics);
         }
 
         private static IEnumerator WaitUntil(Func<bool> condition, float timeoutSeconds, string what)
@@ -88,8 +78,11 @@ namespace Vow.Tests.PlayMode
             Assert.IsNotNull(dummy);
             float healthBefore = dummy.Health;
 
-            Transform arm = _hero.transform.Find("HeroModel/Hips/Spine/Chest/RightUpperArm");
-            Assert.IsNotNull(arm, "找不到佔位骨架的 RightUpperArm");
+            Animator animator = _hero.GetComponentInChildren<Animator>();
+            Transform arm = animator.isHuman
+                ? animator.GetBoneTransform(HumanBodyBones.RightUpperArm)
+                : _hero.transform.Find("HeroModel/Hips/Spine/Chest/RightUpperArm");
+            Assert.IsNotNull(arm, "找不到右上臂骨頭（isHuman=" + animator.isHuman + "）");
             Quaternion armRest = arm.localRotation;
             float maxArmDeviation = 0f;
 
@@ -113,7 +106,47 @@ namespace Vow.Tests.PlayMode
             float windupDuration = hitAt - windupAt;
             Assert.That(windupDuration, Is.InRange(0.2f, 0.32f), "前搖→命中應約 0.25s（由 OnAttackHit 動畫事件驅動），實測 " + windupDuration);
 
-            Assert.Greater(maxArmDeviation, 30f, "前搖期間右臂幾乎沒動（最大偏轉 " + maxArmDeviation + "°）：佔位動畫曲線沒有生效");
+            Assert.Greater(maxArmDeviation, 30f, "前搖期間右臂幾乎沒動（最大偏轉 " + maxArmDeviation + "°）：攻擊動畫沒有生效");
+
+            Assert.AreEqual(1, _haptics.BasicHits, "每一刀命中應回報一次震覺事件");
+            Assert.AreEqual(0, _feedback.ScreenFlashCount, "沒打死的那一刀不得閃白");
+        }
+
+        [UnityTest] // D4：斬殺 → 閃白 ＋ 焦痕貼花；只有致命的那一刀才觸發
+        public IEnumerator KillingBlow_TriggersScreenFlashAndScorchDecal_Once()
+        {
+            yield return LoadScene();
+            DummyTarget dummy = UnityEngine.Object.FindObjectOfType<DummyTarget>();
+            dummy.Configure(100f, Faction.RedTeam); // 每刀 60：第一刀不死、第二刀斬殺
+
+            int hits = 0;
+            _hero.OnAttackHitResolved += target => hits++;
+            _input.TapTarget(dummy);
+
+            yield return WaitUntil(() => hits >= 1, 6f, "第一刀命中");
+            Assert.IsTrue(dummy.IsAlive);
+            Assert.AreEqual(0, _feedback.ScreenFlashCount, "非致命的一刀不得閃白");
+            Assert.AreEqual(0, _feedback.DecalSpawnCount);
+
+            yield return WaitUntil(() => hits >= 2, 4f, "第二刀命中");
+            Assert.IsFalse(dummy.IsAlive, "第二刀應該打死木樁");
+            Assert.AreEqual(1, _feedback.ScreenFlashCount, "斬殺應觸發一次閃白");
+            Assert.AreEqual(1, _feedback.DecalSpawnCount, "斬殺應留下一枚焦痕貼花");
+        }
+
+        [UnityTest]
+        public IEnumerator HeroRig_IsAHumanoidAvatar_WhenAnFbxIsPresent()
+        {
+            yield return LoadScene();
+            Animator animator = _hero.GetComponentInChildren<Animator>();
+            Assert.IsNotNull(animator);
+
+            bool fbxPresent = System.IO.Directory.GetFiles("Assets/Art/Characters", "*.fbx", System.IO.SearchOption.TopDirectoryOnly).Length > 0;
+            if (!fbxPresent) Assert.Ignore("Assets/Art/Characters 沒有 FBX：目前走佔位骨架，紅線 3 的正式載體未驗");
+
+            Assert.IsTrue(animator.isHuman, "有 FBX 卻不是 Humanoid Avatar：骨架對應失敗，場景建置退回了佔位骨架");
+            Assert.IsNotNull(animator.GetBoneTransform(HumanBodyBones.Hips));
+            Assert.IsNotNull(animator.GetBoneTransform(HumanBodyBones.RightHand));
         }
 
         [UnityTest]
@@ -137,6 +170,7 @@ namespace Vow.Tests.PlayMode
             Vector3 moved = _hero.transform.position - before;
             moved.y = 0f;
             Assert.AreEqual(1.4f, moved.magnitude, 0.08f, "第一次滑步實際位移");
+            Assert.AreEqual(1, _haptics.Dashes, "微滑步應回報一次（重）震覺事件");
         }
 
         [UnityTest]

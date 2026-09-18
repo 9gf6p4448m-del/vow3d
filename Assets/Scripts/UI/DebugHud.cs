@@ -33,6 +33,7 @@ namespace Vow.UI
         private HeroController _hero;
         private PlayerInputService _input;
         private HitboxVisualizer _hitboxes;
+        private NetworkLatencySimulator _latency;
 
         private GUIStyle _label;
         private GUIStyle _buttonLabel;
@@ -42,8 +43,10 @@ namespace Vow.UI
 
         private int _modeRegion = -1;
         private int _hitboxRegion = -1;
+        private int _latencyRegion = -1;
         private Rect _modeRect;
         private Rect _hitboxRect;
+        private Rect _latencyRect;
 
         private float _fpsTimer;
         private int _fpsFrames;
@@ -53,11 +56,13 @@ namespace Vow.UI
         private Color _rigColor = Color.white;
         private int _refreshHz;
 
-        public void Initialize(HeroController hero, PlayerInputService input, HitboxVisualizer hitboxes)
+        public void Initialize(HeroController hero, PlayerInputService input, HitboxVisualizer hitboxes,
+            NetworkLatencySimulator latency = null)
         {
             _hero = hero;
             _input = input;
             _hitboxes = hitboxes;
+            _latency = latency;
 
             if (_hero != null)
             {
@@ -74,6 +79,7 @@ namespace Vow.UI
                 _input.OnUiRegionTapped += HandleRegionTapped;
                 _modeRegion = _input.Routing.RegisterUiRegion(default);
                 _hitboxRegion = _input.Routing.RegisterUiRegion(default);
+                if (_latency != null) _latencyRegion = _input.Routing.RegisterUiRegion(default);
             }
             RecalculateLayout();
         }
@@ -123,6 +129,10 @@ namespace Vow.UI
             {
                 _hitboxes.Visible = !_hitboxes.Visible;
             }
+            else if (regionId == _latencyRegion && _latency != null)
+            {
+                _latency.CyclePreset();
+            }
         }
 
         private void RecalculateLayout()
@@ -137,10 +147,12 @@ namespace Vow.UI
             float buttonWidth = (PanelWidth - Pad * 3f) * 0.5f;
             _modeRect = new Rect(Pad * 2f, y, buttonWidth, Row * 1.6f);
             _hitboxRect = new Rect(Pad * 3f + buttonWidth, y, buttonWidth, Row * 1.6f);
+            _latencyRect = new Rect(Pad * 2f, y + Row * 1.6f + Pad, PanelWidth - Pad * 2f, Row * 1.6f);
 
             if (_input == null) return;
             _input.Routing.UpdateUiRegion(_modeRegion, ToScreenRegion(_modeRect));
             _input.Routing.UpdateUiRegion(_hitboxRegion, ToScreenRegion(_hitboxRect));
+            _input.Routing.UpdateUiRegion(_latencyRegion, ToScreenRegion(_latencyRect));
         }
 
         // IMGUI 座標（原點左上、已縮放）→ 螢幕座標（原點左下、像素）
@@ -161,7 +173,7 @@ namespace Vow.UI
             Matrix4x4 previous = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(_scale, _scale, 1f));
 
-            float panelHeight = Pad + Row * InfoRows + Pad + Row * 1.6f + Pad;
+            float panelHeight = Pad + Row * InfoRows + Pad + Row * 1.6f + Pad + (_latency != null ? Row * 1.6f + Pad : 0f);
             Fill(new Rect(Pad, Pad, PanelWidth, panelHeight), PanelColor);
 
             float x = Pad * 2f;
@@ -209,6 +221,14 @@ namespace Vow.UI
             bool hitboxOn = _hitboxes != null && _hitboxes.Visible;
             Fill(_hitboxRect, hitboxOn ? ButtonOnColor : ButtonColor);
             GUI.Label(_hitboxRect, hitboxOn ? "Hitbox ON" : "Hitbox OFF", _buttonLabel);
+
+            if (_latency != null)
+            {
+                LatencyPreset preset = _latency.Preset;
+                Fill(_latencyRect, preset == LatencyPreset.Off ? ButtonColor : ButtonOnColor);
+                GUI.Label(_latencyRect, preset == LatencyPreset.Off ? "NET delay: OFF"
+                                      : preset == LatencyPreset.Ms50 ? "NET delay: 50 ms" : "NET delay: 80 ms", _buttonLabel);
+            }
 
             GUI.matrix = previous;
 

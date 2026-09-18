@@ -21,8 +21,11 @@ namespace Vow.Core
 
         private IPlayerInputService _input;
         private ICombatFeedbackService _feedback;
+        private IHapticService _haptics;
         private Transform _cameraTransform;
         private bool _watchdogReported;
+
+        private static readonly Color KillFlashColor = new Color(1f, 1f, 1f, 0.3f);
 
         public IPlayerStateMachine StateMachine => _stateMachine;
         public ICadenceMover CadenceMover => _mover;
@@ -51,14 +54,17 @@ namespace Vow.Core
             _brain.OnAttackWindupStarted += HandleWindupStarted;
             _brain.OnAttackHitResolved += HandleHitResolved;
             _brain.OnWindupWatchdogFired += HandleWatchdogFired;
+            _mover.OnDashExecuted += HandleDashExecuted;
         }
 
         // 由 Phase1Bootstrap 注入依賴（不在這裡 Find，任何一項都可以換成測試替身）。
-        public void Initialize(IPlayerInputService input, ICombatFeedbackService feedback, Camera viewCamera)
+        public void Initialize(IPlayerInputService input, ICombatFeedbackService feedback, Camera viewCamera,
+            IHapticService haptics = null)
         {
             Unsubscribe();
             _input = input;
             _feedback = feedback;
+            _haptics = haptics;
             _cameraTransform = viewCamera != null ? viewCamera.transform : null;
 
             if (_input == null) return;
@@ -172,24 +178,31 @@ namespace Vow.Core
             if (targetTransform != null) _locomotion.FaceTowards(targetTransform.position);
         }
 
+        // 打擊反饋金字塔（GDD §肆-2）：普通平 A＝頓挫＋微震＋輕震覺；斬殺＝再加瞬時閃白與焦痕貼花；破牆＝重震＋重震覺＋地裂貼花。
         public void ResolveAttackHit(ICombatTarget target)
         {
             target.ReceiveDamage(_tuning.AttackDamage, DamageType.Physical, gameObject);
+
+            bool killed = !target.IsAlive;
+            bool wallBroken = killed && target.TargetFaction == Faction.DestructibleWall;
+            if (_haptics != null) _haptics.Notify(wallBroken ? HapticCue.WallBreak : HapticCue.BasicAttackHit);
             if (_feedback == null) return;
 
             _feedback.TriggerHitstop(_tuning.HitstopMilliseconds);
+            Transform targetTransform = target.TargetTransform;
 
-            bool wallBroken = !target.IsAlive && target.TargetFaction == Faction.DestructibleWall;
             if (wallBroken)
             {
                 _feedback.RequestCameraShake(_tuning.WallBreakTrauma, 0.45f);
-                Transform targetTransform = target.TargetTransform;
                 if (targetTransform != null) _feedback.SpawnGroundDecal(targetTransform.position, DecalType.VoidRupture);
+                return;
             }
-            else
-            {
-                _feedback.RequestCameraShake(_tuning.BasicAttackTrauma, 0.15f);
-            }
+
+            _feedback.RequestCameraShake(_tuning.BasicAttackTrauma, 0.15f);
+            if (!killed) return;
+
+            _feedback.TriggerScreenFlash(KillFlashColor, 60f);
+            if (targetTransform != null) _feedback.SpawnGroundDecal(targetTransform.position, DecalType.ScorchCrater);
         }
 
         public bool TryBeginCadenceDash(float worldDirX, float worldDirZ)
@@ -198,6 +211,11 @@ namespace Vow.Core
         }
 
         // ───────────────────────── 大腦事件 ─────────────────────────
+
+        private void HandleDashExecuted(float distance)
+        {
+            if (_haptics != null) _haptics.Notify(HapticCue.CadenceDash);
+        }
 
         private void HandleWindupStarted()
         {

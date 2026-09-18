@@ -54,6 +54,8 @@ namespace Vow.Combat.Feedback
         private int _nextDecal;
 
         public bool IsHitstopActive => _hitstopActive;
+        public int ScreenFlashCount { get; private set; }
+        public int DecalSpawnCount { get; private set; }
         public float CurrentTrauma => _shake.Trauma;
 
         private void Awake()
@@ -114,6 +116,7 @@ namespace Vow.Combat.Feedback
 
             FitFlashQuadToCamera();
             _flashRenderer.enabled = true;
+            ScreenFlashCount++;
         }
 
         public void SpawnGroundDecal(Vector3 worldPosition, DecalType type, float duration = 3.0f)
@@ -132,6 +135,7 @@ namespace Vow.Combat.Feedback
             _decalLifetimes[slot] = Mathf.Max(0.1f, duration);
             _decalRemaining[slot] = _decalLifetimes[slot];
             decal.enabled = true;
+            DecalSpawnCount++;
         }
 
         // ───────────────────────── 每幀 ─────────────────────────
