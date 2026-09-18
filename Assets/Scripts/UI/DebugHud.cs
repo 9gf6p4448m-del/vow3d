@@ -19,7 +19,7 @@ namespace Vow.UI
         private const float Pad = 8f;
         private const float Row = 22f;
         private const float PanelWidth = 250f;
-        private const float InfoRows = 8f;
+        private const float InfoRows = 9f;
 
         private static readonly string[] StateNames = Enum.GetNames(typeof(PlayerState));
 
@@ -53,6 +53,7 @@ namespace Vow.UI
         private int _fps;
         private string _stateName = StateNames[0];
         private string _rigLabel = "?";
+        private string _screenLabel = "";
         private Color _rigColor = Color.white;
         private int _refreshHz;
 
@@ -143,6 +144,10 @@ namespace Vow.UI
             float dpi = Screen.dpi;
             _scale = dpi > 0f ? Mathf.Max(1f, dpi / ReferenceDpi) : 1f;
 
+            // 所有手勢門檻與符印按鈕都以毫米定義、靠 Screen.dpi 換算；dpi 回 0（WebGL 常見）時退回 160，實體尺寸就會失真。
+            // 把量到的值秀出來，試玩回報「按鈕太小／太難按」時才分得出是設計值還是換算的問題。只在版面重算時組字串，不是每幀。
+            _screenLabel = Mathf.RoundToInt(dpi) + " dpi  " + Screen.width + "x" + Screen.height;
+
             float y = Pad + Row * InfoRows + Pad;
             float buttonWidth = (PanelWidth - Pad * 3f) * 0.5f;
             _modeRect = new Rect(Pad * 2f, y, buttonWidth, Row * 1.6f);
@@ -214,6 +219,10 @@ namespace Vow.UI
             GUI.contentColor = _rigColor;
             GUI.Label(new Rect(valueX, y, 170f, Row), _rigLabel, _label);
             GUI.contentColor = previousContent;
+            y += Row;
+
+            GUI.Label(new Rect(x, y, 84f, Row), "SCREEN", _label);
+            GUI.Label(new Rect(valueX, y, 170f, Row), _screenLabel, _label);
 
             Fill(_modeRect, ButtonColor);
             GUI.Label(_modeRect, modeB ? "Switch to A" : "Switch to B", _buttonLabel);

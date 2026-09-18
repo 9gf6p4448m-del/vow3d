@@ -19,9 +19,10 @@ namespace Vow.Tests.PlayMode
     // 繞過真實觸控辨識（TouchGestureRouter 另有 EditMode 測試），只驗這一層「收到符印事件之後做了什麼」。
     public sealed class RuneWallPlayTests
     {
-        // 英雄是被球體掃描擋下的（HeroTuningAsset.BodyRadius = 0.35m）：身體表面碰到牆面時，中心還在牆面前 0.35m。
-        // 阻擋斷言比的是中心座標，所以門檻要扣掉身體半徑；只留 5cm 給 SkinWidth 與浮點誤差。
-        private const float HeroBodyRadius = 0.35f;
+        // 英雄是被球體掃描擋下的：身體表面碰到牆面時，中心還在牆面前一個身體半徑。阻擋斷言比的是中心座標，
+        // 所以門檻要扣掉身體半徑；只留 5cm 給 SkinWidth 與浮點誤差。半徑讀場景裡的實際值（建置器把
+        // HeroTuningAsset.BodyRadius 同時餵給膠囊與 NavMeshAgent），寫死的話日後調大半徑會讓這條斷言無聲變鬆。
+        private float HeroBodyRadius => _hero.GetComponent<NavMeshAgent>().radius;
         private const float BodySkinTolerance = 0.05f;
 
         private const string SceneName = "VOW_Phase1_Greybox";
