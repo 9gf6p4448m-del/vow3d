@@ -111,6 +111,24 @@ namespace Vow.Tests.PlayMode
         }
     }
 
+    // r1 對抗審查 H2：符印施放必須真的發生在 AllocationProbeBegin／End 的夾區之內（Update()），
+    // 不能是測試協程本體直接呼叫——那樣落在夾區外，對這條路徑毫無鑑別力。Trigger 由測試在
+    // AllocationProbe.Measuring 打開的同一刻設成 true，下一次這個元件的 Update() 就會送出施放。
+    public sealed class RuneCastDriver : MonoBehaviour
+    {
+        internal ScriptedInput Input;
+        public bool Trigger;
+        public int Casts;
+
+        private void Update()
+        {
+            if (!Trigger || Input == null) return;
+            Trigger = false;
+            Casts++;
+            Input.RuneQuickCast();
+        }
+    }
+
     public sealed class ZeroAllocationTests
     {
         private const string SceneName = "VOW_Phase1_Greybox";
@@ -184,6 +202,8 @@ namespace Vow.Tests.PlayMode
             driver.Hero = hero;
             driver.Input = input;
             driver.Target = dummy;
+            RuneCastDriver runeDriver = rig.AddComponent<RuneCastDriver>();
+            runeDriver.Input = input;
             rig.AddComponent<AllocationProbeEnd>();
 
             // 暖機：跑完至少兩刀、一次滑步，讓靜態表、JIT、首次進入各狀態的一次性初始化都發生在量測之前
@@ -201,7 +221,8 @@ namespace Vow.Tests.PlayMode
             Assert.GreaterOrEqual(runeWalls.Length, 1, "場景缺少符印石牆池");
             caster.Initialize(input, input, hero.transform, Camera.main, new RuneTuning(), runeWalls, hero.HeroFaction);
 
-            // 量測窗口外先跑一次完整的施放到期：把第一次呼叫可能有的一次性成本排除在量測之外
+            // 量測窗口外先跑一次完整的施放到期（協程本體直接呼叫即可，反正不落在夾區內、不受 H2 約束）：
+            // 把第一次呼叫可能有的一次性成本排除在量測之外。
             input.RuneQuickCast();
             yield return WaitUntilNoRuneWallIsAlive(runeWalls, 8f);
 
@@ -210,10 +231,11 @@ namespace Vow.Tests.PlayMode
 
             int hitsBefore = hits, dashesBefore = dashes;
             AllocationProbe.Measuring = true;
-            input.RuneQuickCast();
+            runeDriver.Trigger = true; // 下一次 RuneCastDriver.Update()（落在探針夾區內）才真的送出施放
             bool sawRuneWallAlive = false;
             deadline = Time.time + 20f;
-            while (AllocationProbe.Frames < 240 || hits - hitsBefore < 2 || dashes - dashesBefore < 1 || AnyRuneWallAlive(runeWalls))
+            while (AllocationProbe.Frames < 240 || hits - hitsBefore < 2 || dashes - dashesBefore < 1
+                   || runeDriver.Casts < 1 || AnyRuneWallAlive(runeWalls))
             {
                 if (AnyRuneWallAlive(runeWalls)) sawRuneWallAlive = true;
                 if (Time.time > deadline) break;
@@ -226,6 +248,7 @@ namespace Vow.Tests.PlayMode
             Assert.GreaterOrEqual(AllocationProbe.Frames, 240, "量測幀數不足");
             Assert.GreaterOrEqual(hits - hitsBefore, 2, "量測期間沒有足夠的命中");
             Assert.GreaterOrEqual(dashes - dashesBefore, 1, "量測期間沒有發生滑步");
+            Assert.AreEqual(1, runeDriver.Casts, "量測窗口內應該恰好送出一次符印施放（在探針夾區內的 Update() 裡）");
             Assert.IsTrue(sawRuneWallAlive, "量測期間從未觀察到石牆存活：符印施放這條路徑沒有被量到");
             Assert.IsFalse(AnyRuneWallAlive(runeWalls), "量測窗口內石牆應已到期（否則量測時間不夠長，這不構成證據）");
 

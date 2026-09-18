@@ -41,8 +41,11 @@ namespace Vow.Combat
         }
 
         // 由 RuneCaster 對池中每一面牆呼叫一次，注入手感數值的單一事實來源（HeroTuningAsset.Rune）。
+        // r1 對抗審查 H5：若這面牆當下還活著，先收掉再換 _logic——否則舊的存活狀態失去追蹤，變成一面
+        // 不會到期、Collider 還開著、名額也回不去名冊的永久牆（RuneCaster 重新 Initialize 時會摸到這條路徑）。
         public void Initialize(RuneTuning tuning)
         {
+            if (IsAlive) ForceKill();
             _tuning = tuning;
             _logic = new RuneWallLogic(tuning);
         }

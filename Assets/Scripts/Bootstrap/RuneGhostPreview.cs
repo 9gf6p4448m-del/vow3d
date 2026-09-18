@@ -16,6 +16,7 @@ namespace Vow.Bootstrap
         private Transform _hero;
         private Transform _cameraTransform;
         private RuneCastLogic _placement;
+        private RuneTuning _tuning;
         private bool _subscribed;
 
         public void Initialize(IPlayerInputService input, IRuneCastInput releaseInput, Transform hero, Camera worldCamera, RuneTuning tuning)
@@ -27,6 +28,7 @@ namespace Vow.Bootstrap
             _hero = hero;
             _cameraTransform = worldCamera != null ? worldCamera.transform : null;
             _placement = new RuneCastLogic(tuning);
+            _tuning = tuning;
 
             Subscribe();
             Hide();
@@ -77,7 +79,9 @@ namespace Vow.Bootstrap
                 return;
             }
 
-            Vector3 center = new Vector3(placement.CenterX, heroPosition.y, placement.CenterZ);
+            // r1 對抗審查 H1：虛影中心 y 要跟實牆（RuneCaster.SpawnWall）同一個公式，否則虛影半截埋在地板下。
+            float centerY = heroPosition.y + (_tuning != null ? _tuning.WallHeight * 0.5f : 0f);
+            Vector3 center = new Vector3(placement.CenterX, centerY, placement.CenterZ);
             Quaternion rotation = Quaternion.LookRotation(new Vector3(placement.NormalX, 0f, placement.NormalZ), Vector3.up);
             transform.SetPositionAndRotation(center, rotation);
             Show();

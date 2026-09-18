@@ -125,24 +125,32 @@ namespace Vow.Tests.PlayMode
             Assert.IsTrue(crossed, "正向對照失敗：沒有石牆時 3 秒內應越過 z=4 平面，實際位置 " + _hero.transform.position);
         }
 
-        // V4 b：同一條路線，極速施放的石牆立在 z=4（法線朝 +Z）之後，3 秒內不得越過該平面。
+        // V4 b：同一條路線，極速施放的石牆立在 z=4（法線朝 +Z）之後，3 秒內不得越過牆面。
+        // r1 對抗審查 M2：門檻改成「牆中心 z − 厚度/2」（牆面，嚴格小於）而非寫死 <=4（那樣即使牆做得更薄／位置算錯也測不出來）；
+        // 另外要求英雄確實起步，不然「一直沒動」也會通過阻擋斷言，零鑑別力。
         [UnityTest]
         public IEnumerator Wall_BlocksTheHero_AlongTheSamePath()
         {
-            yield return Setup(new RuneTuning());
+            RuneTuning tuning = new RuneTuning();
+            yield return Setup(tuning);
 
             _input.RuneQuickCast();
             yield return null;
-            Assert.IsNotNull(FirstAlive(_pool), "石牆未成形，阻擋測試沒有意義");
+            RuneWall wall = FirstAlive(_pool);
+            Assert.IsNotNull(wall, "石牆未成形，阻擋測試沒有意義");
+            float wallFaceZ = wall.transform.position.z - tuning.WallThickness * 0.5f;
 
             _input.TapGround(new Vector3(0f, 0f, 20f));
 
             float deadline = Time.time + 3f;
             while (Time.time <= deadline)
             {
-                Assert.LessOrEqual(_hero.transform.position.z, 4f, "英雄越過了石牆所在的 z=4 平面：" + _hero.transform.position);
+                Assert.Less(_hero.transform.position.z, wallFaceZ, "英雄越過了石牆牆面（z=" + wallFaceZ + "）：" + _hero.transform.position);
                 yield return null;
             }
+
+            Assert.Greater(_hero.transform.position.z, 1f,
+                "英雄應該確實起步、被牆擋在半路，而不是原地不動也算通過：" + _hero.transform.position);
         }
 
         // V4 c：施放後 5.0s（+0.3s 容差）石牆不再存活、Collider 已關。
@@ -204,10 +212,13 @@ namespace Vow.Tests.PlayMode
 
         // V4 e：拖曳更新→虛影可見且位置＝預期落點；取消→虛影隱藏、無石牆、冷卻未開始；
         // 鬆手→石牆成形於該落點、虛影隱藏。
+        // r1 對抗審查 H1：期望落點的 y 由測試自己算（地面 y ＋ tuning.WallHeight/2，與 RuneCaster.SpawnWall／
+        // RuneGhostPreview 同一個公式），斷言時不再把 y 軸抹掉——虛影或實牆的 y 錯了（例如半截埋進地板）現在會被抓到。
         [UnityTest]
         public IEnumerator Drag_ShowsGhost_CancelHidesWithoutWall_ReleaseSpawnsWallAndHidesGhost()
         {
-            yield return Setup(new RuneTuning());
+            RuneTuning tuning = new RuneTuning();
+            yield return Setup(tuning);
 
             Renderer ghostRenderer = _ghost.GetComponentInChildren<Renderer>();
             Assert.IsNotNull(ghostRenderer, "虛影缺少 Renderer");
@@ -223,12 +234,12 @@ namespace Vow.Tests.PlayMode
 
             Vector3 heroPos = _hero.transform.position;
             Vector3 worldDir = RuneCaster.ScreenToWorldGroundDirection(screenDir, Camera.main.transform);
-            RuneCastLogic placementCalc = new RuneCastLogic(new RuneTuning());
+            RuneCastLogic placementCalc = new RuneCastLogic(tuning);
             Assert.IsTrue(placementCalc.TryDragPlacement(heroPos.x, heroPos.z, worldDir.x, worldDir.z, distance01, out RuneWallPlacement expected));
-            Vector3 expectedPos = new Vector3(expected.CenterX, _ghost.transform.position.y, expected.CenterZ);
+            Vector3 expectedPos = new Vector3(expected.CenterX, heroPos.y + tuning.WallHeight * 0.5f, expected.CenterZ);
             Vector3 ghostOffset = _ghost.transform.position - expectedPos;
-            ghostOffset.y = 0f;
-            Assert.LessOrEqual(ghostOffset.magnitude, 0.05f, "虛影位置與預期落點不符：" + _ghost.transform.position);
+            Assert.LessOrEqual(ghostOffset.magnitude, 0.1f,
+                "虛影位置與預期落點不符（含 y 軸）：實際 " + _ghost.transform.position + " 預期 " + expectedPos);
 
             // 取消：不必真的滑回原點（那是 RuneGestureTracker 的職責，EditMode 已測），這裡只驗 RuneCaster／
             // RuneGhostPreview 對 Cancelled 事件的反應——無石牆、虛影隱藏、冷卻未開始。
@@ -248,8 +259,66 @@ namespace Vow.Tests.PlayMode
             RuneWall spawned = FirstAlive(_pool);
             Assert.IsNotNull(spawned, "鬆手應該成牆");
             Vector3 spawnedOffset = spawned.transform.position - expectedPos;
-            spawnedOffset.y = 0f;
-            Assert.LessOrEqual(spawnedOffset.magnitude, 0.1f, "成牆位置與拖曳預期落點不符：" + spawned.transform.position);
+            Assert.LessOrEqual(spawnedOffset.magnitude, 0.1f,
+                "成牆位置與拖曳預期落點不符（含 y 軸）：實際 " + spawned.transform.position + " 預期 " + expectedPos);
+        }
+
+        // r1 對抗審查 H4：石牆池放到 Ignore Raycast 層之後，PlayerInputService.OnWorldTap 用的
+        // Physics.DefaultRaycastLayers 射線應該穿過自家石牆打到後面的地板，不得解析成「點到石牆」；
+        // 同一測試內順帶確認 V4b 的物理阻擋（HeroLocomotion 的 SphereCast 用 AllLayers）依然成立。
+        [UnityTest]
+        public IEnumerator Wall_IsInvisibleToWorldTapRaycast_ButStillBlocksTheHeroPhysically()
+        {
+            const float raycastDistance = 500f; // 與 PlayerInputService.OnWorldTap 的 RaycastDistance 相同
+
+            RuneTuning tuning = new RuneTuning();
+            yield return Setup(tuning);
+
+            _input.RuneQuickCast();
+            yield return null;
+            RuneWall wall = FirstAlive(_pool);
+            Assert.IsNotNull(wall, "石牆未成形");
+
+            Vector3 behindWallGroundPoint = new Vector3(0f, 0f, 8f); // 牆（z≈4）後方的地板
+            Vector3 screenPoint = Camera.main.WorldToScreenPoint(behindWallGroundPoint);
+            Ray ray = Camera.main.ScreenPointToRay(new Vector3(screenPoint.x, screenPoint.y, 0f));
+
+            bool hit = Physics.Raycast(ray, out RaycastHit raycastHit, raycastDistance,
+                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            Assert.IsTrue(hit, "射線應該打中地板");
+            RuneWall hitWall = raycastHit.collider.GetComponentInParent<RuneWall>();
+            Assert.IsNull(hitWall, "OnWorldTap 的射線不得打中自家石牆：" + raycastHit.collider.name);
+
+            float wallFaceZ = wall.transform.position.z - tuning.WallThickness * 0.5f;
+            _input.TapGround(new Vector3(0f, 0f, 20f));
+
+            float deadline = Time.time + 3f;
+            while (Time.time <= deadline)
+            {
+                Assert.Less(_hero.transform.position.z, wallFaceZ, "英雄越過了石牆牆面：" + _hero.transform.position);
+                yield return null;
+            }
+        }
+
+        // r1 對抗審查 H5：RuneCaster 重新 Initialize（例如場景重載、測試換場）時，池裡若有還活著的牆，
+        // 換 _logic 之前要先把它收掉；否則舊的存活狀態失去追蹤，變成一面 Collider 開著、永遠不會到期的牆。
+        [UnityTest]
+        public IEnumerator ReInitializingTheCaster_CollapsesAnyAliveWall_InsteadOfLeakingIt()
+        {
+            yield return Setup(new RuneTuning());
+
+            _input.RuneQuickCast();
+            yield return null;
+            RuneWall wall = FirstAlive(_pool);
+            Assert.IsNotNull(wall, "石牆未成形");
+            Assert.IsTrue(wall.IsAlive);
+            BoxCollider collider = wall.GetComponent<BoxCollider>();
+            Assert.IsTrue(collider.enabled);
+
+            _caster.Initialize(_input, _input, _hero.transform, Camera.main, new RuneTuning(), _pool, _hero.HeroFaction);
+
+            Assert.IsFalse(wall.IsAlive, "重新 Initialize 後，原本活著的牆應該被收掉，不得留下永久牆");
+            Assert.IsFalse(collider.enabled, "石牆的 Collider 應已關閉");
         }
     }
 }

@@ -268,6 +268,12 @@ namespace Vow.EditorTools
                 RuneWall runeWall = wall.AddComponent<RuneWall>();
                 SetFloat(runeWall, "_maxHealth", runeTuning.WallMaxHealth);
                 SetEnum(runeWall, "_faction", (int)Faction.DestructibleWall);
+
+                // r1 對抗審查 H4：PlayerInputService.OnWorldTap 的點擊射線用 Physics.DefaultRaycastLayers，
+                // 石牆若留在 Default 層，點自家石牆後方的地板會先打到牆、英雄原地砍自己的牆。放 Ignore Raycast 層
+                // 讓點擊射線穿過去；HeroLocomotion.ApplyDisplacement 的身體 SphereCast 用 Physics.AllLayers，
+                // 照樣擋得住（邊界牆已經是同一套做法）。批 1 的代價：自家牆不可被點擊鎖定攻擊，批 3 陣營校驗時重議。
+                SetLayerRecursively(wall, IgnoreRaycastLayer);
             }
         }
 
