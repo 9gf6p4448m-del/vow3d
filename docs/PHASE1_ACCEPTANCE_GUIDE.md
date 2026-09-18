@@ -11,7 +11,7 @@
 
 | 項目 | 狀態 | 證據 |
 |------|------|------|
-| 手感核心邏輯（狀態機、目押窗口、預輸入緩衝、指令佇列、攻擊週期、充能、動能衰減、手勢換算、輸入路由、觸控槽位、震屏） | **已驗證** | 62 個 NUnit 測試：dotnet 下全綠，**Unity 2022.3.62f1 Test Runner (EditMode) 下也全綠**。另做突變測試：`python Tools/DotnetCheck/mutation_check.py` 把實作故意改壞 12 種，12 種都使對應測試變紅、還原後全綠 |
+| 手感核心邏輯（狀態機、目押窗口、預輸入緩衝、指令佇列、攻擊週期、充能、動能衰減、手勢換算、輸入路由、觸控槽位、震屏） | **已驗證** | 70 個 NUnit 測試：dotnet 下全綠，**Unity 2022.3.62f1 Test Runner (EditMode) 下也全綠**。另做突變測試：`python Tools/DotnetCheck/mutation_check.py` 把實作故意改壞 18 種，18 種都使對應測試變紅、還原後全綠 |
 | 在 Unity Editor 內實際編譯、套件解析、asmdef 解析 | **已驗證** | batchmode 首次開專案 exit 0、0 個 `error CS`、我方程式碼 0 警告；`Library/ScriptAssemblies/` 產出全部 8 個 `Vow.*.dll` |
 | `#if VOW_HAS_URP` 區塊（建立 URP 管線資產） | **已驗證** | `Vow.Editor.rsp` 內含 `-define:VOW_HAS_URP` 與 `GreyboxAssetFactory.cs`，編譯通過；實跑後產出 `VOW_URP.asset`（Forward+）並寫入 GraphicsSettings |
 | `VOW/Phase 1/Build Greybox Scene` 實跑 | **已驗證** | batchmode `-executeMethod` exit 0、無例外；產出場景、NavMesh 資產（非空）、AnimatorController、5 支切片、9 顆材質；場景內 `NavMeshObstacle` 元件 0 個；`activeInputHandler: 1` |
@@ -19,14 +19,19 @@
 | 佔位骨架的動畫曲線真的生效 | **已驗證** | 同上測試量到前搖期間右臂偏轉 > 30°；建置時逐條曲線綁定的解析自檢無報錯 |
 | 點地移動（NavMeshAgent 手動位移）、窗口內微彈 0 幀切後搖並實際滑出 1.4m | **已驗證** | PlayMode 測試 `TapToMove…`、`FlickInsideTheWindow…` |
 | 邊緣滑步不會掉出平台／NavMesh（兩道防線） | **已驗證** | PlayMode 測試 `DashingOutwardAtTheArenaEdge…`；停用邊界牆後該測試變紅（x 由 ≤19.46 變成 19.5，證明牆與 NavMesh 夾回是兩道獨立防線且都有效） |
-| Humanoid FBX 連動（紅線 3 的正式載體） | **未驗證** | 專案內沒有 FBX，目前一律走佔位骨架；需要 §5 |
+| Humanoid FBX 連動（紅線 3 的正式載體） | **已驗證** | 專案附 KayKit Adventurers 的 `Knight.fbx`（CC0，授權檔在 `Assets/Art/Characters/`）；Unity 自動對應成 Humanoid Avatar 成功、五個切片全數配對、`OnAttackHit` 事件已掛上。PlayMode：`isHuman == true`、動畫事件約 0.25s 驅動命中、前搖期間右上臂偏轉 > 30°；線上版 HUD 顯示 `RIG: HUMANOID`。Mixamo Y-Bot 仍可替換（見 §5） |
 | 真實輸入 → `PlayerInputService` → 射線判定（觸控與滑鼠） | **已驗證（瀏覽器）** | 以 Playwright 對線上 WebGL 版實際操作：模擬手機觸控（Pixel 8、DPR 2）點地移動、點木樁攻擊、窗口內快速滑動消耗充能切後搖、點 HUD 按鈕不滲透成移動；桌機真實滑鼠點地移動。v0.1.1 時滑鼠完全沒反應（WebGL 一律註冊 Touchscreen 使 TouchSimulation 不啟用），v0.1.2 改為直接讀滑鼠後通過 |
 | 畫面：血條、傷害飄字、射程環平貼地面且顏色正確、Hitbox 線框、佔位骨架跑步擺動、HUD 排版 | **已驗證（WebGL 截圖）** | 同上操作的截圖；Console 僅剩 Unity 自身的 `INVALID_ENUM` 能力探測警告與預期的佔位骨架提示（v0.1.1 曾有 19 次 `MeshCollider doesn't exist` 與 `no valid NavMesh`，已修） |
 | 舊網站的 service worker 不再遮蔽新版 | **已驗證** | 帶著舊 PWA 註冊的瀏覽器開啟後數秒內自動換成新版，註冊數歸 0 |
-| 畫面：閃白、貼花、模式 B 微輪盤與預警箭頭、石牆破碎重震 | **未驗證** | 這幾項在上述操作中沒有被觸發；需要 §4 |
-| 手感、120Hz 實機、Profiler 0 GC、Hitstop／震屏觀感 | **未驗證** | 只有人能判斷；需要 §4、§6 |
+| 畫面：模式 B 微輪盤與預警箭頭、破牆地裂貼花、NET 延遲按鈕 | **已驗證（WebGL 截圖）** | 以模擬手機觸控對線上 v0.2.0 操作：`NET delay` 按鈕切到 50 ms、模式 B 微輪盤的判定區／原點／外圈／搖桿頭正確繪製且命中幀自動滑出、打碎石牆後地面出現紫色地裂貼花；Console 零錯誤 |
+| 震覺疲勞管理（WebGL 後端） | **已驗證（瀏覽器）** | 攔截 `navigator.vibrate` 的實際呼叫：普攻三刀 `[10,10,10]`、之後靜音；微輪盤連續切後搖新增 `[35,35,35]`；打碎石牆那一刀 `35`。Android 原生與 iOS 原生兩個後端**未驗證**（沒有建置環境與實機）；iOS Safari 沒有震動 API，網頁版在 iPhone 上不會震 |
+| 斬殺反饋（閃白＋焦痕貼花） | **已驗證** | PlayMode：只有致命的那一刀觸發、且只觸發一次。閃白的實際觀感未以人眼確認 |
+| 網路延遲注入 50／80 ms | **已驗證（邏輯）** | 純邏輯測試＋突變檢查：不早送、保序、佇列滿不丟、OFF 同呼叫直通。**真人在延遲下的手感未驗證**——這正是這個功能要讓你測的東西 |
+| 每幀零 GC 配置（紅線 4） | **已驗證（Editor）** | PlayMode：以探針夾住全場 MonoBehaviour 的 Update／LateUpdate，讀 Profiler「GC Allocated In Frame」計數器，腳本化戰鬥 240+ 幀（含命中與滑步）配置 **0 bytes**；正向對照證實探針抓得到每幀 256 B 的故意配置。`OnGUI`（調試 HUD）與裝置版未量 |
+| 手感 | **已驗收（2026-09-19 使用者）** | 使用者試玩後回報「人眼手感不錯」 |
+| 實機 120Hz、Hitstop／震屏／閃白觀感、延遲注入下的手感 | **未驗證** | 只有人能判斷；需要 §4、§6 |
 
-> **綠燈的涵蓋範圍**：62 個 EditMode 測試只覆蓋純邏輯層；4 個 PlayMode 冒煙測試覆蓋「場景載得起來、走得動、打得到、滑得出去、出不了界」。
+> **綠燈的涵蓋範圍**：70 個 EditMode 測試只覆蓋純邏輯層；8 個 PlayMode 測試覆蓋「場景載得起來、走得動、打得到、滑得出去、出不了界、斬殺反饋、Humanoid 載體、每幀零配置」。
 > 材質與渲染結果、真實觸控、手感——**沒有任何自動化測試**，只能靠 §4~§6 的人工實測。請不要把「測試全綠」解讀成整體健康度。
 
 重跑驗證：
@@ -87,11 +92,11 @@
 ## 3. 自動化測試（Unity 內）
 
 Window ▸ General ▸ Test Runner ▸ EditMode ▸ Run All。
-**驗收點**：EditMode 62 個、PlayMode 4 個全綠（EditMode 與 dotnet 下跑的是同一份原始碼：`Assets/Tests/EditMode/`）。
+**驗收點**：EditMode 70 個、PlayMode 8 個全綠（EditMode 與 dotnet 下跑的是同一份原始碼：`Assets/Tests/EditMode/`）。
 
 ## 4. 手感驗收（按 Play）
 
-左上角 HUD：`FPS`／`PANEL HZ`（螢幕實際刷新率）／`STATE`／`PIPS`（3 格充能）／`WINDOW`（目押窗口倒數條）／`MODE`／`RIG`（`HUMANOID` 或橘字 `PLACEHOLDER`），以及兩顆按鈕 **Switch to A/B**、**Hitbox ON/OFF**。
+左上角 HUD：`FPS`／`PANEL HZ`（螢幕實際刷新率）／`STATE`／`PIPS`（3 格充能）／`WINDOW`（目押窗口倒數條）／`MODE`／`RIG`（`HUMANOID` 或橘字 `PLACEHOLDER`），以及三顆按鈕 **Switch to A/B**、**Hitbox ON/OFF**、**NET delay: OFF／50 ms／80 ms**（模擬網路往返延遲：在最壞情況——沒有客戶端預測——下測 220ms 窗口還按不按得出來）。
 桌機上滑鼠會被模擬成觸控，與手機走同一條程式路徑。
 
 ### 4.1 點地移動與普攻
@@ -207,7 +212,7 @@ Window ▸ General ▸ Test Runner ▸ EditMode ▸ Run All。
 - 19 塊圍棋演算法、戰爭迷霧、誓約天賦、深淵先鋒、大廳匹配、高級著色器、粒子特效 —— 冷庫協議
 - `IRuneWall`（壽命、穿透、坍塌）—— 只保留介面契約；測試石牆走 `ICombatTarget`
 - 繞牆尋路（0.5m 格點向量場）—— 屬 Phase 2；Phase 1 只保證撞牆會被擋住
-- **`ARCHITECTURE.md` §貳 列在 Phase 1、但不在本次交付清單內的兩項**：50~80ms 網路延遲注入、CoreHaptics 震覺管理 —— **尚未實作**，需要的話另開一輪
+- `ARCHITECTURE.md` §貳 的網路延遲注入與震覺疲勞管理已於 v0.2.0 補上；其中 **Android 原生與 iOS 原生的震動後端尚未在實機驗證**
 
 ### 已知但這一輪沒處理的項目（來自獨立審查，`vow-toolchain/REVIEW-r1.md`）
 
