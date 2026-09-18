@@ -20,9 +20,11 @@
 | 點地移動（NavMeshAgent 手動位移）、窗口內微彈 0 幀切後搖並實際滑出 1.4m | **已驗證** | PlayMode 測試 `TapToMove…`、`FlickInsideTheWindow…` |
 | 邊緣滑步不會掉出平台／NavMesh（兩道防線） | **已驗證** | PlayMode 測試 `DashingOutwardAtTheArenaEdge…`；停用邊界牆後該測試變紅（x 由 ≤19.46 變成 19.5，證明牆與 NavMesh 夾回是兩道獨立防線且都有效） |
 | Humanoid FBX 連動（紅線 3 的正式載體） | **未驗證** | 專案內沒有 FBX，目前一律走佔位骨架；需要 §5 |
-| 真實觸控 → `PlayerInputService` → 射線判定 | **未驗證** | PlayMode 測試以腳本化輸入取代觸控；EnhancedTouch 與 TouchSimulation 的實際相位行為需要人工操作確認（§4） |
-| 畫面：Hitbox 線框、預警箭頭是否平貼地面、傷害飄字、血條、閃白、貼花、HUD 排版 | **未驗證** | batchmode 看不到畫面；需要 §4 |
-| 手感、120Hz 實機、Profiler 0 GC、Hitstop／震屏觀感 | **未驗證** | 需要 §4、§6 |
+| 真實輸入 → `PlayerInputService` → 射線判定（觸控與滑鼠） | **已驗證（瀏覽器）** | 以 Playwright 對線上 WebGL 版實際操作：模擬手機觸控（Pixel 8、DPR 2）點地移動、點木樁攻擊、窗口內快速滑動消耗充能切後搖、點 HUD 按鈕不滲透成移動；桌機真實滑鼠點地移動。v0.1.1 時滑鼠完全沒反應（WebGL 一律註冊 Touchscreen 使 TouchSimulation 不啟用），v0.1.2 改為直接讀滑鼠後通過 |
+| 畫面：血條、傷害飄字、射程環平貼地面且顏色正確、Hitbox 線框、佔位骨架跑步擺動、HUD 排版 | **已驗證（WebGL 截圖）** | 同上操作的截圖；Console 僅剩 Unity 自身的 `INVALID_ENUM` 能力探測警告與預期的佔位骨架提示（v0.1.1 曾有 19 次 `MeshCollider doesn't exist` 與 `no valid NavMesh`，已修） |
+| 舊網站的 service worker 不再遮蔽新版 | **已驗證** | 帶著舊 PWA 註冊的瀏覽器開啟後數秒內自動換成新版，註冊數歸 0 |
+| 畫面：閃白、貼花、模式 B 微輪盤與預警箭頭、石牆破碎重震 | **未驗證** | 這幾項在上述操作中沒有被觸發；需要 §4 |
+| 手感、120Hz 實機、Profiler 0 GC、Hitstop／震屏觀感 | **未驗證** | 只有人能判斷；需要 §4、§6 |
 
 > **綠燈的涵蓋範圍**：62 個 EditMode 測試只覆蓋純邏輯層；4 個 PlayMode 冒煙測試覆蓋「場景載得起來、走得動、打得到、滑得出去、出不了界」。
 > 材質與渲染結果、真實觸控、手感——**沒有任何自動化測試**，只能靠 §4~§6 的人工實測。請不要把「測試全綠」解讀成整體健康度。
