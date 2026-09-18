@@ -80,6 +80,7 @@ namespace Vow.Input
 
         public bool IsRuneHeld => _rune.Held;
         public bool IsRuneDragging => _rune.Held && _rune.Dragging;
+        public bool IsRuneCancelArmed => _rune.CancelArmed;
 
         public ControlMode ActiveMode
         {
@@ -225,8 +226,7 @@ namespace Vow.Input
             switch (_slotRoute[slot])
             {
                 case TouchRoute.Rune:
-                    EmitRune(_rune.End(x, y, now, MinRadiusPixels, RuneSaturationPixels, RuneTapSlopPixels, RuneTapMaxSeconds,
-                        _routing.IsInRuneCancelZone(x, y)));
+                    EmitRune(_rune.End(x, y, now, MinRadiusPixels, RuneSaturationPixels, RuneTapSlopPixels, RuneTapMaxSeconds));
                     break;
 
                 case TouchRoute.Pip:

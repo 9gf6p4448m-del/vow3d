@@ -65,6 +65,7 @@ namespace Vow.Input
         public Vector2 PipDirection => new Vector2(Router.PipDirX, Router.PipDirY);
 
         public bool IsRuneDragging => Router.IsRuneDragging;
+        public bool IsRuneCancelArmed => Router.IsRuneCancelArmed;
         public float RuneSaturationPixels => Router.RuneSaturationPixels;
         public float PixelsPerMillimeter => GestureMath.MillimetersToPixels(1f, Screen.dpi, FallbackDpi);
 

@@ -7,24 +7,24 @@ namespace Vow.UI
 {
     // 右下角地脈符印鈕（GDD §參-1）。IMGUI 自畫，不用 GUI.Button、不引入 EventSystem——
     // 全專案只有一條輸入路徑：整顆按鈕的觸控歸 InputRoutingManager 的 Rune 路由所有（見 RecalculateLayout 對
-    // input.Routing.SetRuneZone／SetRuneCancelZone 的呼叫）；手勢辨識與事件全部在 TouchGestureRouter／
-    // RuneGestureTracker／RuneCaster，這裡只負責畫面與登記區域。
+    // input.Routing.SetRuneZone 的呼叫）；手勢辨識與事件全部在 TouchGestureRouter／RuneGestureTracker／RuneCaster，
+    // 這裡只負責畫面與登記區域。按鈕幾何一律向 RuneButtonLayout 要，不在這裡另算一份。
     //
-    // 幾何本身（按鈕與取消區的位置／大小）一律向 RuneButtonLayout 要，不在這裡另算一份——
-    // r1 對抗審查 C1：取消區緊貼按鈕、拖曳飽和行程可以拉進取消區，兩邊各算一次遲早會對不上。
+    // 使用者 2026-09-19 試玩 v0.3.1 後裁定：畫面上不出現任何取消 UI（原本按鈕上方那根紅色取消柱很怪），
+    // 拖曳中滑回按下的位置放手＝取消，用虛影變色提示（見 RuneGhostPreview）。這裡另外把拇指壓著的按鈕本體
+    // 也同步變紅——玩家操作時眼睛多半盯著拇指底下，不是螢幕中央的虛影。
     public sealed class RuneButtonView : MonoBehaviour
     {
         private static readonly Color ReadyColor = new Color(0.25f, 0.55f, 0.85f, 0.9f);
         private static readonly Color CooldownBaseColor = new Color(0.15f, 0.18f, 0.22f, 0.85f);
         private static readonly Color CooldownMaskColor = new Color(0f, 0f, 0f, 0.55f);
-        private static readonly Color CancelZoneColor = new Color(0.85f, 0.25f, 0.25f, 0.35f);
+        private static readonly Color CancelArmedColor = new Color(0.85f, 0.25f, 0.25f, 0.9f);
 
         private PlayerInputService _input;
         private RuneTuning _tuning;
         private Func<float> _cooldownRemainingSecondsProvider;
 
         private ScreenRegion _buttonRegion;
-        private ScreenRegion _cancelRegion;
         private bool _layoutValid;
         private int _lastScreenWidth;
         private int _lastScreenHeight;
@@ -55,21 +55,16 @@ namespace Vow.UI
         {
             if (_input == null) return;
 
-            // RuneSaturationPixels 由 PlayerInputService.RefreshScreenMetrics 算出（OnEnable／螢幕尺寸變動時）；
-            // 在那之前是 0——用 0 算出來的取消區會貼著按鈕（正是 C1 的洞），寧可這一幀先不登記，下一幀 Update() 會重試。
-            float saturationPixels = _input.RuneSaturationPixels;
-            if (saturationPixels <= 0f) return;
-
             _lastScreenWidth = Screen.width;
             _lastScreenHeight = Screen.height;
 
-            RuneButtonLayout layout = RuneButtonLayout.Compute(Screen.width, Screen.height, _input.PixelsPerMillimeter, saturationPixels);
+            // PlayerInputService.PixelsPerMillimeter 一律回傳正值（dpi<=0 時退回 FallbackDpi 換算），
+            // 不像舊版還要等 RuneSaturationPixels 就緒；沒有取消區之後版面計算跟拖曳飽和行程完全無關。
+            RuneButtonLayout layout = RuneButtonLayout.Compute(Screen.width, Screen.height, _input.PixelsPerMillimeter);
             _buttonRegion = layout.Button;
-            _cancelRegion = layout.CancelZone;
             _layoutValid = true;
 
             _input.Routing.SetRuneZone(_buttonRegion);
-            _input.Routing.SetRuneCancelZone(_cancelRegion);
         }
 
         // 螢幕座標（原點左下）→ IMGUI 座標（原點左上）：只是 y 翻轉，兩邊用的是同一份 RuneButtonLayout 結果。
@@ -87,7 +82,13 @@ namespace Vow.UI
 
             Rect buttonRect = ToGuiRect(_buttonRegion);
 
-            if (_input.IsRuneDragging) Fill(ToGuiRect(_cancelRegion), CancelZoneColor);
+            // 拖曳中、此刻放手會取消：按鈕整顆變紅，蓋過冷卻遮罩（正在拖曳表示上一面牆的冷卻早就不是玩家此刻關心的事）。
+            bool cancelArmed = _input.IsRuneDragging && _input.IsRuneCancelArmed;
+            if (cancelArmed)
+            {
+                Fill(buttonRect, CancelArmedColor);
+                return;
+            }
 
             float remaining = _cooldownRemainingSecondsProvider != null ? Mathf.Max(0f, _cooldownRemainingSecondsProvider()) : 0f;
             bool cooling = remaining > 0f;

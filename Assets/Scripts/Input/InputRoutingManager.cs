@@ -47,8 +47,6 @@ namespace Vow.Input
 
         private ScreenRegion _runeZone;
         private bool _hasRuneZone;
-        private ScreenRegion _runeCancelZone;
-        private bool _hasRuneCancelZone;
 
         public float EdgeMarginPixels = GestureMath.EdgeDeadzonePixels;
 
@@ -84,18 +82,6 @@ namespace Vow.Input
         {
             _runeZone = zone;
             _hasRuneZone = true;
-        }
-
-        // 取消區只在符印拖曳中有意義：它不參與 Route()，平時點在這塊上面仍是一般的世界觸控。
-        public void SetRuneCancelZone(ScreenRegion zone)
-        {
-            _runeCancelZone = zone;
-            _hasRuneCancelZone = true;
-        }
-
-        public bool IsInRuneCancelZone(float x, float y)
-        {
-            return _hasRuneCancelZone && _runeCancelZone.Contains(x, y);
         }
 
         public TouchRoute Route(float x, float y, float screenWidth, float screenHeight, ControlMode mode, out int uiRegionId)

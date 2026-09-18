@@ -81,8 +81,9 @@ namespace Vow.Bootstrap
                 RuneWall[] runeWallPool = FindObjectsOfType<RuneWall>();
                 _runeCaster.Initialize(heroInput, heroRuneInput, _hero.transform, _camera, _tuningAsset.Rune, runeWallPool, _hero.HeroFaction);
             }
+            // 「此刻放手會不會取消」是本機回饋，讀未經延遲的 _input，lambda 只在這裡建一次。
             if (_runeGhost != null && _tuningAsset != null)
-                _runeGhost.Initialize(_input, _input, _hero.transform, _camera, _tuningAsset.Rune);
+                _runeGhost.Initialize(_input, _input, _hero.transform, _camera, _tuningAsset.Rune, () => _input.IsRuneCancelArmed);
             if (_runeButton != null && _tuningAsset != null)
                 _runeButton.Initialize(_input, _tuningAsset.Rune, () => _runeCaster != null ? _runeCaster.CooldownRemaining : 0f);
 

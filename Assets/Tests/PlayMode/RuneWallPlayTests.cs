@@ -326,5 +326,68 @@ namespace Vow.Tests.PlayMode
             Assert.IsFalse(wall.IsAlive, "重新 Initialize 後，原本活著的牆應該被收掉，不得留下永久牆");
             Assert.IsFalse(collider.enabled, "石牆的 Collider 應已關閉");
         }
+
+        // 第三輪：使用者試玩後裁定移除取消區，只留「滑回按下的位置放手＝取消」，畫面上不再有紅色取消柱，
+        // 改用虛影變色提示。這裡不依賴真實的 RuneGestureTracker 滑回原點判定（那是 EditMode 的職責），
+        // 改用測試自己的 armed 旗標直接驗證 RuneGhostPreview 對 isCancelArmed 查詢來源的反應。
+        [UnityTest]
+        public IEnumerator Ghost_TurnsCancelColour_WhileReleaseWouldCancel()
+        {
+            RuneTuning tuning = new RuneTuning();
+            yield return Setup(tuning);
+
+            bool armed = false;
+            _ghost.Initialize(_input, _input, _hero.transform, Camera.main, tuning, () => armed);
+
+            Renderer ghostRenderer = _ghost.GetComponentInChildren<Renderer>();
+            Assert.IsNotNull(ghostRenderer, "虛影缺少 Renderer");
+
+            Vector2 screenDir = new Vector2(0f, 1f);
+            const float distance01 = 0.5f;
+
+            _input.RuneDrag(screenDir, distance01);
+            yield return null;
+            yield return null; // LateUpdate 跑過一輪，顏色狀態才會真的落地
+
+            Assert.IsTrue(ghostRenderer.enabled, "拖曳中虛影應可見");
+            Assert.IsFalse(_ghost.ShowingCancelColor, "旗標為假時不應顯示取消色");
+            Color normalColor = ReadAppliedBaseColor(ghostRenderer);
+            Assert.AreEqual(normalColor, _ghost.CurrentColor, "元件回報的 CurrentColor 應與 Renderer 實際套用的顏色一致");
+
+            armed = true;
+            yield return null;
+            yield return null;
+
+            Assert.IsTrue(_ghost.ShowingCancelColor, "旗標為真時應顯示取消色");
+            Color cancelColor = ReadAppliedBaseColor(ghostRenderer);
+            Assert.AreEqual(cancelColor, _ghost.CurrentColor, "元件回報的 CurrentColor 應與 Renderer 實際套用的顏色一致");
+            Assert.Greater(cancelColor.r - normalColor.r, 0.2f,
+                "取消色的紅色分量應明顯高於正常色：" + cancelColor + " vs " + normalColor);
+            Assert.Less(cancelColor.b, normalColor.b, "取消色不應比正常色更藍：" + cancelColor + " vs " + normalColor);
+
+            armed = false;
+            yield return null;
+            yield return null;
+
+            Assert.IsFalse(_ghost.ShowingCancelColor, "旗標翻回假後應回到正常色");
+            Color revertedColor = ReadAppliedBaseColor(ghostRenderer);
+            Assert.AreEqual(normalColor, revertedColor, "旗標翻回假後 Renderer 實際顏色應回到最初的正常色");
+
+            _input.RuneCancel();
+            yield return null;
+
+            Assert.IsFalse(ghostRenderer.enabled, "取消後虛影應隱藏");
+            Assert.IsFalse(_ghost.ShowingCancelColor, "隱藏時狀態應重設回正常色");
+            Assert.AreEqual(0, AliveCount(_pool), "取消不應產生石牆");
+            Assert.AreEqual(0f, _caster.CooldownRemaining, 0.001f, "取消不應進入冷卻");
+        }
+
+        // 不信元件自己回報的 CurrentColor／ShowingCancelColor，直接讀 Renderer 實際套用的 MaterialPropertyBlock。
+        private static Color ReadAppliedBaseColor(Renderer renderer)
+        {
+            MaterialPropertyBlock block = new MaterialPropertyBlock();
+            renderer.GetPropertyBlock(block);
+            return block.GetColor(Shader.PropertyToID("_BaseColor"));
+        }
     }
 }

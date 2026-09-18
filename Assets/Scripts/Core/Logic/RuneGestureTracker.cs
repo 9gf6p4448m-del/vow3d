@@ -8,7 +8,7 @@ namespace Vow.Core.Logic
         DragUpdated,  // 拖曳中：DirX／DirY／Distance01 已更新
         QuickCast,    // 輕點：從未拖出門檻就離手，或只是拇指在短促點擊中滾了一下
         Released,     // 拖曳後在取消區之外離手
-        Cancelled     // 拖曳後滑回原點、滑進取消區離手，或觸控被系統中斷
+        Cancelled     // 拖曳後滑回原點離手，或觸控被系統中斷
     }
 
     // 地脈符印的單指手勢（GDD §參-1）。值型別、無配置。
@@ -22,7 +22,7 @@ namespace Vow.Core.Logic
         public float OriginY;
         public double StartTime;
         public bool Dragging;      // 曾經拖出門檻
-        public bool InsideOrigin;  // 拖曳後又滑回原點門檻內＝取消區
+        public bool InsideOrigin;  // 拖曳後又滑回原點門檻內：此刻放手＝取消
         public float MaxReach;     // 整段手勢離原點最遠的距離（像素）
         public float DirX;
         public float DirY;
@@ -71,7 +71,7 @@ namespace Vow.Core.Logic
         }
 
         public RuneGestureOutcome End(float x, float y, double time, float dragThresholdPx, float saturationPx,
-            float tapSlopPx, double tapMaxSeconds, bool inCancelZone)
+            float tapSlopPx, double tapMaxSeconds)
         {
             if (!Held) return RuneGestureOutcome.None;
 
@@ -86,9 +86,12 @@ namespace Vow.Core.Logic
             // 放手時仍在門檻外的不赦免：那是高手的快速方向施放（往左甩 5mm 就要在左邊立牆），吞成「正前方」等於把方向丟掉。
             if (InsideOrigin && time - StartTime <= tapMaxSeconds && MaxReach <= tapSlopPx) return RuneGestureOutcome.QuickCast;
 
-            if (InsideOrigin || inCancelZone) return RuneGestureOutcome.Cancelled;
+            if (InsideOrigin) return RuneGestureOutcome.Cancelled;
             return RuneGestureOutcome.Released;
         }
+
+        // 已經亮出虛影、而此刻放手會取消（給虛影變色用）。短促輕點的赦免不在此列：那種情況虛影才剛閃出來，不值得提示。
+        public bool CancelArmed => Held && Dragging && InsideOrigin;
 
         // 觸控被系統中斷、切換操作模式：已經亮出虛影的要通知收掉；還沒拖曳的靜靜結束（不得變成極速石牆）。
         public RuneGestureOutcome Cancel()
