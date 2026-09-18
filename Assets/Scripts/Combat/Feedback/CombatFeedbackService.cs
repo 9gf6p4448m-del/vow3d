@@ -208,7 +208,7 @@ namespace Vow.Combat.Feedback
         {
             if (_camera == null) return;
 
-            GameObject quad = CreateQuad("ScreenFlash", _flashMaterial);
+            GameObject quad = QuadMeshFactory.Create("ScreenFlash", _flashMaterial);
             quad.transform.SetParent(_camera.transform, false);
             _flashRenderer = quad.GetComponent<Renderer>();
             _flashRenderer.enabled = false;
@@ -234,27 +234,12 @@ namespace Vow.Combat.Feedback
 
             for (int i = 0; i < DecalPoolSize; i++)
             {
-                GameObject quad = CreateQuad("GroundDecal", _decalMaterial);
+                GameObject quad = QuadMeshFactory.Create("GroundDecal", _decalMaterial);
                 quad.transform.SetParent(poolRoot, false);
                 quad.transform.localScale = new Vector3(2.2f, 2.2f, 1f);
                 _decalRenderers[i] = quad.GetComponent<Renderer>();
                 _decalRenderers[i].enabled = false;
             }
-        }
-
-        private static GameObject CreateQuad(string objectName, Material material)
-        {
-            GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            quad.name = objectName;
-            quad.layer = 2; // Ignore Raycast：不擋點擊射線
-            Collider quadCollider = quad.GetComponent<Collider>();
-            if (quadCollider != null) Destroy(quadCollider);
-
-            Renderer quadRenderer = quad.GetComponent<Renderer>();
-            if (material != null) quadRenderer.sharedMaterial = material;
-            quadRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            quadRenderer.receiveShadows = false;
-            return quad;
         }
 
         private void SetParticipantsFrozen(bool frozen)

@@ -29,7 +29,7 @@ namespace Vow.Core
         {
             get
             {
-                if (!_hasOrder) return true;
+                if (!_hasOrder || !_agent.enabled) return true;
                 if (_agent.pathPending) return false;
                 return _agent.remainingDistance <= _agent.stoppingDistance + 0.05f;
             }
@@ -53,15 +53,18 @@ namespace Vow.Core
             _agent.stoppingDistance = 0.05f;
         }
 
-        // NavMesh 資料由地板上的 NavMeshSurface 在 OnEnable 時載入；若英雄的 agent 比它早啟用，就會因「附近沒有 NavMesh」
-        // 而沒被放上去，之後所有 SetDestination 都會失敗。到了 Start 所有 OnEnable 都已跑完，這時補放一次。
+        // NavMesh 資料由地板上的 NavMeshSurface 在 OnEnable 時載入。agent 若比它早啟用，Unity 會回報
+        // 「Failed to create agent because there is no valid NavMesh」且不會把它放上網格（WebGL 建置實際遇到）。
+        // 所以 SceneBuilder 把 agent 存成停用狀態，等到 Start——此時全場的 OnEnable 都已跑完——才啟用。
         private void Start()
         {
+            if (!_agent.enabled) _agent.enabled = true;
             TryPlaceOnNavMesh();
         }
 
         private bool TryPlaceOnNavMesh()
         {
+            if (!_agent.enabled) return false; // Start 之前：尚未啟用
             if (_agent.isOnNavMesh) return true;
 
             if (NavMesh.SamplePosition(_self.position, out NavMeshHit hit, 4f, NavMesh.AllAreas) && _agent.Warp(hit.position))
@@ -112,7 +115,7 @@ namespace Vow.Core
             _chaseTarget = null;
             if (!_hasOrder) return;
             _hasOrder = false;
-            if (_agent.isOnNavMesh) _agent.ResetPath();
+            if (_agent.enabled && _agent.isOnNavMesh) _agent.ResetPath();
         }
 
         public void FaceTowards(Vector3 worldPosition)
@@ -136,14 +139,14 @@ namespace Vow.Core
                 if (_chaseTarget != null)
                 {
                     _repathTimer -= dt;
-                    if (_repathTimer <= 0f && _agent.isOnNavMesh)
+                    if (_repathTimer <= 0f && _agent.enabled && _agent.isOnNavMesh)
                     {
                         _repathTimer = ChaseRepathInterval;
                         _agent.SetDestination(_chaseTarget.position);
                     }
                 }
 
-                Vector3 velocity = _agent.isOnNavMesh ? _agent.desiredVelocity : Vector3.zero;
+                Vector3 velocity = _agent.enabled && _agent.isOnNavMesh ? _agent.desiredVelocity : Vector3.zero;
                 velocity.y = 0f;
                 if (velocity.sqrMagnitude > 1e-6f)
                 {
@@ -214,7 +217,7 @@ namespace Vow.Core
         // 把 agent 的內部位置拉到角色身上，再讀回來：位置若落在 NavMesh 之外，agent 會夾回邊界，角色跟著被夾回。
         private void SyncAgent()
         {
-            if (!_agent.isOnNavMesh) return;
+            if (!_agent.enabled || !_agent.isOnNavMesh) return;
             _agent.nextPosition = _self.position;
             Vector3 clamped = _agent.nextPosition;
             clamped.y = _self.position.y;

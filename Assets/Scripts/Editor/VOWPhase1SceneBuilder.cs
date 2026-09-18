@@ -185,6 +185,7 @@ namespace Vow.EditorTools
             agent.radius = tuning.BodyRadius;
             agent.height = 1.8f;
             agent.obstacleAvoidanceType = ObstacleAvoidanceType.NoObstacleAvoidance;
+            agent.enabled = false; // 由 HeroLocomotion.Start 啟用：必須晚於 NavMeshSurface 載入 NavMesh 資料
 
             hero.AddComponent<HeroLocomotion>();
             hero.AddComponent<MicroCadenceMover>();

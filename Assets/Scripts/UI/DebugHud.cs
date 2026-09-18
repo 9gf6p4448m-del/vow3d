@@ -66,7 +66,7 @@ namespace Vow.UI
                 // 常駐標示載體種類：盲測時沒有人會記得自己測的是佔位骨架還是正式的 Humanoid（紅線 3）
                 Animator animator = _hero.GetComponentInChildren<Animator>();
                 bool humanoid = animator != null && animator.isHuman;
-                _rigLabel = humanoid ? "HUMANOID" : "PLACEHOLDER (not Humanoid)";
+                _rigLabel = humanoid ? "HUMANOID" : "PLACEHOLDER";
                 _rigColor = humanoid ? Color.white : new Color(1f, 0.45f, 0.3f);
             }
             if (_input != null)

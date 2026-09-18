@@ -11,7 +11,7 @@ using TouchPhase = UnityEngine.InputSystem.TouchPhase;
 // 等於替「嚴禁舊版 UnityEngine.Input」這條紅線多上一道編譯期保險。
 namespace Vow.Input
 {
-    // IPlayerInputService 的 New Input System 實作（EnhancedTouch；桌機以 TouchSimulation 讓滑鼠走同一條路徑）。
+    // IPlayerInputService 的 New Input System 實作（EnhancedTouch 讀觸控；滑鼠左鍵被當成一根手指餵進同一個路由）。
     // 本類別只做轉接：EnhancedTouch → TouchGestureRouter（純邏輯、有測試）→ 射線判定 → 對外事件。
     // 手勢怎麼判、手指槽位怎麼管，全部在 TouchGestureRouter。
     public sealed class PlayerInputService : MonoBehaviour, IPlayerInputService, ITouchGestureSink
@@ -20,6 +20,8 @@ namespace Vow.Input
         private const float PipZoneMillimeters = 42f;
         private const float RaycastDistance = 500f;
         private const float InputSamplingHz = 120f;
+        private const int MouseTouchId = -1000;              // 不會與真實 touchId 相撞的固定編號
+        private const double MouseSuppressSeconds = 0.5;      // 真實觸控之後這段時間內忽略滑鼠
 
         [SerializeField] private Camera _worldCamera;
         [SerializeField] private ControlMode _initialMode = ControlMode.ModeA_FullScreenFlick;
@@ -33,7 +35,9 @@ namespace Vow.Input
         private float _pipZonePx;
         private int _lastScreenWidth;
         private int _lastScreenHeight;
-        private bool _enabledTouchSimulation;
+        private bool _mouseHeld;
+        private double _mouseStartTime;
+        private double _lastRealTouchTime = -10.0;
 
         public event Action<Vector3> OnMoveDestinationSelected;
         public event Action<ICombatTarget> OnCombatTargetSelected;
@@ -90,22 +94,11 @@ namespace Vow.Input
             EnhancedTouchSupport.Enable();
             InputSystem.pollingFrequency = InputSamplingHz; // 紅線 6：輸入採樣鎖定 120Hz
 
-            // 沒有實體觸控螢幕（Editor／PC）時，讓滑鼠模擬成觸控，與手機走完全相同的程式路徑。
-            if (Touchscreen.current == null)
-            {
-                TouchSimulation.Enable();
-                _enabledTouchSimulation = true;
-            }
             RefreshScreenMetrics();
         }
 
         private void OnDisable()
         {
-            if (_enabledTouchSimulation)
-            {
-                TouchSimulation.Disable();
-                _enabledTouchSimulation = false;
-            }
             EnhancedTouchSupport.Disable();
         }
 
@@ -126,9 +119,49 @@ namespace Vow.Input
                 Vector2 position = touch.screenPosition;
                 router.ProcessTouch(touch.touchId, phase, position.x, position.y, now, touch.startTime);
             }
+            if (touches.Count > 0) _lastRealTouchTime = now;
+            FeedMouse(router, now);
             router.EndFrame();
 
             EmitHeldPipVector(router);
+        }
+
+        // 滑鼠左鍵 = 一根手指。原本靠 TouchSimulation 把滑鼠轉成觸控，但 WebGL 平台不論有沒有觸控螢幕都會註冊 Touchscreen 裝置，
+        // 「沒有觸控螢幕才開模擬」的判斷在瀏覽器上永遠不成立，桌機滑鼠因此完全沒反應（實機驗收發現）。直接讀滑鼠沒有這個平台差異。
+        // 真實觸控之後的一小段時間忽略滑鼠：手機瀏覽器會替觸控補發相容用的滑鼠事件，不擋掉的話一次點擊會變兩次（HUD 開關會被切兩下）。
+        private void FeedMouse(TouchGestureRouter router, double now)
+        {
+            Mouse mouse = Mouse.current;
+            if (mouse == null) return;
+
+            if (now - _lastRealTouchTime < MouseSuppressSeconds)
+            {
+                _mouseHeld = false; // 槽位由 router.EndFrame 的「本幀沒出現」回收
+                return;
+            }
+
+            Vector2 position = mouse.position.ReadValue();
+            bool pressed = mouse.leftButton.wasPressedThisFrame;
+            bool released = mouse.leftButton.wasReleasedThisFrame;
+
+            if (pressed)
+            {
+                _mouseHeld = true;
+                _mouseStartTime = now;
+                router.ProcessTouch(MouseTouchId, TouchPhaseKind.Began, position.x, position.y, now, _mouseStartTime);
+            }
+
+            if (!_mouseHeld) return;
+
+            if (released || !mouse.leftButton.isPressed)
+            {
+                _mouseHeld = false;
+                router.ProcessTouch(MouseTouchId, TouchPhaseKind.Ended, position.x, position.y, now, _mouseStartTime);
+            }
+            else if (!pressed)
+            {
+                router.ProcessTouch(MouseTouchId, TouchPhaseKind.Moved, position.x, position.y, now, _mouseStartTime);
+            }
         }
 
         private static bool TryMapPhase(TouchPhase phase, out TouchPhaseKind kind)

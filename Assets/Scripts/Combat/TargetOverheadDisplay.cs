@@ -1,4 +1,5 @@
 using UnityEngine;
+using Vow.Core;
 using Vow.Core.Logic;
 
 namespace Vow.Combat
@@ -80,21 +81,13 @@ namespace Vow.Combat
 
         private void CreateBarQuad(string objectName, Color color, float depthOffset, out Transform quadTransform)
         {
-            GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            quad.name = objectName;
-            quad.layer = 2; // Ignore Raycast：CreatePrimitive 附帶的 Collider 要到幀末才真正銷毀，這一幀內不得接到點擊
-            Collider quadCollider = quad.GetComponent<Collider>();
-            if (quadCollider != null) Destroy(quadCollider);
+            GameObject quad = QuadMeshFactory.Create(objectName, _barMaterial);
 
             quadTransform = quad.transform;
             quadTransform.SetParent(_root, false);
             quadTransform.localPosition = new Vector3(0f, 0f, depthOffset);
 
             Renderer quadRenderer = quad.GetComponent<Renderer>();
-            if (_barMaterial != null) quadRenderer.sharedMaterial = _barMaterial;
-            quadRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            quadRenderer.receiveShadows = false;
-
             quadRenderer.GetPropertyBlock(_block);
             _block.SetColor(BaseColorId, color);
             _block.SetColor(LegacyColorId, color);
