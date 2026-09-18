@@ -81,9 +81,10 @@ namespace Vow.Core.Logic
 
             if (!Dragging) return RuneGestureOutcome.QuickCast;
 
-            // 短促點擊時拇指會在螢幕上滾動，位移常常越過 3.5mm 的拖曳門檻。若把它當成拖曳，結果不是「滑回原點＝取消」
-            // （按了沒反應＝吃指令），就是在錯的方位立一面最短距離的牆——兩者都毀掉緊急防禦。夠快、滾得夠小，就是輕點。
-            if (time - StartTime <= tapMaxSeconds && MaxReach <= tapSlopPx) return RuneGestureOutcome.QuickCast;
+            // 短促點擊時拇指會在螢幕上滾動，位移越過 3.5mm 的拖曳門檻再滾回來。若把它當成「滑回原點＝取消」，
+            // 玩家只會覺得按了沒反應（吃指令）。夠快、滾得夠小、放手時已回到原點，就是輕點。
+            // 放手時仍在門檻外的不赦免：那是高手的快速方向施放（往左甩 5mm 就要在左邊立牆），吞成「正前方」等於把方向丟掉。
+            if (InsideOrigin && time - StartTime <= tapMaxSeconds && MaxReach <= tapSlopPx) return RuneGestureOutcome.QuickCast;
 
             if (InsideOrigin || inCancelZone) return RuneGestureOutcome.Cancelled;
             return RuneGestureOutcome.Released;

@@ -272,7 +272,9 @@ namespace Vow.EditorTools
                 // r1 對抗審查 H4：PlayerInputService.OnWorldTap 的點擊射線用 Physics.DefaultRaycastLayers，
                 // 石牆若留在 Default 層，點自家石牆後方的地板會先打到牆、英雄原地砍自己的牆。放 Ignore Raycast 層
                 // 讓點擊射線穿過去；HeroLocomotion.ApplyDisplacement 的身體 SphereCast 用 Physics.AllLayers，
-                // 照樣擋得住（邊界牆已經是同一套做法）。批 1 的代價：自家牆不可被點擊鎖定攻擊，批 3 陣營校驗時重議。
+                // 照樣擋得住（邊界牆已經是同一套做法）。批 1 的代價：**所有**符印石牆都無法被點擊鎖定攻擊（全專案唯一的選取路徑就是那條射線）。
+                // GDD §參-2「近戰砸碎敵方／中立石牆得護盾」需要牆打得到——批 3 不能只加陣營校驗，得把這個圖層做法換成分陣營圖層，
+                // 或讓射線解析到牆之後再做陣營校驗。
                 SetLayerRecursively(wall, IgnoreRaycastLayer);
             }
         }

@@ -19,6 +19,11 @@ namespace Vow.Tests.PlayMode
     // 繞過真實觸控辨識（TouchGestureRouter 另有 EditMode 測試），只驗這一層「收到符印事件之後做了什麼」。
     public sealed class RuneWallPlayTests
     {
+        // 英雄是被球體掃描擋下的（HeroTuningAsset.BodyRadius = 0.35m）：身體表面碰到牆面時，中心還在牆面前 0.35m。
+        // 阻擋斷言比的是中心座標，所以門檻要扣掉身體半徑；只留 5cm 給 SkinWidth 與浮點誤差。
+        private const float HeroBodyRadius = 0.35f;
+        private const float BodySkinTolerance = 0.05f;
+
         private const string SceneName = "VOW_Phase1_Greybox";
 
         private HeroController _hero;
@@ -138,7 +143,7 @@ namespace Vow.Tests.PlayMode
             yield return null;
             RuneWall wall = FirstAlive(_pool);
             Assert.IsNotNull(wall, "石牆未成形，阻擋測試沒有意義");
-            float wallFaceZ = wall.transform.position.z - tuning.WallThickness * 0.5f;
+            float wallFaceZ = wall.transform.position.z - tuning.WallThickness * 0.5f - HeroBodyRadius + BodySkinTolerance;
 
             _input.TapGround(new Vector3(0f, 0f, 20f));
 
@@ -238,7 +243,7 @@ namespace Vow.Tests.PlayMode
             Assert.IsTrue(placementCalc.TryDragPlacement(heroPos.x, heroPos.z, worldDir.x, worldDir.z, distance01, out RuneWallPlacement expected));
             Vector3 expectedPos = new Vector3(expected.CenterX, heroPos.y + tuning.WallHeight * 0.5f, expected.CenterZ);
             Vector3 ghostOffset = _ghost.transform.position - expectedPos;
-            Assert.LessOrEqual(ghostOffset.magnitude, 0.1f,
+            Assert.LessOrEqual(ghostOffset.magnitude, 0.05f,
                 "虛影位置與預期落點不符（含 y 軸）：實際 " + _ghost.transform.position + " 預期 " + expectedPos);
 
             // 取消：不必真的滑回原點（那是 RuneGestureTracker 的職責，EditMode 已測），這裡只驗 RuneCaster／
@@ -289,7 +294,7 @@ namespace Vow.Tests.PlayMode
             RuneWall hitWall = raycastHit.collider.GetComponentInParent<RuneWall>();
             Assert.IsNull(hitWall, "OnWorldTap 的射線不得打中自家石牆：" + raycastHit.collider.name);
 
-            float wallFaceZ = wall.transform.position.z - tuning.WallThickness * 0.5f;
+            float wallFaceZ = wall.transform.position.z - tuning.WallThickness * 0.5f - HeroBodyRadius + BodySkinTolerance;
             _input.TapGround(new Vector3(0f, 0f, 20f));
 
             float deadline = Time.time + 3f;
