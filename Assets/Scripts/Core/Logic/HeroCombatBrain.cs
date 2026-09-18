@@ -134,6 +134,17 @@ namespace Vow.Core.Logic
 
                 case PlayerState.AttackWindup:
                     if (ReferenceEquals(target, _currentTarget)) return;   // 狂點同一目標：無事發生，前搖不重置
+
+                    if (_body.IsTargetInAttackRange(target))
+                    {
+                        // 射程內改鎖：只換目標、保留前搖進度。若在這裡重新起手，交替點兩個相鄰目標就能讓前搖無限重置、
+                        // 永遠打不出去——等同變相的卡刀硬直（紅線 1）。
+                        _currentTarget = target;
+                        _body.FaceTarget(target);
+                        return;
+                    }
+
+                    // 新目標在射程外：這一刀確實打不到它，中斷前搖去追
                     _currentTarget = target;
                     _hasBufferedFlick = false;
                     EngageCurrentTarget();
