@@ -20,17 +20,19 @@ namespace Vow.Input
     // 之後接上真正的客戶端預測（ARCHITECTURE §肆）時，本地手感只會比這個模式好，不會更差。
     //
     // 鐵律沿用 DelayedEventQueue：保序、不丟。佇列滿時最舊的事件立即送出，絕不吃指令。
-    public sealed class NetworkLatencySimulator : MonoBehaviour, IPlayerInputService
+    public sealed class NetworkLatencySimulator : MonoBehaviour, IPlayerInputService, IRuneCastInput
     {
         private const int QueueCapacity = 256;
         private const double JitterSeconds = 0.005; // 每筆 ±5ms
 
-        private enum Kind { Move, Target, Flick }
+        // 極速施放／鬆手成牆屬於「送出指令」，忠於「沒有客戶端預測的最壞情況」一併走延遲佇列；
+        // 拖曳更新／取消是本機 UI 回饋（虛影、取消手勢），維持直通，見下方的 pass-through 事件。
+        private enum Kind { Move, Target, Flick, RuneQuickCast, RuneReleased }
 
         private struct Pending
         {
             public Kind Kind;
-            public Vector3 Vector;
+            public Vector3 Vector; // Flick：xy 方向；RuneReleased：x=方向X y=方向Y z=distance01
             public ICombatTarget Target;
         }
 
@@ -52,17 +54,17 @@ namespace Vow.Input
             remove { if (_inner != null) _inner.OnRuneVectorDragUpdated -= value; }
         }
 
-        public event Action OnRuneQuickCastTriggered
-        {
-            add { if (_inner != null) _inner.OnRuneQuickCastTriggered += value; }
-            remove { if (_inner != null) _inner.OnRuneQuickCastTriggered -= value; }
-        }
+        // 極速施放：走延遲佇列，見 Subscribe/HandleRuneQuickCast/Dispatch。
+        public event Action OnRuneQuickCastTriggered;
 
         public event Action OnRuneCastCancelled
         {
             add { if (_inner != null) _inner.OnRuneCastCancelled += value; }
             remove { if (_inner != null) _inner.OnRuneCastCancelled -= value; }
         }
+
+        // 鬆手成牆：走延遲佇列，見 Subscribe/HandleRuneReleased/Dispatch。
+        public event Action<Vector2, float> OnRuneCastReleased;
 
         public ControlMode ActiveMode
         {
@@ -114,6 +116,8 @@ namespace Vow.Input
             _inner.OnMoveDestinationSelected += HandleMove;
             _inner.OnCombatTargetSelected += HandleTarget;
             _inner.OnCadenceVectorFlicked += HandleFlick;
+            _inner.OnRuneQuickCastTriggered += HandleRuneQuickCast;
+            _inner.OnRuneCastReleased += HandleRuneReleased;
             _subscribed = true;
         }
 
@@ -123,6 +127,8 @@ namespace Vow.Input
             _inner.OnMoveDestinationSelected -= HandleMove;
             _inner.OnCombatTargetSelected -= HandleTarget;
             _inner.OnCadenceVectorFlicked -= HandleFlick;
+            _inner.OnRuneQuickCastTriggered -= HandleRuneQuickCast;
+            _inner.OnRuneCastReleased -= HandleRuneReleased;
             _subscribed = false;
         }
 
@@ -145,6 +151,16 @@ namespace Vow.Input
         private void HandleFlick(Vector2 direction)
         {
             Submit(new Pending { Kind = Kind.Flick, Vector = new Vector3(direction.x, direction.y, 0f) });
+        }
+
+        private void HandleRuneQuickCast()
+        {
+            Submit(new Pending { Kind = Kind.RuneQuickCast });
+        }
+
+        private void HandleRuneReleased(Vector2 direction, float distance01)
+        {
+            Submit(new Pending { Kind = Kind.RuneReleased, Vector = new Vector3(direction.x, direction.y, distance01) });
         }
 
         private void Submit(Pending pending)
@@ -177,6 +193,12 @@ namespace Vow.Input
                     break;
                 case Kind.Flick:
                     OnCadenceVectorFlicked?.Invoke(new Vector2(pending.Vector.x, pending.Vector.y));
+                    break;
+                case Kind.RuneQuickCast:
+                    OnRuneQuickCastTriggered?.Invoke();
+                    break;
+                case Kind.RuneReleased:
+                    OnRuneCastReleased?.Invoke(new Vector2(pending.Vector.x, pending.Vector.y), pending.Vector.z);
                     break;
             }
         }

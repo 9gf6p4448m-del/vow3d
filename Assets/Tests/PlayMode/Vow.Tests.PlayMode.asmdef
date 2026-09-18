@@ -4,6 +4,7 @@
     "references": [
         "Vow.Core",
         "Vow.Combat",
+        "Vow.Bootstrap",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

@@ -8,6 +8,7 @@ using Vow.Bootstrap;
 using Vow.Combat;
 using Vow.Combat.Feedback;
 using Vow.Core;
+using Vow.Core.Logic;
 using Vow.Input;
 using Vow.UI;
 
@@ -51,9 +52,11 @@ namespace Vow.EditorTools
             CreateDummy(new Vector3(0f, 0f, 6f), materials.Dummy, materials.Bar);
             CreateWall("TestWall_A", new Vector3(-7f, 0f, 3f), 0f, materials.Wall, materials.Bar);
             CreateWall("TestWall_B", new Vector3(7f, 0f, 3f), 90f, materials.Wall, materials.Bar);
+            CreateRuneWallPool(tuning.Rune, materials.RuneWall);
+            RuneGhostPreview runeGhost = CreateRuneGhostPreview(tuning.Rune, materials.RuneGhost);
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
-            CreateSystems(hero, camera, rig, shakePivot, materials);
+            CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -67,7 +70,7 @@ namespace Vow.EditorTools
 
         private struct Materials
         {
-            public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines;
+            public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines, RuneWall, RuneGhost;
         }
 
         private static Materials CreateMaterials()
@@ -84,7 +87,9 @@ namespace Vow.EditorTools
                 Flash = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ScreenFlash", new Color(1f, 1f, 1f, 0f), true, true),
                 Decal = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_GroundDecal", new Color(0f, 0f, 0f, 0.8f), true, true),
                 Telegraph = GreyboxAssetFactory.EnsureVertexColorMaterial("VOW_Telegraph"),
-                HitboxLines = GreyboxAssetFactory.EnsureGlLineMaterial("VOW_HitboxLines")
+                HitboxLines = GreyboxAssetFactory.EnsureGlLineMaterial("VOW_HitboxLines"),
+                RuneWall = GreyboxAssetFactory.EnsureLitMaterial("VOW_RuneWall", new Color(0.35f, 0.4f, 0.58f)),
+                RuneGhost = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_RuneGhost", new Color(0.35f, 0.85f, 1f, 0.35f), true, true)
             };
         }
 
@@ -245,6 +250,44 @@ namespace Vow.EditorTools
             SetFloat(overhead, "_height", 1.9f); // 自石牆中心 (y=1.25) 起算，落在牆頂上方
         }
 
+        // 符印石牆池：上限 2 面 + 1 面坍塌緩衝（計畫書 §4 假設 9）。平時保持 GameObject 啟用、
+        // 只關 Collider／Renderer——RuneWall.Awake 會在建立當下立刻把自己關成「待命」狀態。
+        // 執行期禁止 CreatePrimitive（IL2CPP 剔除），這裡是 Editor-only 程式碼，不受此限。
+        private const int RuneWallPoolSize = 3;
+
+        private static void CreateRuneWallPool(RuneTuning runeTuning, Material material)
+        {
+            for (int i = 0; i < RuneWallPoolSize; i++)
+            {
+                GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube); // 自帶 BoxCollider（紅線 5）
+                wall.name = "RuneWall_Pool_" + i;
+                wall.transform.position = new Vector3(0f, runeTuning.WallHeight * 0.5f, 0f);
+                wall.transform.localScale = new Vector3(runeTuning.WallWidth, runeTuning.WallHeight, runeTuning.WallThickness);
+                wall.GetComponent<Renderer>().sharedMaterial = material;
+
+                RuneWall runeWall = wall.AddComponent<RuneWall>();
+                SetFloat(runeWall, "_maxHealth", runeTuning.WallMaxHealth);
+                SetEnum(runeWall, "_faction", (int)Faction.DestructibleWall);
+            }
+        }
+
+        // 拖曳中的半透明虛影：只要 Renderer，沒有 Collider（不得擋路、不得吃射線）。
+        private static RuneGhostPreview CreateRuneGhostPreview(RuneTuning runeTuning, Material material)
+        {
+            GameObject ghost = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            ghost.name = "RuneWallGhost";
+            Object.DestroyImmediate(ghost.GetComponent<BoxCollider>());
+            ghost.transform.localScale = new Vector3(runeTuning.WallWidth, runeTuning.WallHeight, runeTuning.WallThickness);
+
+            Renderer renderer = ghost.GetComponent<Renderer>();
+            renderer.sharedMaterial = material;
+            renderer.enabled = false; // 預設隱藏，拖曳時才顯示
+
+            RuneGhostPreview preview = ghost.AddComponent<RuneGhostPreview>();
+            SetReference(preview, "_visualRenderer", renderer);
+            return preview;
+        }
+
         private static Camera CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot)
         {
             GameObject rigObject = new GameObject("CameraRig");
@@ -270,12 +313,14 @@ namespace Vow.EditorTools
             return camera;
         }
 
-        private static void CreateSystems(HeroController hero, Camera camera, FollowCameraRig rig, Transform shakePivot, Materials materials)
+        private static void CreateSystems(HeroController hero, Camera camera, FollowCameraRig rig, Transform shakePivot,
+            Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost)
         {
             GameObject systems = new GameObject("VOW_Systems");
 
             PlayerInputService input = systems.AddComponent<PlayerInputService>();
             SetReference(input, "_worldCamera", camera);
+            SetFloat(input, "_runeSaturationMillimeters", tuning.Rune.DragSaturationMillimeters);
 
             NetworkLatencySimulator latency = systems.AddComponent<NetworkLatencySimulator>();
             SetReference(latency, "_inner", input);
@@ -295,6 +340,9 @@ namespace Vow.EditorTools
             DebugHud hud = systems.AddComponent<DebugHud>();
             CadenceAimPreview aimPreview = systems.AddComponent<CadenceAimPreview>();
 
+            RuneCaster runeCaster = systems.AddComponent<RuneCaster>();
+            RuneButtonView runeButton = systems.AddComponent<RuneButtonView>();
+
             Phase1Bootstrap bootstrap = systems.AddComponent<Phase1Bootstrap>();
             SetReference(bootstrap, "_hero", hero);
             SetReference(bootstrap, "_input", input);
@@ -307,6 +355,10 @@ namespace Vow.EditorTools
             SetReference(bootstrap, "_hud", hud);
             SetReference(bootstrap, "_hitboxes", hitboxes);
             SetReference(bootstrap, "_aimPreview", aimPreview);
+            SetReference(bootstrap, "_tuningAsset", tuning);
+            SetReference(bootstrap, "_runeCaster", runeCaster);
+            SetReference(bootstrap, "_runeGhost", runeGhost);
+            SetReference(bootstrap, "_runeButton", runeButton);
         }
 
         // ───────────────────────── 專案設定 ─────────────────────────

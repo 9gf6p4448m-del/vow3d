@@ -25,6 +25,10 @@ namespace Vow.Bootstrap
         [SerializeField] private DebugHud _hud;
         [SerializeField] private HitboxVisualizer _hitboxes;
         [SerializeField] private CadenceAimPreview _aimPreview;
+        [SerializeField] private HeroTuningAsset _tuningAsset;
+        [SerializeField] private RuneCaster _runeCaster;
+        [SerializeField] private RuneGhostPreview _runeGhost;
+        [SerializeField] private RuneButtonView _runeButton;
 
         private readonly ColliderTargetRegistry _targets = new ColliderTargetRegistry();
 
@@ -61,12 +65,26 @@ namespace Vow.Bootstrap
             // 英雄訂閱的是延遲注入層（預設 OFF＝同一呼叫內直通）；HUD 與預警箭頭讀的仍是真正的輸入服務——
             // 它們屬於本地表現，不該跟著模擬的網路延遲一起變慢。
             IPlayerInputService heroInput = _input;
+            IRuneCastInput heroRuneInput = _input;
             if (_latency != null)
             {
                 _latency.Initialize(_input);
                 heroInput = _latency;
+                heroRuneInput = _latency;
             }
             _hero.Initialize(heroInput, _feedback, _camera, _haptics);
+
+            // 符印石牆：極速施放／鬆手成牆走延遲注入層（heroInput／heroRuneInput，同英雄本體）；
+            // 虛影與按鈕是純本地回饋，直接訂閱 _input，不經延遲（計畫書 §4 假設 11）。
+            if (_runeCaster != null && _tuningAsset != null)
+            {
+                RuneWall[] runeWallPool = FindObjectsOfType<RuneWall>();
+                _runeCaster.Initialize(heroInput, heroRuneInput, _hero.transform, _camera, _tuningAsset.Rune, runeWallPool, _hero.HeroFaction);
+            }
+            if (_runeGhost != null && _tuningAsset != null)
+                _runeGhost.Initialize(_input, _input, _hero.transform, _camera, _tuningAsset.Rune);
+            if (_runeButton != null && _tuningAsset != null)
+                _runeButton.Initialize(_input, _tuningAsset.Rune, () => _runeCaster != null ? _runeCaster.CooldownRemaining : 0f);
 
             if (_feedback != null)
             {
@@ -107,6 +125,11 @@ namespace Vow.Bootstrap
             if (_hud == null) _hud = FindObjectOfType<DebugHud>();
             if (_hitboxes == null) _hitboxes = FindObjectOfType<HitboxVisualizer>();
             if (_aimPreview == null) _aimPreview = FindObjectOfType<CadenceAimPreview>();
+            if (_runeCaster == null) _runeCaster = FindObjectOfType<RuneCaster>();
+            if (_runeGhost == null) _runeGhost = FindObjectOfType<RuneGhostPreview>();
+            if (_runeButton == null) _runeButton = FindObjectOfType<RuneButtonView>();
+            // _tuningAsset 是 ScriptableObject 資產、不在場景裡，手動拼場景時沒有 FindObjectOfType 後備，
+            // 缺了它符印相關的三個 Initialize 呼叫會被 Start() 的 null 檢查略過（英雄本體不受影響）。
         }
     }
 }

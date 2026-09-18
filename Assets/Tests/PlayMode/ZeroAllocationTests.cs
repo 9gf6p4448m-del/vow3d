@@ -8,6 +8,7 @@ using UnityEngine.TestTools;
 using Vow.Combat;
 using Vow.Combat.Feedback;
 using Vow.Core;
+using Vow.Core.Logic;
 
 namespace Vow.Tests.PlayMode
 {
@@ -114,6 +115,26 @@ namespace Vow.Tests.PlayMode
     {
         private const string SceneName = "VOW_Phase1_Greybox";
 
+        private static bool AnyRuneWallAlive(RuneWall[] pool)
+        {
+            for (int i = 0; i < pool.Length; i++) if (pool[i].IsAlive) return true;
+            return false;
+        }
+
+        private static IEnumerator WaitUntilNoRuneWallIsAlive(RuneWall[] pool, float timeoutSeconds)
+        {
+            float deadline = Time.time + timeoutSeconds;
+            while (AnyRuneWallAlive(pool))
+            {
+                if (Time.time > deadline)
+                {
+                    Assert.Fail("石牆逾時未到期");
+                    yield break;
+                }
+                yield return null;
+            }
+        }
+
         [UnityTest]
         public IEnumerator Probe_DetectsADeliberatePerFrameAllocation()
         {
@@ -173,11 +194,28 @@ namespace Vow.Tests.PlayMode
                 yield return null;
             }
 
+            // 符印石牆（Phase 2 批 1 步驟 B V4g）：量測窗口內要包含一次施放與一次到期，證明這條路徑也是 0 GC。
+            RuneCaster caster = UnityEngine.Object.FindObjectOfType<RuneCaster>();
+            Assert.IsNotNull(caster, "場景缺少 RuneCaster");
+            RuneWall[] runeWalls = UnityEngine.Object.FindObjectsOfType<RuneWall>();
+            Assert.GreaterOrEqual(runeWalls.Length, 1, "場景缺少符印石牆池");
+            caster.Initialize(input, input, hero.transform, Camera.main, new RuneTuning(), runeWalls, hero.HeroFaction);
+
+            // 量測窗口外先跑一次完整的施放到期：把第一次呼叫可能有的一次性成本排除在量測之外
+            input.RuneQuickCast();
+            yield return WaitUntilNoRuneWallIsAlive(runeWalls, 8f);
+
+            // 重新 Initialize：重置冷卻與名冊狀態，確保量測窗口內的施放不會被暖機那一次的冷卻擋下
+            caster.Initialize(input, input, hero.transform, Camera.main, new RuneTuning(), runeWalls, hero.HeroFaction);
+
             int hitsBefore = hits, dashesBefore = dashes;
             AllocationProbe.Measuring = true;
+            input.RuneQuickCast();
+            bool sawRuneWallAlive = false;
             deadline = Time.time + 20f;
-            while (AllocationProbe.Frames < 240 || hits - hitsBefore < 2 || dashes - dashesBefore < 1)
+            while (AllocationProbe.Frames < 240 || hits - hitsBefore < 2 || dashes - dashesBefore < 1 || AnyRuneWallAlive(runeWalls))
             {
+                if (AnyRuneWallAlive(runeWalls)) sawRuneWallAlive = true;
                 if (Time.time > deadline) break;
                 yield return null;
             }
@@ -188,6 +226,8 @@ namespace Vow.Tests.PlayMode
             Assert.GreaterOrEqual(AllocationProbe.Frames, 240, "量測幀數不足");
             Assert.GreaterOrEqual(hits - hitsBefore, 2, "量測期間沒有足夠的命中");
             Assert.GreaterOrEqual(dashes - dashesBefore, 1, "量測期間沒有發生滑步");
+            Assert.IsTrue(sawRuneWallAlive, "量測期間從未觀察到石牆存活：符印施放這條路徑沒有被量到");
+            Assert.IsFalse(AnyRuneWallAlive(runeWalls), "量測窗口內石牆應已到期（否則量測時間不夠長，這不構成證據）");
 
             Assert.AreEqual(0L, AllocationProbe.UpdateBytes,
                 "Update 夾區在 " + AllocationProbe.Frames + " 幀內配置了 " + AllocationProbe.UpdateBytes + " bytes");

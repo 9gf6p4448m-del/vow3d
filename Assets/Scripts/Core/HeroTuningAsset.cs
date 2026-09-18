@@ -22,5 +22,8 @@ namespace Vow.Core
         [Range(30f, 60f)] public float HitstopMilliseconds = 40f;
         [Range(0f, 1f)] public float BasicAttackTrauma = 0.2f;
         [Range(0f, 1f)] public float WallBreakTrauma = 0.8f;
+
+        [Header("地脈符印（Phase 2 批 1）")]
+        public RuneTuning Rune = new RuneTuning();
     }
 }
