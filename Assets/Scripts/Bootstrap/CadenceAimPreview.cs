@@ -12,6 +12,7 @@ namespace Vow.Bootstrap
     {
         private const float ArrowWidth = 0.22f;
         private const float RangeRingThickness = 0.08f;
+        private const float ArrowStartOffset = 0.65f; // 從身體外緣出發：箭頭畫在腳下會被模型整個蓋住
 
         private HeroController _hero;
         private PlayerInputService _input;
@@ -59,7 +60,8 @@ namespace Vow.Bootstrap
             if (pipActive && _hero.CadenceMover.CurrentCharges > 0)
             {
                 Vector3 direction = ScreenToWorldDirection(_input.PipDirection);
-                _telegraph.ShowLineIndicator(heroPosition, direction, _hero.Mover.NextDashDistance, ArrowWidth);
+                _telegraph.ShowLineIndicator(heroPosition + direction * ArrowStartOffset, direction,
+                    _hero.Mover.NextDashDistance, ArrowWidth);
                 return;
             }
 

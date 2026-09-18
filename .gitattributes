@@ -1,0 +1,27 @@
+# Unity writes its YAML assets with LF. Without this, git on Windows (core.autocrlf=true) reports them as
+# modified after every build even though nothing changed, which dirties the tree the deploy script checks.
+*.cs          text eol=lf
+*.asmdef      text eol=lf
+*.json        text eol=lf
+*.md          text eol=lf
+*.sh          text eol=lf
+*.py          text eol=lf
+*.html        text eol=lf
+*.js          text eol=lf
+*.jslib       text eol=lf
+*.mm          text eol=lf
+*.txt         text eol=lf
+
+*.meta        text eol=lf
+*.unity       text eol=lf
+*.asset       text eol=lf
+*.mat         text eol=lf
+*.anim        text eol=lf
+*.controller  text eol=lf
+*.prefab      text eol=lf
+
+# cmd.exe needs CRLF
+*.bat         text eol=crlf
+
+*.fbx         binary
+*.png         binary

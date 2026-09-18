@@ -26,6 +26,8 @@ namespace Vow.Combat
         private CombatTargetBehaviour _target;
         private Transform _root;
         private Transform _fill;
+        private Renderer _fillRenderer;
+        private Renderer _backgroundRenderer;
         private Transform _cameraTransform;
         private MaterialPropertyBlock _block;
         private int _nextText;
@@ -42,6 +44,8 @@ namespace Vow.Combat
             CreateBarQuad("BarBackground", new Color(0.08f, 0.08f, 0.08f), 0.002f, out Transform background);
             background.localScale = new Vector3(_barWidth + 0.06f, _barThickness + 0.06f, 1f);
             CreateBarQuad("BarFill", new Color(0.9f, 0.18f, 0.16f), 0f, out _fill);
+            _backgroundRenderer = background.GetComponent<Renderer>();
+            _fillRenderer = _fill.GetComponent<Renderer>();
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             for (int i = 0; i < FloatingTextPoolSize; i++)
@@ -110,6 +114,11 @@ namespace Vow.Combat
 
         private void RefreshBar()
         {
+            // 目標死亡（木樁倒下、石牆碎裂）期間不顯示血條，復活時 OnRevived 會再呼叫一次把它帶回來
+            bool alive = _target.IsAlive;
+            _fillRenderer.enabled = alive;
+            _backgroundRenderer.enabled = alive;
+
             float normalized = _target.HealthNormalized;
             _fill.localScale = new Vector3(Mathf.Max(0.0001f, _barWidth * normalized), _barThickness, 1f);
             _fill.localPosition = new Vector3(-_barWidth * (1f - normalized) * 0.5f, 0f, 0f); // 由右往左縮
