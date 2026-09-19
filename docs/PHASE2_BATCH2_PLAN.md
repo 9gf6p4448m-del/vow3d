@@ -170,7 +170,7 @@ Simplicity 例外：
 - i. 零配置：量測窗口內包含「一面牆擋住當前路徑→觸發 `Build`＋`Follow` 轉向」與「該牆到期撤銷」，`GC Allocated In Frame` 仍為 0 bytes；既有正向對照仍會變紅。
 - j. GRID 疊圖：預設 Renderer 關；切到 ON → 開，且 Mesh 的四邊形數 == `BlockedCount`；放一面牆後數字跟著變。
 
-**V5** 範圍：`git diff --stat 1931b53..` 逐檔對應 §1；§3 點名的六個檔零改動；既有測試檔除 §1 列明者外零改動，`ZeroAllocationTests.cs` 的門檻與正向對照零改動。
+**V5** 範圍：`git diff --stat <批 2 分支的起點>..` 逐檔對應 §1（2026-09-19 註：本檔寫完後、批 2 動工前，main 先插了兩個試玩回饋修正 v0.3.3／v0.3.4，其中 v0.3.4 依使用者裁定改了 `RuneCastLogic.cs`；那不是批 2 的改動，所以比對起點由 `1931b53` 改為 v0.3.4 的 commit——批 2 自己對 §3 六個檔仍須零改動，及格線未變）；§3 點名的六個檔零改動；既有測試檔除 §1 列明者外零改動，`ZeroAllocationTests.cs` 的門檻與正向對照零改動。
 
 **V6** fresh-context opus 對抗審查（prompt 必含：逐一比對測試裡的數字常數與本檔是否一致、有沒有測試自己抹掉座標軸或放寬容差、`SetNavigator(null)` 是否真的逐行等同舊行為、石牆離場路徑的分母是否數全）：CRITICAL／HIGH 全修或經使用者簽准；修完三態覆審，上限 3 輪。
 

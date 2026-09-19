@@ -61,8 +61,8 @@ namespace Vow.Tests
             const float inv = 0.70710678f;
 
             Assert.IsTrue(cast.TryDragPlacement(1f, 1f, 1f, 1f, 0f, out RuneWallPlacement near));
-            Assert.AreEqual(1f + 2f * inv, near.CenterX, 1e-4);
-            Assert.AreEqual(1f + 2f * inv, near.CenterZ, 1e-4);
+            Assert.AreEqual(1f + 1.2f * inv, near.CenterX, 1e-4, "最近距離 1.2m（2026-09-19 使用者裁定，原 2m）");
+            Assert.AreEqual(1f + 1.2f * inv, near.CenterZ, 1e-4);
             Assert.AreEqual(inv, near.NormalX, 1e-5);
             Assert.AreEqual(inv, near.NormalZ, 1e-5);
 
@@ -71,10 +71,31 @@ namespace Vow.Tests
             Assert.AreEqual(0f, far.CenterZ, 1e-5);
 
             Assert.IsTrue(cast.TryDragPlacement(0f, 0f, 0f, 1f, 0.5f, out RuneWallPlacement mid));
-            Assert.AreEqual(5f, mid.CenterZ, 1e-5);
+            Assert.AreEqual(2.9f, mid.CenterZ, 1e-4, "0.5 已過貼身帶（1/3）：1.2 + 6.8 × (0.5 − 1/3) ÷ (2/3)");
 
             Assert.IsTrue(cast.TryDragPlacement(0f, 0f, 0f, 1f, 7f, out RuneWallPlacement clamped));
             Assert.AreEqual(8f, clamped.CenterZ, 1e-5, "拉伸量超出 0~1 要夾住，不得把牆丟到射程外");
+        }
+
+        // 2026-09-19 試玩回饋「想把牆放在身邊很容易觸發取消」：最近距離原本只對應「手指剛好停在取消圈邊緣」那一點。
+        // 貼身帶：拖出取消圈後的前 1/3 行程（3.5～7mm）一律＝最近距離，之後才線性拉遠——貼身放牆離取消圈有一整圈緩衝。
+        [Test]
+        public void DragCast_NearBand_HoldsTheMinimumDistanceForTheFirstThirdOfTheStroke()
+        {
+            RuneCastLogic cast = new RuneCastLogic(new RuneTuning());
+
+            float[] insideBand = { 0f, 0.1f, 0.2f, 0.33f };
+            foreach (float t in insideBand)
+            {
+                Assert.IsTrue(cast.TryDragPlacement(0f, 0f, 0f, 1f, t, out RuneWallPlacement p));
+                Assert.AreEqual(1.2f, p.CenterZ, 1e-4, "拉伸量 " + t + " 仍在貼身帶內");
+            }
+
+            Assert.IsTrue(cast.TryDragPlacement(0f, 0f, 0f, 1f, 2f / 3f, out RuneWallPlacement half));
+            Assert.AreEqual(4.6f, half.CenterZ, 1e-4, "貼身帶之後線性：行程 2/3 處＝1.2 與 8 的中點");
+
+            Assert.IsTrue(cast.TryDragPlacement(0f, 0f, 0f, 1f, 1f, out RuneWallPlacement far));
+            Assert.AreEqual(8f, far.CenterZ, 1e-5);
         }
 
         [Test]

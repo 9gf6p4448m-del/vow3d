@@ -40,11 +40,15 @@ namespace Vow.Core.Logic
             return TryPlace(posX, posZ, forwardX, forwardZ, _tuning.QuickCastDistance, out placement);
         }
 
-        // 拖曳施法：方向＝石牆相對英雄的方位，拉伸量 0~1 線性對應最近～最遠距離；牆面永遠垂直於「英雄→落點」連線。
+        // 拖曳施法：方向＝石牆相對英雄的方位；拉伸量 0~1 的前一段（貼身帶）一律＝最近距離，之後線性拉到最遠；
+        // 牆面永遠垂直於「英雄→落點」連線。貼身帶讓「把牆放在身邊」不必把手指停在取消圈的邊緣上。
         public bool TryDragPlacement(float posX, float posZ, float dirX, float dirZ, float distance01, out RuneWallPlacement placement)
         {
             float t = distance01 < 0f ? 0f : (distance01 > 1f ? 1f : distance01);
-            float distance = _tuning.DragMinDistance + (_tuning.DragMaxDistance - _tuning.DragMinDistance) * t;
+            float band = _tuning.DragNearBand01;
+            float u = band < 1f ? (t - band) / (1f - band) : 0f;
+            if (u < 0f) u = 0f;
+            float distance = _tuning.DragMinDistance + (_tuning.DragMaxDistance - _tuning.DragMinDistance) * u;
             return TryPlace(posX, posZ, dirX, dirZ, distance, out placement);
         }
 

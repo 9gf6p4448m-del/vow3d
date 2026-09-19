@@ -9,7 +9,8 @@ namespace Vow.Core.Logic
         // ── 施法 ──
         public float CooldownSeconds = 8f;             // 暫定
         public float QuickCastDistance = 4f;           // 極速石牆：正前方 4 米
-        public float DragMinDistance = 2f;             // 暫定：拖曳剛越過門檻時的落點距離
+        public float DragMinDistance = 1.2f;           // 暫定：貼身帶內的落點距離（2026-09-19 試玩回饋，原 2m）
+        public float DragNearBand01 = 1f / 3f;         // 暫定：拉伸量的前 1/3（3.5～7mm）一律＝最近距離，離取消圈留一整圈緩衝
         public float DragMaxDistance = 8f;             // 暫定：拇指拉滿時的落點距離
         public float DragSaturationMillimeters = 14f;  // 暫定：拇指拉滿的物理行程（起點為微彈的 3.5mm 門檻）
 
