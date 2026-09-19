@@ -22,6 +22,10 @@ namespace Vow.Combat
         // 給 RuneButtonView 畫冷卻遮罩用。
         public float CooldownRemaining => _castLogic != null ? (float)_castLogic.CooldownRemaining(Time.timeAsDouble) : 0f;
 
+        // 實際拿到手的玩家石牆池。批 3 把敵方牆從 FindObjectsOfType 整批當池的做法裡切出去（§4-6），
+        // 驗收（V4-o）必須看得到「組裝端到底交了哪幾面牆給玩家」，不能自己另外湊一份。
+        public RuneWall[] Pool => _pool;
+
         // input：拖曳更新／極速施放／取消（極速施放走延遲佇列時，input 應為包住 latency 的那一層）。
         // releaseInput：鬆手成牆，因 ARCHITECTURE 的 IPlayerInputService 沒有這個事件而另立 IRuneCastInput。
         public void Initialize(IPlayerInputService input, IRuneCastInput releaseInput, Transform hero, Camera worldCamera,

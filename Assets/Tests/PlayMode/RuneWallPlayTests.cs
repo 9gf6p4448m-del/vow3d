@@ -271,14 +271,13 @@ namespace Vow.Tests.PlayMode
                 "成牆位置與拖曳預期落點不符（含 y 軸）：實際 " + spawned.transform.position + " 預期 " + expectedPos);
         }
 
-        // r1 對抗審查 H4：石牆池放到 Ignore Raycast 層之後，PlayerInputService.OnWorldTap 用的
-        // Physics.DefaultRaycastLayers 射線應該穿過自家石牆打到後面的地板，不得解析成「點到石牆」；
-        // 同一測試內順帶確認 V4b 的物理阻擋（HeroLocomotion 的 SphereCast 用 AllLayers）依然成立。
+        // 批 3 V4-e／V6：量測位置從「牆在不在 Ignore Raycast 層」這個實作手段，搬到使用者真的會經歷的路徑。
+        // 要守的行為逐字不變（點自家牆等於點到牆後的地板、牆照樣擋身體），但斷言**更嚴**：
+        // 舊版只要牆在層 2 就過，新版要求陣營判斷正確（牆已經回到 Default 層），
+        // 反向由 ShieldAndProjectilePlayTests.V4f（敵方／中立牆必須點得到）補上。
         [UnityTest]
         public IEnumerator Wall_IsInvisibleToWorldTapRaycast_ButStillBlocksTheHeroPhysically()
         {
-            const float raycastDistance = 500f; // 與 PlayerInputService.OnWorldTap 的 RaycastDistance 相同
-
             RuneTuning tuning = new RuneTuning();
             yield return Setup(tuning);
 
@@ -287,15 +286,23 @@ namespace Vow.Tests.PlayMode
             RuneWall wall = FirstAlive(_pool);
             Assert.IsNotNull(wall, "石牆未成形");
 
-            Vector3 behindWallGroundPoint = new Vector3(0f, 0f, 8f); // 牆（z≈4）後方的地板
-            Vector3 screenPoint = Camera.main.WorldToScreenPoint(behindWallGroundPoint);
-            Ray ray = Camera.main.ScreenPointToRay(new Vector3(screenPoint.x, screenPoint.y, 0f));
+            Phase1Bootstrap bootstrap = Object.FindObjectOfType<Phase1Bootstrap>();
+            Assert.IsNotNull(bootstrap, "場景缺少 Phase1Bootstrap");
 
-            bool hit = Physics.Raycast(ray, out RaycastHit raycastHit, raycastDistance,
-                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
-            Assert.IsTrue(hit, "射線應該打中地板");
-            RuneWall hitWall = raycastHit.collider.GetComponentInParent<RuneWall>();
-            Assert.IsNull(hitWall, "OnWorldTap 的射線不得打中自家石牆：" + raycastHit.collider.name);
+            ICombatTarget selectedTarget = null;
+            bool moveSelected = false;
+            Vector3 moveDestination = Vector3.zero;
+            bootstrap.InputService.OnCombatTargetSelected += target => selectedTarget = target;
+            bootstrap.InputService.OnMoveDestinationSelected += point => { moveSelected = true; moveDestination = point; };
+
+            // 對「自家石牆本體」的螢幕座標下點擊：射線一定先打到牆，陣營校驗要讓它穿過去打到牆後的地板。
+            Vector3 screenPoint = Camera.main.WorldToScreenPoint(wall.transform.position);
+            bootstrap.WorldTapInput.OnWorldTap(screenPoint.x, screenPoint.y);
+
+            Assert.IsNull(selectedTarget, "點自家石牆不得鎖定它（實際鎖到 " + selectedTarget + "）");
+            Assert.IsTrue(moveSelected, "點自家石牆應該變成「走到牆後地板」的移動指令");
+            Assert.Greater(moveDestination.z, wall.transform.position.z + tuning.WallThickness * 0.5f,
+                "落點必須落在牆的後方地板上：" + moveDestination);
 
             float wallFaceZ = wall.transform.position.z - tuning.WallThickness * 0.5f - HeroBodyRadius + BodySkinTolerance;
             // §6 R2：同上——這條守的是射線穿得過去＋碰撞體擋得住身體，繞牆與否不在它的射程內。

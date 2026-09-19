@@ -93,6 +93,9 @@ namespace Vow.Tests.PlayMode
         internal ICombatTarget Target;
         public int Hits;
         public int Dashes;
+        // 批 3：暖機的近戰破牆會把大腦的目標搶走，之後就不會再打木樁了。由測試開閘，
+        // 讓「重新鎖定木樁」這個動作一樣發生在夾區內的 Update()（H2）。
+        public bool Retarget;
         private bool _started;
         private static readonly Vector2 Away = new Vector2(0f, -1f);
 
@@ -103,6 +106,13 @@ namespace Vow.Tests.PlayMode
             if (!_started)
             {
                 _started = true;
+                Input.TapTarget(Target);
+                return;
+            }
+
+            if (Retarget)
+            {
+                Retarget = false;
                 Input.TapTarget(Target);
                 return;
             }
@@ -181,6 +191,98 @@ namespace Vow.Tests.PlayMode
                 Wall.Activate(new Vector3(p.x, WallHeight * 0.5f, p.z), Quaternion.identity, WallFaction, null, -1);
                 Steps = 2;
             }
+        }
+    }
+
+    // Phase 2 批 3 V5：砲台開火、子彈穿透己方牆、子彈被牆擋下、護盾取得（含護盾條可見）、
+    // 走真實 OnWorldTap 點到己方牆後方的地板——五件事都必須發生在**探針夾區內的 Update()**，
+    // 寫在測試協程本體會落在夾區之外（同 H2），對這幾條路徑毫無鑑別力。
+    public sealed class Batch3Driver : MonoBehaviour
+    {
+        internal TestTurret Turret;
+        internal IWorldTapInput Tap;
+        internal Camera View;
+        internal RuneWall FriendlyWall;
+        internal RuneWall BlockingWall;
+        internal HeroController Hero;
+        internal ScriptedInput Input;
+        internal float WallHeight;
+        internal float WallMaxHealth;
+        internal float MeleeDamage;
+
+        public bool Trigger;
+        public bool MeleeGate;   // 由測試在「繞牆那段已經量夠」之後開閘，免得攻擊指令把移動打斷
+        public int Stage;
+        public int Taps;
+
+        // 砲台的計數是累計值（窗口外的暖機也算在內），所以窗口內的條件一律看增量。
+        internal int ShotsBase;
+        internal int PenetrationsBase;
+        internal int BlocksBase;
+
+        // 砲台彈道：TestTurret 固定在 (−8, 1, 6) 朝 +X。牆放在走廊靠砲台那一段，遠離英雄的活動範圍。
+        private const float TurretX = -8f;
+        private const float LaneZ = 6f;
+
+        private void Update()
+        {
+            if (!Trigger || Turret == null) return;
+
+            switch (Stage)
+            {
+                case 0:
+                    PlaceOnLane(FriendlyWall, 1.5f, Hero.HeroFaction);
+                    Stage = 1;
+                    return;
+
+                case 1:
+                    Vector3 screenPoint = View.WorldToScreenPoint(FriendlyWall.transform.position);
+                    Tap.OnWorldTap(screenPoint.x, screenPoint.y); // 點己方牆 → 應該落在牆後的地板上
+                    Taps++;
+                    Stage = 2;
+                    return;
+
+                case 2:
+                    PlaceOnLane(BlockingWall, 3f, Faction.RedTeam);
+                    Turret.SetFiring(true);
+                    Stage = 3;
+                    return;
+
+                case 3:
+                    // 等砲台的同時每幀再點一次：暖機只掩蓋得了「第一次」的成本，
+                    // 每幀都走一次 OnWorldTap，「每次都配置」的實作就藏不住。
+                    Vector3 lanePoint = View.WorldToScreenPoint(FriendlyWall.transform.position);
+                    Tap.OnWorldTap(lanePoint.x, lanePoint.y);
+                    Taps++;
+                    if (Turret.ShotsFired - ShotsBase < 3
+                        || Turret.Penetrations - PenetrationsBase < 2
+                        || Turret.Blocks - BlocksBase < 2) return;
+                    Turret.SetFiring(false);
+                    Stage = 4;
+                    return;
+
+                case 4:
+                    if (!MeleeGate) return;
+                    // 把敵方牆搬到英雄面前、削到剩一刀的血，再下攻擊指令：走真實的
+                    // 大腦 → ResolveAttackHit → OnAttackHitResolved → 授予護盾這條路。
+                    Vector3 forward = Hero.transform.forward;
+                    forward.y = 0f;
+                    if (forward.sqrMagnitude < 1e-6f) forward = Vector3.forward;
+                    forward.Normalize();
+                    Vector3 position = Hero.transform.position + forward * (Hero.AttackRange * 0.5f);
+                    position.y = WallHeight * 0.5f;
+                    BlockingWall.Activate(position, Quaternion.LookRotation(forward, Vector3.up), Faction.RedTeam, null, -1);
+                    BlockingWall.ReceiveDamage(WallMaxHealth - MeleeDamage, DamageType.Physical, null);
+                    Input.TapTarget(BlockingWall);
+                    Stage = 5;
+                    return;
+            }
+        }
+
+        private void PlaceOnLane(RuneWall wall, float distanceFromTurret, Faction owner)
+        {
+            wall.Activate(new Vector3(TurretX + distanceFromTurret, WallHeight * 0.5f, LaneZ),
+                          Quaternion.LookRotation(Vector3.right, Vector3.up), owner, null, -1);
         }
     }
 
@@ -274,6 +376,7 @@ namespace Vow.Tests.PlayMode
             NavDetourDriver detourDriver = rig.AddComponent<NavDetourDriver>();
             detourDriver.Input = input;
             GoalBlockedDriver goalBlockedDriver = rig.AddComponent<GoalBlockedDriver>();
+            Batch3Driver batch3Driver = rig.AddComponent<Batch3Driver>();
             rig.AddComponent<AllocationProbeEnd>();
 
             HeroLocomotion locomotion = hero.GetComponent<HeroLocomotion>();
@@ -301,8 +404,39 @@ namespace Vow.Tests.PlayMode
             // 符印石牆（Phase 2 批 1 步驟 B V4g）：量測窗口內要包含一次施放與一次到期，證明這條路徑也是 0 GC。
             RuneCaster caster = UnityEngine.Object.FindObjectOfType<RuneCaster>();
             Assert.IsNotNull(caster, "場景缺少 RuneCaster");
-            RuneWall[] runeWalls = UnityEngine.Object.FindObjectsOfType<RuneWall>();
+            // 批 3：改讀「組裝端交給玩家的那幾面」，不是 FindObjectsOfType——後者會把除錯用的敵方牆
+            // 一起掃進來，下面所有 AnyRuneWallAlive 的判斷就會被 Batch3Driver 放在彈道上的牆干擾。
+            RuneWall[] runeWalls = caster.Pool;
             Assert.GreaterOrEqual(runeWalls.Length, 1, "場景缺少符印石牆池");
+
+            // 批 3 V5 的四件活性：砲台、子彈穿透／擋下、護盾、真實 OnWorldTap。
+            TestTurret turret = UnityEngine.Object.FindObjectOfType<TestTurret>();
+            Assert.IsNotNull(turret, "場景缺少測試砲台");
+            Assert.IsFalse(turret.IsFiring, "砲台必須預設關閉，由夾區內的 Driver 自己打開");
+            RockShieldBehaviour shield = UnityEngine.Object.FindObjectOfType<RockShieldBehaviour>();
+            Assert.IsNotNull(shield, "英雄身上缺少破牆護盾元件");
+            HeroShieldBar shieldBar = UnityEngine.Object.FindObjectOfType<HeroShieldBar>();
+            Assert.IsNotNull(shieldBar, "英雄身上缺少護盾條");
+            EnemyWallSpawner enemyWalls = UnityEngine.Object.FindObjectOfType<EnemyWallSpawner>();
+            Assert.IsNotNull(enemyWalls, "場景缺少敵方石牆池");
+            Assert.GreaterOrEqual(enemyWalls.Pool.Length, 2, "敵方石牆池應預建 2 面");
+
+            RuneTuning batch3Tuning = new RuneTuning();
+            float dummyHealthBefore = dummy.Health;
+            hero.ResolveAttackHit(dummy); // 量一次真實近戰傷害（窗口外），Driver 要靠它算「剩一刀的血」
+            float meleeDamage = dummyHealthBefore - dummy.Health;
+            Assert.Greater(meleeDamage, 0f, "量不到近戰傷害");
+
+            batch3Driver.Turret = turret;
+            batch3Driver.Tap = bootstrap.WorldTapInput;
+            batch3Driver.View = Camera.main;
+            batch3Driver.FriendlyWall = enemyWalls.Pool[0];
+            batch3Driver.BlockingWall = enemyWalls.Pool[1];
+            batch3Driver.Hero = hero;
+            batch3Driver.Input = input;
+            batch3Driver.WallHeight = batch3Tuning.WallHeight;
+            batch3Driver.WallMaxHealth = batch3Tuning.WallMaxHealth;
+            batch3Driver.MeleeDamage = meleeDamage;
             caster.Initialize(input, input, hero.transform, Camera.main, new RuneTuning(), runeWalls, hero.HeroFaction);
 
             // 量測窗口外先跑一次完整的施放到期（協程本體直接呼叫即可，反正不落在夾區內、不受 H2 約束）：
@@ -322,11 +456,69 @@ namespace Vow.Tests.PlayMode
             yield return null;
             yield return null;
             Assert.GreaterOrEqual(gridDebug.RebuildCount, 1, "疊圖打開後應該至少重填過一次（暖機）");
+
+            // 批 3 路徑的暖機（窗口外，與上面符印施放那一段同一個做法）：讓 Batch3Driver 把**整條流程**
+            // 先完整跑一遍——Unity 的 Collider／Renderer 受管包裝、每一發子彈第一次離膛、格點改動後第一次
+            // 重解析、破牆演出（震屏＋貼花＋震覺）、護盾條第一次顯示，全都是一次性成本。
+            // 窗口內同一條流程會再跑一遍，而且點擊每幀一次、穿透與擋下各要 ≥2 次，
+            // 所以「每次都配置」的實作照樣會被抓到。
+            for (int warm = 0; warm < 2; warm++)
+            {
+                batch3Driver.MeleeGate = true;
+                batch3Driver.Trigger = true;
+                int grantsAtWarmStart = shield.GrantCount;
+                deadline = Time.time + 25f;
+                while (batch3Driver.Stage < 5 || shield.GrantCount == grantsAtWarmStart)
+                {
+                    if (Time.time > deadline)
+                        Assert.Fail("批 3 暖機逾時（第 " + (warm + 1) + " 輪）：stage=" + batch3Driver.Stage
+                                    + " shots=" + turret.ShotsFired + " pen=" + turret.Penetrations
+                                    + " block=" + turret.Blocks + " grants=" + shield.GrantCount);
+                    yield return null;
+                }
+                batch3Driver.Trigger = false;
+                Assert.IsTrue(shieldBar.IsVisible, "暖機時護盾條應該顯示過一次");
+
+                // 子彈池裡每一發都要離膛過（第一次離膛是一次性成本）：補打到整池輪過一圈以上。
+                turret.SetFiring(true);
+                int enoughShots = turret.ShotsFired + new ProjectileTuning().BulletPoolSize + 1;
+                deadline = Time.time + 15f;
+                while (turret.ShotsFired < enoughShots)
+                {
+                    if (Time.time > deadline) Assert.Fail("批 3 暖機補彈逾時：shots=" + turret.ShotsFired);
+                    yield return null;
+                }
+                turret.SetFiring(false);
+
+                enemyWalls.Pool[0].CollapseWall(false);
+                enemyWalls.Pool[1].CollapseWall(false);
+                yield return new WaitForSeconds(new ProjectileTuning().ShieldDurationSeconds + 0.2f);
+                Assert.IsFalse(shieldBar.IsVisible, "暖機的護盾應已到期");
+                batch3Driver.Stage = 0;
+                batch3Driver.Taps = 0;
+                batch3Driver.MeleeGate = false;
+            }
+
+            // 暖機的近戰破牆把大腦的目標搶走了，這裡先重新鎖定木樁（與 CombatDriver 最初那一次鎖定同樣
+            // 落在窗口之外：鎖定本身是既有路徑，窗口內要量的是它之後每幀的攻擊週期）。
+            driver.Retarget = true;
+            yield return null;
+            yield return null;
+            yield return null;
+
             int rebuildsBefore = gridDebug.RebuildCount;
 
             int hitsBefore = hits, dashesBefore = dashes;
             int substitutedBefore = navigator.SubstitutedCount;
             int goalBlockedBefore = locomotion.GoalBlockedResolveCount;
+            int shieldGrantsBefore = shield.GrantCount;
+            int shotsBefore = turret.ShotsFired;
+            int penetrationsBefore = turret.Penetrations;
+            int blocksBefore = turret.Blocks;
+            batch3Driver.ShotsBase = shotsBefore;
+            batch3Driver.PenetrationsBase = penetrationsBefore;
+            batch3Driver.BlocksBase = blocksBefore;
+            bool sawShieldBarVisible = false;
             AllocationProbe.Measuring = true;
 
             // 量測窗口第 1 段（仍在夾區內）：先把戰鬥活性跑滿。批 2 的繞牆指令會中斷攻擊，
@@ -342,17 +534,33 @@ namespace Vow.Tests.PlayMode
             runeDriver.Trigger = true; // 下一次 RuneCastDriver.Update()（落在探針夾區內）才真的送出施放
             bool sawRuneWallAlive = false;
             int followFrames = 0;
-            deadline = Time.time + 20f; // 不動：第 3 段跑完約 10s（牆 1 到期 5s ＋ 牆 2 到期 5s），仍有一倍餘裕
+            // 批 3 把砲台／子彈／護盾／點擊四件事加進同一個窗口，段數變多；門檻（0 bytes、240 幀）與
+            // 既有的活性下限一字不動，只放寬這個「跑不完就中止」的保險絲。
+            deadline = Time.time + 40f;
             while (AllocationProbe.Frames < 240 || runeDriver.Casts < 1 || detourDriver.Orders < 1
                    || followFrames < 10 || !sawRuneWallAlive || AnyRuneWallAlive(runeWalls)
                    || goalBlockedDriver.Steps < 2
                    || navigator.SubstitutedCount - substitutedBefore < 1
-                   || locomotion.GoalBlockedResolveCount - goalBlockedBefore < 1)
+                   || locomotion.GoalBlockedResolveCount - goalBlockedBefore < 1
+                   || batch3Driver.Stage < 5 || batch3Driver.Taps < 2
+                   || turret.ShotsFired - shotsBefore < 3
+                   || turret.Penetrations - penetrationsBefore < 2
+                   || turret.Blocks - blocksBefore < 2
+                   || shield.GrantCount - shieldGrantsBefore < 1 || !sawShieldBarVisible)
             {
+                // 批 3 的四件活性同樣由夾區內的 Update() 送出；刻意等符印施放那一段過去才開始，
+                // 免得兩件事擠在同一幀、出問題時分不出是誰的。
+                if (!batch3Driver.Trigger && detourDriver.Orders == 1) batch3Driver.Trigger = true;
+                // 近戰砸牆會把移動打斷，所以等「繞牆轉向已經量夠」之後才開閘（動作仍在 Driver 的 Update 裡）。
+                if (!batch3Driver.MeleeGate && followFrames >= 10 && detourDriver.Orders == 1)
+                    batch3Driver.MeleeGate = true;
+                if (shieldBar.IsVisible) sawShieldBarVisible = true;
+
                 // 量測窗口第 3 段（V11-f）：第一面牆到期、英雄也停下來之後，才注入追擊指令並把牆蓋到目標身上。
                 // 放在這裡而不是與第 2 段並行，是因為戰鬥／繞牆那兩段還在時大腦會來搶控制權。
                 if (goalBlockedDriver.Steps == 0 && !goalBlockedDriver.Trigger
-                    && detourDriver.Orders == 1 && sawRuneWallAlive && !AnyRuneWallAlive(runeWalls))
+                    && detourDriver.Orders == 1 && sawRuneWallAlive && !AnyRuneWallAlive(runeWalls)
+                    && batch3Driver.Stage >= 5 && shield.GrantCount - shieldGrantsBefore >= 1)
                 {
                     Vector3 heroNow = hero.transform.position;
                     float probeZ = heroNow.z - 6f;
@@ -407,6 +615,20 @@ namespace Vow.Tests.PlayMode
                 "量測期間從未發生 substituted==true 的解析：R1a 兩階段選點這條路沒有被量到");
             Assert.GreaterOrEqual(locomotion.GoalBlockedResolveCount - goalBlockedBefore, 1,
                 "量測期間從未發生 SteerMode.GoalBlocked 的當幀重解析：這條路沒有被量到");
+            // 批 3 V5：四件新行為也必須真的在夾區內跑過，否則 0 bytes 只代表「這四條沒跑」
+            Assert.AreEqual(5, batch3Driver.Stage,
+                "量測窗口內沒有走完批 3 的驅動流程（Stage=" + batch3Driver.Stage + "）");
+            Assert.GreaterOrEqual(turret.ShotsFired - shotsBefore, 3,
+                "量測期間砲台開火不足（實測 " + (turret.ShotsFired - shotsBefore) + " 發）");
+            Assert.GreaterOrEqual(turret.Penetrations - penetrationsBefore, 2,
+                "量測期間子彈穿透己方牆不足 2 次：一次性成本可能把這條路徑蓋掉");
+            Assert.GreaterOrEqual(turret.Blocks - blocksBefore, 2,
+                "量測期間子彈被敵方牆擋下不足 2 次：一次性成本可能把這條路徑蓋掉");
+            Assert.GreaterOrEqual(shield.GrantCount - shieldGrantsBefore, 1,
+                "量測期間沒有取得過護盾：授予與護盾條這條路徑沒有被量到");
+            Assert.IsTrue(sawShieldBarVisible, "量測期間護盾條的 Renderer 從未可見");
+            Assert.GreaterOrEqual(batch3Driver.Taps, 2,
+                "量測期間送出的真實 OnWorldTap 不足 2 次（RaycastNonAlloc ＋ TapPickLogic 沒有被反覆量到）");
             Assert.IsTrue(gridDebug.Visible, "量測期間 GRID 疊圖應保持開啟");
             Assert.GreaterOrEqual(gridDebug.RebuildCount - rebuildsBefore, 2,
                 "量測期間 GRID 疊圖沒有重填過兩次（立牆＋到期）：M2 那條零配置沒有被量到（實測 "

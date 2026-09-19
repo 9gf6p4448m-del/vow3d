@@ -17,10 +17,13 @@ namespace Vow.Combat
         private RuneCaster _caster;
         private int _slotIndex = -1;
 
-        public Faction OwnerFaction { get; private set; }
         public float RemainingLifespan => _logic != null ? _logic.RemainingLifespan : 0f;
         public int MaxPenetrationCount => _logic != null ? _logic.MaxPenetrations : 0;
         public int CurrentPenetrationCount => _logic != null ? _logic.PenetrationCount : 0;
+
+        // 合帳之後石牆血量的單一事實來源就是 _logic。這個唯讀屬性存在的唯一理由是讓驗收
+        // （V4-a／V4-b）能把它與 ((ICombatTarget)this).Health 逐值對照——合帳前兩者會分岔，合帳後必須相同。
+        public float LogicHealth => _logic != null ? _logic.Health : 0f;
 
         protected override void Awake()
         {
@@ -55,7 +58,7 @@ namespace Vow.Combat
         {
             _caster = caster;
             _slotIndex = slotIndex;
-            OwnerFaction = owner;
+            SetOwnerFaction(owner);
 
             transform.SetPositionAndRotation(position, rotation);
             Configure(_tuning.WallMaxHealth, Faction.DestructibleWall);
@@ -73,7 +76,7 @@ namespace Vow.Combat
         {
             if (!_logic.IsAlive) return;
             _logic.Tick(Time.deltaTime);
-            if (!_logic.IsAlive) ForceKill(); // 壽命到：與被打碎／被穿透打死走同一條收斂路徑
+            if (!_logic.IsAlive) NotifyDeath(); // 壽命到：與被打碎／被穿透打死走同一條收斂路徑
         }
 
         // 五條離場路徑（壽命到期、被打爆、穿透耗盡、名冊擠掉、Initialize 重入）在 RuneWall 內部全部收斂到
@@ -94,24 +97,47 @@ namespace Vow.Combat
             ForceKill();
         }
 
-        // 友軍彈道穿透：批 3 才有子彈真的呼叫，本批只需要介面能編譯並符合已測過的數學（RuneWallLogicTests）。
+        // 友軍彈道穿透：批 3 起由 Projectile 真的呼叫（每發子彈對同一面牆只算一次，見 ProjectileFlightLogic）。
         public bool TryPenetrateBullet(Vector3 bulletVelocity, out float damageMultiplier)
         {
             bool penetrated = _logic.TryPenetrate(out damageMultiplier);
-            if (!_logic.IsAlive && IsAlive) ForceKill(); // 穿透打死了：同步基底血量，走同一條 HandleDeath
+            if (!_logic.IsAlive) NotifyDeath(); // 穿透打死了：走同一條 HandleDeath
             return penetrated;
         }
 
-        // 統一的「立刻死亡」入口：把 CombatTargetBehaviour 的既有健康值歸零，藉由它既有的
-        // ReceiveDamage → HandleDeath 流程收斂，避免另開一條不會呼叫 HandleDeath 的死亡路徑。
+        // 統一的「立刻死亡」入口。合帳之後 IsAlive 讀的就是 _logic.Health，所以不能再靠
+        // 「把基底血量打到 0」來觸發死亡——改成先收邏輯、再走唯一的死亡宣告入口。
+        // 合帳前這裡是 `if (!IsAlive) { _logic.Kill(); return; }`：合帳之後那個提早 return 會讓
+        // 壽命到期的牆永遠不呼叫 HandleDeath（Collider 不關、名額不還），是 V4-d 守的那個陷阱。
         private void ForceKill()
         {
-            if (!IsAlive)
-            {
-                _logic.Kill();
-                return;
-            }
-            ReceiveDamage(Health, DamageType.True, null);
+            _logic.Kill();
+            NotifyDeath(); // 一次生命只宣告一次；重複呼叫由 CombatTargetBehaviour 的旗標吃掉
+        }
+
+        // ── 血量存取：全部轉給 _logic（合帳） ──
+
+        protected override float ReadHealth()
+        {
+            return _logic != null ? _logic.Health : 0f;
+        }
+
+        protected override float ReadMaxHealth()
+        {
+            return _logic != null ? _logic.MaxHealth : 0f;
+        }
+
+        protected override float ConsumeDamage(float amount)
+        {
+            if (_logic == null) return 0f;
+            float before = _logic.Health;
+            _logic.ApplyDamage(amount);
+            return before - _logic.Health;
+        }
+
+        // no-op：石牆的血量只由 RuneWallLogic.Activate 設定，基底不得再留一份。
+        protected override void ResetHealth(float maxHealth)
+        {
         }
     }
 }

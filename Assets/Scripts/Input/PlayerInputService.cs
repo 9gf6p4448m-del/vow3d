@@ -14,7 +14,7 @@ namespace Vow.Input
     // IPlayerInputService 的 New Input System 實作（EnhancedTouch 讀觸控；滑鼠左鍵被當成一根手指餵進同一個路由）。
     // 本類別只做轉接：EnhancedTouch → TouchGestureRouter（純邏輯、有測試）→ 射線判定 → 對外事件。
     // 手勢怎麼判、手指槽位怎麼管，全部在 TouchGestureRouter。
-    public sealed class PlayerInputService : MonoBehaviour, IPlayerInputService, IRuneCastInput, ITouchGestureSink
+    public sealed class PlayerInputService : MonoBehaviour, IPlayerInputService, IRuneCastInput, IWorldTapInput, ITouchGestureSink
     {
         private const float FallbackDpi = 160f;
         private const float PipZoneMillimeters = 42f;
@@ -29,6 +29,14 @@ namespace Vow.Input
 
         private readonly InputRoutingManager _routing = new InputRoutingManager();
         private TouchGestureRouter _router;
+
+        // Phase 2 批 3：符印石牆回到 Default 層之後，點擊改成「射線照常打到牆，再做陣營校驗、己方牆往後找」
+        // （§4-1；否決分陣營圖層的理由見同節）。全部緩衝預配置，執行期零配置。
+        private readonly ProjectileTuning _projectileTuning = new ProjectileTuning();
+        private RaycastHit[] _tapHits;
+        private float[] _tapDistances;
+        private bool[] _tapOwnWall;
+        private Faction _localFaction = Faction.BlueTeam;
 
         private ICombatTargetResolver _targetResolver;
         private float _minRadiusPx;
@@ -91,9 +99,27 @@ namespace Vow.Input
             if (worldCamera != null) _worldCamera = worldCamera;
         }
 
+        // 本地玩家的陣營：決定哪些石牆算「自家牆」（點下去要穿過去點到牆後的地板）。
+        public Faction LocalFaction => _localFaction;
+
+        public void SetLocalFaction(Faction faction)
+        {
+            _localFaction = faction;
+        }
+
         private void Awake()
         {
             if (_worldCamera == null) _worldCamera = Camera.main;
+            EnsureTapBuffers();
+        }
+
+        private void EnsureTapBuffers()
+        {
+            if (_tapHits != null) return;
+            int size = _projectileTuning.TapHitBufferSize;
+            _tapHits = new RaycastHit[size];
+            _tapDistances = new float[size];
+            _tapOwnWall = new bool[size];
         }
 
         private void OnEnable()
@@ -260,18 +286,49 @@ namespace Vow.Input
             OnRuneCastCancelled?.Invoke();
         }
 
+        // 使用者裁定 1：點己方牆＝穿過去點到牆後的地板（維持批 1 的手感）；敵方／中立牆點得到、會鎖定去砸。
+        // 做法是拿到射線上的**全部**命中，把「己方石牆」標記起來，再取剩下的最近者——
+        // 沒有它就回不到 v0.4.1 的手感，因為符印牆已經從 Ignore Raycast 層回到 Default 層（§4-1）。
         public void OnWorldTap(float screenX, float screenY)
         {
             if (_worldCamera == null) return;
+            EnsureTapBuffers();
 
             Ray ray = _worldCamera.ScreenPointToRay(new Vector3(screenX, screenY, 0f));
-            if (!Physics.Raycast(ray, out RaycastHit hit, RaycastDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
-                return;
+            int count = Physics.RaycastNonAlloc(ray, _tapHits, RaycastDistance,
+                                                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            if (count <= 0) return;
+            if (count >= _tapHits.Length)
+            {
+                count = _tapHits.Length;
+                // 緩衝溢位會讓最近的合法命中被丟掉（RaycastNonAlloc 不保證由近到遠）。常數字串，不配置。
+                Debug.LogWarning("[VOW] 點擊射線的命中數已達緩衝上限，最近的合法命中可能被丟掉。");
+            }
 
-            if (_targetResolver != null && _targetResolver.TryResolve(hit.collider, out ICombatTarget target) && target.IsAlive)
+            for (int i = 0; i < count; i++)
+            {
+                _tapDistances[i] = _tapHits[i].distance;
+                _tapOwnWall[i] = IsOwnWall(_tapHits[i].collider);
+            }
+
+            int pick = TapPickLogic.SelectNearestAcceptable(_tapDistances, _tapOwnWall, count);
+            if (pick < 0) return; // 整條射線上只有自家牆：這一下什麼都不做
+
+            Collider picked = _tapHits[pick].collider;
+            if (_targetResolver != null && _targetResolver.TryResolve(picked, out ICombatTarget target) && target.IsAlive)
                 OnCombatTargetSelected?.Invoke(target);
             else
-                OnMoveDestinationSelected?.Invoke(hit.point);
+                OnMoveDestinationSelected?.Invoke(_tapHits[pick].point);
+        }
+
+        private bool IsOwnWall(Collider collider)
+        {
+            if (_targetResolver == null) return false;
+            if (!_targetResolver.TryResolve(collider, out ICombatTarget target) || target == null) return false;
+            if (target.TargetFaction != Faction.DestructibleWall) return false;
+
+            IFactionOwned owned = target as IFactionOwned;
+            return owned != null && owned.OwnerFaction == _localFaction;
         }
     }
 }

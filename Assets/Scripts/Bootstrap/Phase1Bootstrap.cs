@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using Vow.Combat;
 using Vow.Combat.Feedback;
@@ -33,7 +34,18 @@ namespace Vow.Bootstrap
         [SerializeField] private NavGridDebugView _navGridDebug;
         [SerializeField] private Transform _arenaBoundary;
 
+        // ── Phase 2 批 3：陣營校驗破牆得護盾＋友軍彈道穿透 ──
+        // 玩家石牆池與除錯用的敵方石牆池由**兩個父物件**分開（§4-6）：敵方牆也是 RuneWall，
+        // 繼續用 FindObjectsOfType 整批當池的話會佔掉玩家的 2 面上限。
+        [SerializeField] private Transform _runeWallPool;
+        [SerializeField] private Transform _enemyWallPool;
+        [SerializeField] private TestTurret _turret;
+        [SerializeField] private EnemyWallSpawner _enemyWalls;
+        [SerializeField] private RockShieldBehaviour _shield;
+        [SerializeField] private HeroShieldBar _shieldBar;
+
         private readonly ColliderTargetRegistry _targets = new ColliderTargetRegistry();
+        private readonly ProjectileTuning _projectileTuning = new ProjectileTuning();
 
         // ── Phase 2 批 2：0.5m 阻擋格點。全場唯一一份，牆登記進來、英雄從這裡拿繞牆方向 ──
         private readonly NavGridTuning _navTuning = new NavGridTuning();
@@ -44,6 +56,15 @@ namespace Vow.Bootstrap
 
         public BlockGrid NavGrid => _navGrid;
         public GridNavigator Navigator => _navigator;
+
+        // 批 3：PlayMode 測試 asmdef 只看得到 Vow.Core／Vow.Combat／Vow.Bootstrap（V6 不得加引用），
+        // 所以輸入服務與除錯 HUD 一律以 Vow.Core 的介面型別從這裡交出去。
+        public IPlayerInputService InputService => _input;
+        public IWorldTapInput WorldTapInput => _input;
+        public IDebugHudPanel HudPanel => _hud;
+        public TestTurret Turret => _turret;
+        public EnemyWallSpawner EnemyWalls => _enemyWalls;
+        public IRockShield Shield => _shield;
 
         private void Awake()
         {
@@ -76,6 +97,8 @@ namespace Vow.Bootstrap
             BuildNavGrid(targets);
 
             _input.Initialize(_targets, _camera);
+            // 批 3：「哪些石牆算自家牆」由本地陣營決定（點自家牆＝點到牆後的地板，§4-1）。
+            _input.SetLocalFaction(_hero.HeroFaction);
 
             // 英雄訂閱的是延遲注入層（預設 OFF＝同一呼叫內直通）；HUD 與預警箭頭讀的仍是真正的輸入服務——
             // 它們屬於本地表現，不該跟著模擬的網路延遲一起變慢。
@@ -93,9 +116,13 @@ namespace Vow.Bootstrap
             // 虛影與按鈕是純本地回饋，直接訂閱 _input，不經延遲（計畫書 §4 假設 11）。
             if (_runeCaster != null && _tuningAsset != null)
             {
-                RuneWall[] runeWallPool = FindObjectsOfType<RuneWall>();
+                // §4-6：只拿 RuneWallPool 底下那幾面。FindObjectsOfType 會把除錯用的敵方牆一起掃進來，
+                // 敵方牆就會佔掉玩家的 2 面上限（V4-o 守這條）。
+                RuneWall[] runeWallPool = CollectWalls(_runeWallPool, "RuneWallPool");
                 _runeCaster.Initialize(heroInput, heroRuneInput, _hero.transform, _camera, _tuningAsset.Rune, runeWallPool, _hero.HeroFaction);
             }
+
+            InitializeBatch3(targets);
             // 「此刻放手會不會取消」是本機回饋，讀未經延遲的 _input，lambda 只在這裡建一次。
             if (_runeGhost != null && _tuningAsset != null)
                 _runeGhost.Initialize(_input, _input, _hero.transform, _camera, _tuningAsset.Rune, () => _input.IsRuneCancelArmed);
@@ -114,8 +141,13 @@ namespace Vow.Bootstrap
             if (_cameraRig != null) _cameraRig.SetTarget(_hero.transform);
             if (_hud != null)
             {
-                if (_navGridDebug != null) _hud.Initialize(_hero, _input, _hitboxes, _latency, IsGridDebugVisible, ToggleGridDebug);
-                else _hud.Initialize(_hero, _input, _hitboxes, _latency);
+                Func<bool> gridVisible = _navGridDebug != null ? (Func<bool>)IsGridDebugVisible : null;
+                Action toggleGrid = _navGridDebug != null ? (Action)ToggleGridDebug : null;
+                Action spawnEnemyWall = _enemyWalls != null ? (Action)SpawnEnemyWall : null;
+                Action toggleTurret = _turret != null ? (Action)ToggleTurret : null;
+                Func<bool> turretFiring = _turret != null ? (Func<bool>)IsTurretFiring : null;
+                _hud.Initialize(_hero, _input, _hitboxes, _latency, gridVisible, toggleGrid,
+                                spawnEnemyWall, toggleTurret, turretFiring, _shield);
             }
             if (_aimPreview != null) _aimPreview.Initialize(_hero, _input, _telegraph, _camera);
         }
@@ -224,6 +256,55 @@ namespace Vow.Bootstrap
             _heroLocomotion.EjectFromBox(centerX, centerZ, normalX, normalZ, halfWidth, halfThickness);
         }
 
+        // ───────────────────── Phase 2 批 3：護盾／砲台／敵方牆的組裝 ─────────────────────
+
+        private void InitializeBatch3(CombatTargetBehaviour[] targets)
+        {
+            if (_shield != null) _shield.Initialize(_hero, _projectileTuning);
+            if (_shieldBar != null) _shieldBar.Initialize(_shield, _projectileTuning);
+
+            if (_enemyWalls != null && _tuningAsset != null)
+                _enemyWalls.Initialize(_tuningAsset.Rune, _projectileTuning, _hero.transform,
+                                       CollectWalls(_enemyWallPool, "EnemyWallPool"));
+
+            if (_turret == null) return;
+
+            // 開火方向固定朝木樁（§4-7）。木樁不在場則砲台不開火。
+            Transform aimTarget = null;
+            for (int i = 0; i < targets.Length; i++)
+            {
+                if (!(targets[i] is DummyTarget)) continue;
+                aimTarget = targets[i].transform;
+                break;
+            }
+            _turret.Initialize(_projectileTuning, _targets, _hero.HeroFaction, aimTarget);
+        }
+
+        // 從指定的父物件底下收石牆。引用掉了就明說——無聲退回 FindObjectsOfType 會把兩個池又混回一起。
+        private RuneWall[] CollectWalls(Transform poolRoot, string expectedName)
+        {
+            if (poolRoot != null) return poolRoot.GetComponentsInChildren<RuneWall>(true);
+
+            Debug.LogError("[VOW] 場景缺少 " + expectedName + " 引用：石牆池分不出玩家與敵方，" +
+                           "請執行 VOW/Phase 1/Build Greybox Scene 重建場景。", this);
+            return new RuneWall[0];
+        }
+
+        private void SpawnEnemyWall()
+        {
+            if (_enemyWalls != null) _enemyWalls.Spawn();
+        }
+
+        private void ToggleTurret()
+        {
+            if (_turret != null) _turret.SetFiring(!_turret.IsFiring);
+        }
+
+        private bool IsTurretFiring()
+        {
+            return _turret != null && _turret.IsFiring;
+        }
+
         private bool IsGridDebugVisible()
         {
             return _navGridDebug != null && _navGridDebug.Visible;
@@ -258,10 +339,24 @@ namespace Vow.Bootstrap
             if (_runeGhost == null) _runeGhost = FindObjectOfType<RuneGhostPreview>();
             if (_runeButton == null) _runeButton = FindObjectOfType<RuneButtonView>();
             if (_navGridDebug == null) _navGridDebug = FindObjectOfType<NavGridDebugView>();
+            if (_turret == null) _turret = FindObjectOfType<TestTurret>();
+            if (_enemyWalls == null) _enemyWalls = FindObjectOfType<EnemyWallSpawner>();
+            if (_shield == null) _shield = FindObjectOfType<RockShieldBehaviour>();
+            if (_shieldBar == null) _shieldBar = FindObjectOfType<HeroShieldBar>();
             if (_arenaBoundary == null)
             {
                 GameObject boundary = GameObject.Find("ArenaBoundary");
                 if (boundary != null) _arenaBoundary = boundary.transform;
+            }
+            if (_runeWallPool == null)
+            {
+                GameObject pool = GameObject.Find("RuneWallPool");
+                if (pool != null) _runeWallPool = pool.transform;
+            }
+            if (_enemyWallPool == null)
+            {
+                GameObject pool = GameObject.Find("EnemyWallPool");
+                if (pool != null) _enemyWallPool = pool.transform;
             }
             // _tuningAsset 是 ScriptableObject 資產、不在場景裡，手動拼場景時沒有 FindObjectOfType 後備，
             // 缺了它符印相關的三個 Initialize 呼叫會被 Start() 的 null 檢查略過（英雄本體不受影響）。
