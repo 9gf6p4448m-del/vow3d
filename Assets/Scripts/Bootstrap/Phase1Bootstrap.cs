@@ -157,12 +157,35 @@ namespace Vow.Bootstrap
         // 現行幾何下這剛好是最外一圈 4×80−4 = 316 格。
         private void RegisterArenaBoundary()
         {
-            if (_arenaBoundary == null) return;
+            RegisterArenaBoundary(_arenaBoundary);
+        }
+
+        // r2 對抗審查 N2（§6 R11 V11-e）：邊界圈建不出來時不得無聲退回 H1 的狀態（英雄頂死看不見的邊界）。
+        // 收 boundary 當參數是為了讓測試能在退化狀態下觸發它——正式路徑一律走上面那個無參數版本。
+        public void RegisterArenaBoundary(Transform boundary)
+        {
+            // r2 對抗審查 N2（§6 R11 V11-e）：這兩條退化路徑原本都是**無聲**的 return——場地邊界圈一格都不登記，
+            // 審查 H1 的「英雄被向量場導進最外圈、頂死在看不見的邊界上」原封不動回來，而且沒有任何 log。
+            // 不變量寫在測試裡擋得住 CI，擋不住「場景被改名／引用掉了／換成 MeshCollider」的線上版本。
+            if (boundary == null)
+            {
+                Debug.LogError("[VOW] 場景缺少 ArenaBoundary 引用：格點最外圈不會被登記，" +
+                               "英雄會被繞牆向量場導去頂死看不見的場地邊界。" +
+                               "請執行 VOW/Phase 1/Build Greybox Scene 重建場景。", this);
+                return;
+            }
+
+            BoxCollider[] boxes = boundary.GetComponentsInChildren<BoxCollider>();
+            if (boxes.Length == 0)
+            {
+                Debug.LogError("[VOW] ArenaBoundary 底下找不到任何 BoxCollider：可站立範圍量不出來，" +
+                               "格點最外圈不會被登記，英雄會被繞牆向量場導去頂死看不見的場地邊界。", this);
+                return;
+            }
 
             float minX = float.NegativeInfinity, minZ = float.NegativeInfinity;
             float maxX = float.PositiveInfinity, maxZ = float.PositiveInfinity;
 
-            BoxCollider[] boxes = _arenaBoundary.GetComponentsInChildren<BoxCollider>();
             for (int i = 0; i < boxes.Length; i++)
             {
                 Bounds bounds = boxes[i].bounds;

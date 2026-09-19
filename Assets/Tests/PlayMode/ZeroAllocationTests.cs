@@ -148,6 +148,42 @@ namespace Vow.Tests.PlayMode
         }
     }
 
+    // r2 對抗審查 N3（§6 R11 V11-f）：批 2 新增的兩條路徑——R1a 替代點解析（substituted==true）與
+    // SteerMode.GoalBlocked 的當幀重解析——原本都落在量測窗口之外（窗口裡的繞牆目的地是「牆的正後方」＝走得到）。
+    // 兩者都只可能由**持有追擊指令**觸發：移動指令在 HeroLocomotion.Step 裡一偵測到格點版本改變就先行重解析，
+    // 永遠走不到 GoalBlocked。而戰鬥大腦在「有目標」時每幀 StopMoving 會把注入的追擊指令殺掉，
+    // 所以這個 driver 等到「繞牆的移動指令已經把大腦的目標清掉、英雄也停下來」之後才動手（由測試端開閘）。
+    public sealed class GoalBlockedDriver : MonoBehaviour
+    {
+        internal HeroLocomotion Locomotion;
+        internal Transform ChaseTarget;
+        internal RuneWall Wall;
+        internal Faction WallFaction;
+        internal float WallHeight;
+        public bool Trigger;
+        public int Steps;
+
+        private void Update()
+        {
+            if (!Trigger || Locomotion == null || ChaseTarget == null) return;
+
+            if (Steps == 0)
+            {
+                Locomotion.Chase(ChaseTarget);
+                Steps = 1;
+                return;
+            }
+            if (Steps == 1)
+            {
+                // 把一面牆蓋在追擊目標身上：上一次解析出來的 goal 格被蓋住，而 0.1s 的重解析窗口還沒到
+                // → 下一幀的 Steer 回 GoalBlocked → 當幀拿原始目的地重新解析（那次解析必然 substituted==true）。
+                Vector3 p = ChaseTarget.position;
+                Wall.Activate(new Vector3(p.x, WallHeight * 0.5f, p.z), Quaternion.identity, WallFaction, null, -1);
+                Steps = 2;
+            }
+        }
+    }
+
     public sealed class ZeroAllocationTests
     {
         private const string SceneName = "VOW_Phase1_Greybox";
@@ -161,6 +197,12 @@ namespace Vow.Tests.PlayMode
         private static RuneWall FirstAliveRuneWall(RuneWall[] pool)
         {
             for (int i = 0; i < pool.Length; i++) if (pool[i].IsAlive) return pool[i];
+            return null;
+        }
+
+        private static RuneWall FirstDeadRuneWall(RuneWall[] pool)
+        {
+            for (int i = 0; i < pool.Length; i++) if (!pool[i].IsAlive) return pool[i];
             return null;
         }
 
@@ -231,10 +273,22 @@ namespace Vow.Tests.PlayMode
             runeDriver.Input = input;
             NavDetourDriver detourDriver = rig.AddComponent<NavDetourDriver>();
             detourDriver.Input = input;
+            GoalBlockedDriver goalBlockedDriver = rig.AddComponent<GoalBlockedDriver>();
             rig.AddComponent<AllocationProbeEnd>();
 
             HeroLocomotion locomotion = hero.GetComponent<HeroLocomotion>();
             Assert.IsNotNull(locomotion, "英雄身上沒有 HeroLocomotion");
+            Phase1Bootstrap bootstrap = UnityEngine.Object.FindObjectOfType<Phase1Bootstrap>();
+            Assert.IsNotNull(bootstrap, "場景缺少 Phase1Bootstrap");
+            GridNavigator navigator = bootstrap.Navigator;
+            Assert.IsNotNull(navigator, "Phase1Bootstrap 沒有建立導航器");
+
+            // V11-f 的追擊目標：一個沒有 Collider 的空物件，位置在下面開閘時才依英雄當下位置決定。
+            GameObject chaseProbe = new GameObject("GoalBlockedProbeTarget");
+            goalBlockedDriver.Locomotion = locomotion;
+            goalBlockedDriver.ChaseTarget = chaseProbe.transform;
+            goalBlockedDriver.WallFaction = hero.HeroFaction;
+            goalBlockedDriver.WallHeight = new RuneTuning().WallHeight;
 
             // 暖機：跑完至少兩刀、一次滑步，讓靜態表、JIT、首次進入各狀態的一次性初始化都發生在量測之前
             float deadline = Time.time + 12f;
@@ -271,6 +325,8 @@ namespace Vow.Tests.PlayMode
             int rebuildsBefore = gridDebug.RebuildCount;
 
             int hitsBefore = hits, dashesBefore = dashes;
+            int substitutedBefore = navigator.SubstitutedCount;
+            int goalBlockedBefore = locomotion.GoalBlockedResolveCount;
             AllocationProbe.Measuring = true;
 
             // 量測窗口第 1 段（仍在夾區內）：先把戰鬥活性跑滿。批 2 的繞牆指令會中斷攻擊，
@@ -286,10 +342,27 @@ namespace Vow.Tests.PlayMode
             runeDriver.Trigger = true; // 下一次 RuneCastDriver.Update()（落在探針夾區內）才真的送出施放
             bool sawRuneWallAlive = false;
             int followFrames = 0;
-            deadline = Time.time + 20f;
+            deadline = Time.time + 20f; // 不動：第 3 段跑完約 10s（牆 1 到期 5s ＋ 牆 2 到期 5s），仍有一倍餘裕
             while (AllocationProbe.Frames < 240 || runeDriver.Casts < 1 || detourDriver.Orders < 1
-                   || followFrames < 10 || !sawRuneWallAlive || AnyRuneWallAlive(runeWalls))
+                   || followFrames < 10 || !sawRuneWallAlive || AnyRuneWallAlive(runeWalls)
+                   || goalBlockedDriver.Steps < 2
+                   || navigator.SubstitutedCount - substitutedBefore < 1
+                   || locomotion.GoalBlockedResolveCount - goalBlockedBefore < 1)
             {
+                // 量測窗口第 3 段（V11-f）：第一面牆到期、英雄也停下來之後，才注入追擊指令並把牆蓋到目標身上。
+                // 放在這裡而不是與第 2 段並行，是因為戰鬥／繞牆那兩段還在時大腦會來搶控制權。
+                if (goalBlockedDriver.Steps == 0 && !goalBlockedDriver.Trigger
+                    && detourDriver.Orders == 1 && sawRuneWallAlive && !AnyRuneWallAlive(runeWalls))
+                {
+                    Vector3 heroNow = hero.transform.position;
+                    float probeZ = heroNow.z - 6f;
+                    if (probeZ < -18f) probeZ = heroNow.z + 6f;
+                    chaseProbe.transform.position = new Vector3(heroNow.x, 0f, probeZ);
+                    goalBlockedDriver.Wall = FirstDeadRuneWall(runeWalls);
+                    Assert.IsNotNull(goalBlockedDriver.Wall, "石牆池裡沒有空閒的牆可以拿來蓋住追擊目標");
+                    goalBlockedDriver.Trigger = true;
+                }
+
                 if (AnyRuneWallAlive(runeWalls))
                 {
                     sawRuneWallAlive = true;
@@ -315,6 +388,7 @@ namespace Vow.Tests.PlayMode
             yield return null;
             AllocationProbe.Measuring = false;
             UnityEngine.Object.Destroy(rig);
+            UnityEngine.Object.Destroy(chaseProbe);
 
             // 活性：量測期間受測行為必須真的發生過，否則 0 配置只代表「什麼都沒跑」
             Assert.GreaterOrEqual(AllocationProbe.Frames, 240, "量測幀數不足");
@@ -326,6 +400,13 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(1, detourDriver.Orders, "量測窗口內應該恰好送出一次繞牆移動指令（在探針夾區內的 Update() 裡）");
             Assert.GreaterOrEqual(followFrames, 10,
                 "量測期間從未進入 Follow 轉向：整合場重建與繞牆轉向這條路徑沒有被量到（實測 " + followFrames + " 幀）");
+            // §6 R11 V11-f（r2 N3）：批 2 新增的兩條路徑也必須真的在夾區內跑過，否則 0 bytes 只代表「這兩條沒跑」
+            Assert.AreEqual(2, goalBlockedDriver.Steps,
+                "量測窗口內沒有走完 V11-f 的追擊注入（Steps=" + goalBlockedDriver.Steps + "）");
+            Assert.GreaterOrEqual(navigator.SubstitutedCount - substitutedBefore, 1,
+                "量測期間從未發生 substituted==true 的解析：R1a 兩階段選點這條路沒有被量到");
+            Assert.GreaterOrEqual(locomotion.GoalBlockedResolveCount - goalBlockedBefore, 1,
+                "量測期間從未發生 SteerMode.GoalBlocked 的當幀重解析：這條路沒有被量到");
             Assert.IsTrue(gridDebug.Visible, "量測期間 GRID 疊圖應保持開啟");
             Assert.GreaterOrEqual(gridDebug.RebuildCount - rebuildsBefore, 2,
                 "量測期間 GRID 疊圖沒有重填過兩次（立牆＋到期）：M2 那條零配置沒有被量到（實測 "
