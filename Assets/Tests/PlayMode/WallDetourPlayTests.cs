@@ -985,6 +985,10 @@ namespace Vow.Tests.PlayMode
 
         // V11-d③（r2 P9）：追一個在可達處移動的目標 2 秒，BuildCount 增量仍為 0。
         // 紅燈條件：快取若連目標格都不看，英雄會一直朝第一次解析的位置走、追不上（最後距離超過 5.5m）。
+        // 幾何挑過，讓那條「最後距離 ≤ 攻擊距離＋0.5 = 5.5m」真的分得出兩者（實跑驗證過壞快取會紅）：
+        //   起始距離 8m、木樁 3.5 m/s、英雄 5.5 m/s、2 秒——
+        //   正確實作：8 − (5.5−3.5)×2 = 4.0m（過，餘裕 1.5m）；
+        //   壞快取：英雄走到木樁的**起始**位置就停，木樁已經離開 3.5×2 = 7.0m（紅，餘裕 1.5m）。
         [UnityTest]
         public IEnumerator V11d3_ChasingAMovingReachableTarget_NeverTouchesTheIntegrationField()
         {
@@ -993,7 +997,7 @@ namespace Vow.Tests.PlayMode
             DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
             Assert.IsNotNull(dummy, "場景缺少木樁");
             // z=−10 一帶是空曠的（兩面測試牆在 z∈[1,5]、邊界圈在 |z|>19.45），全程有視線。
-            dummy.transform.position = new Vector3(12f, dummy.transform.position.y, -10f);
+            dummy.transform.position = new Vector3(8f, dummy.transform.position.y, -10f);
             yield return null;
 
             GridNavigator nav = _bootstrap.Navigator;
@@ -1004,7 +1008,7 @@ namespace Vow.Tests.PlayMode
             while (Time.time - start < 2f)
             {
                 Vector3 p = dummy.transform.position;
-                dummy.transform.position = new Vector3(p.x + 1f * Time.deltaTime, p.y, p.z); // 決定性的等速直線
+                dummy.transform.position = new Vector3(p.x + 3.5f * Time.deltaTime, p.y, p.z); // 決定性的等速直線
                 yield return null;
             }
 
