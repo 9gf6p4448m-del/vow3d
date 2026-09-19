@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using Vow.Core;
 using Vow.Core.Logic;
@@ -16,6 +17,9 @@ namespace Vow.Combat
         private RuneWallLogic _logic;
         private RuneCaster _caster;
         private int _slotIndex = -1;
+
+        // Phase 2 批 2：立牆完成（且已登記進阻擋格點）時發出，供 Phase1Bootstrap 把被壓住的英雄推出去。
+        public event Action<RuneWall> OnActivated;
 
         public Faction OwnerFaction { get; private set; }
         public float RemainingLifespan => _logic != null ? _logic.RemainingLifespan : 0f;
@@ -63,6 +67,10 @@ namespace Vow.Combat
 
             _collider.enabled = true;
             if (_renderer != null) _renderer.enabled = true;
+
+            // 先登記格點、再發事件：訂閱者（Phase1Bootstrap）要找「牆立起來之後」的最近空格才推得對。
+            RegisterNavBlocker(_collider);
+            OnActivated?.Invoke(this);
         }
 
         private void Update()
@@ -72,11 +80,15 @@ namespace Vow.Combat
             if (!_logic.IsAlive) ForceKill(); // 壽命到：與被打碎／被穿透打死走同一條收斂路徑
         }
 
+        // 五條離場路徑（壽命到期、被打爆、穿透耗盡、名冊擠掉、Initialize 重入）在 RuneWall 內部全部收斂到
+        // ForceKill → ReceiveDamage → 這裡，所以撤銷格點只需要寫在這一個地方；
+        // 第六條「物件停用／銷毀」由 CombatTargetBehaviour.OnDisable 負責。
         protected override void HandleDeath()
         {
             _logic.Kill();
             _collider.enabled = false;
             if (_renderer != null) _renderer.enabled = false;
+            UnregisterNavBlocker();
             _caster?.ReleaseSlot(_slotIndex);
         }
 

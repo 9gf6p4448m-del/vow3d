@@ -54,9 +54,10 @@ namespace Vow.EditorTools
             CreateWall("TestWall_B", new Vector3(7f, 0f, 3f), 90f, materials.Wall, materials.Bar);
             CreateRuneWallPool(tuning.Rune, materials.RuneWall);
             RuneGhostPreview runeGhost = CreateRuneGhostPreview(tuning.Rune, materials.RuneGhost);
+            NavGridDebugView navGridDebug = CreateNavGridDebugView(materials.NavGrid);
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
-            CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost);
+            CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -70,7 +71,7 @@ namespace Vow.EditorTools
 
         private struct Materials
         {
-            public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines, RuneWall, RuneGhost;
+            public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines, RuneWall, RuneGhost, NavGrid;
         }
 
         private static Materials CreateMaterials()
@@ -89,7 +90,8 @@ namespace Vow.EditorTools
                 Telegraph = GreyboxAssetFactory.EnsureVertexColorMaterial("VOW_Telegraph"),
                 HitboxLines = GreyboxAssetFactory.EnsureGlLineMaterial("VOW_HitboxLines"),
                 RuneWall = GreyboxAssetFactory.EnsureLitMaterial("VOW_RuneWall", new Color(0.35f, 0.4f, 0.58f)),
-                RuneGhost = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_RuneGhost", new Color(0.35f, 0.85f, 1f, 0.35f), true, true)
+                RuneGhost = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_RuneGhost", new Color(0.35f, 0.85f, 1f, 0.35f), true, true),
+                NavGrid = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_NavGridDebug", new Color(1f, 0.35f, 0.25f, 0.45f), true, true)
             };
         }
 
@@ -296,6 +298,23 @@ namespace Vow.EditorTools
             return preview;
         }
 
+        // GRID 除錯疊圖的載體：空的 MeshFilter／MeshRenderer，Mesh 由 NavGridDebugView 在執行期填內容。
+        // 執行期禁止 CreatePrimitive（IL2CPP 剔除），所以物件本體一定要在這裡預建好（計畫書 §4 假設 10）。
+        private static NavGridDebugView CreateNavGridDebugView(Material material)
+        {
+            GameObject view = new GameObject("NavGridDebug");
+            view.layer = IgnoreRaycastLayer; // 不吃點擊射線
+            view.AddComponent<MeshFilter>();
+
+            MeshRenderer renderer = view.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.enabled = false; // 預設關
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+
+            return view.AddComponent<NavGridDebugView>();
+        }
+
         private static Camera CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot)
         {
             GameObject rigObject = new GameObject("CameraRig");
@@ -322,7 +341,7 @@ namespace Vow.EditorTools
         }
 
         private static void CreateSystems(HeroController hero, Camera camera, FollowCameraRig rig, Transform shakePivot,
-            Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost)
+            Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug)
         {
             GameObject systems = new GameObject("VOW_Systems");
 
@@ -367,6 +386,7 @@ namespace Vow.EditorTools
             SetReference(bootstrap, "_runeCaster", runeCaster);
             SetReference(bootstrap, "_runeGhost", runeGhost);
             SetReference(bootstrap, "_runeButton", runeButton);
+            SetReference(bootstrap, "_navGridDebug", navGridDebug);
         }
 
         // ───────────────────────── 專案設定 ─────────────────────────

@@ -2,6 +2,7 @@ using UnityEngine;
 using Vow.Combat;
 using Vow.Combat.Feedback;
 using Vow.Core;
+using Vow.Core.Logic;
 using Vow.Input;
 using Vow.UI;
 
@@ -29,8 +30,19 @@ namespace Vow.Bootstrap
         [SerializeField] private RuneCaster _runeCaster;
         [SerializeField] private RuneGhostPreview _runeGhost;
         [SerializeField] private RuneButtonView _runeButton;
+        [SerializeField] private NavGridDebugView _navGridDebug;
 
         private readonly ColliderTargetRegistry _targets = new ColliderTargetRegistry();
+
+        // ── Phase 2 批 2：0.5m 阻擋格點。全場唯一一份，牆登記進來、英雄從這裡拿繞牆方向 ──
+        private readonly NavGridTuning _navTuning = new NavGridTuning();
+        private BlockGrid _navGrid;
+        private GridNavigator _navigator;
+        private HeroLocomotion _heroLocomotion;
+        private RuneWall[] _navRuneWalls;
+
+        public BlockGrid NavGrid => _navGrid;
+        public GridNavigator Navigator => _navigator;
 
         private void Awake()
         {
@@ -59,6 +71,8 @@ namespace Vow.Bootstrap
 
             CombatTargetBehaviour[] targets = FindObjectsOfType<CombatTargetBehaviour>();
             for (int i = 0; i < targets.Length; i++) _targets.Register(targets[i]);
+
+            BuildNavGrid(targets);
 
             _input.Initialize(_targets, _camera);
 
@@ -97,13 +111,78 @@ namespace Vow.Bootstrap
             }
 
             if (_cameraRig != null) _cameraRig.SetTarget(_hero.transform);
-            if (_hud != null) _hud.Initialize(_hero, _input, _hitboxes, _latency);
+            if (_hud != null)
+            {
+                if (_navGridDebug != null) _hud.Initialize(_hero, _input, _hitboxes, _latency, IsGridDebugVisible, ToggleGridDebug);
+                else _hud.Initialize(_hero, _input, _hitboxes, _latency);
+            }
             if (_aimPreview != null) _aimPreview.Initialize(_hero, _input, _telegraph, _camera);
         }
 
         private void OnDestroy()
         {
             if (_hero != null && _feedback != null) _hero.StateMachine.OnStateChanged -= HandleHeroStateChanged;
+            if (_navRuneWalls != null)
+            {
+                for (int i = 0; i < _navRuneWalls.Length; i++)
+                    if (_navRuneWalls[i] != null) _navRuneWalls[i].OnActivated -= HandleRuneWallActivated;
+            }
+        }
+
+        // ───────────────────── Phase 2 批 2：阻擋格點的組裝 ─────────────────────
+
+        // 建立全場唯一的 BlockGrid／GridNavigator，把英雄接上去，並讓每一面石牆知道要登記到哪張格點。
+        // 進格點的只有符印石牆與 TestWall_A/B（計畫書 §4 假設 2）；木樁不進格點。
+        private void BuildNavGrid(CombatTargetBehaviour[] targets)
+        {
+            _navGrid = new BlockGrid(_navTuning.OriginX, _navTuning.OriginZ, _navTuning.CellSize,
+                                     _navTuning.Columns, _navTuning.Rows);
+            _navigator = new GridNavigator(_navGrid, _navTuning);
+
+            _heroLocomotion = _hero.GetComponent<HeroLocomotion>();
+            if (_heroLocomotion != null) _heroLocomotion.SetNavigator(_navigator, _navTuning.BodyRadius);
+
+            int runeWallCount = 0;
+            for (int i = 0; i < targets.Length; i++) if (targets[i] is RuneWall) runeWallCount++;
+            _navRuneWalls = new RuneWall[runeWallCount];
+
+            int next = 0;
+            for (int i = 0; i < targets.Length; i++)
+            {
+                if (targets[i] is RuneWall runeWall)
+                {
+                    runeWall.SetNavGrid(_navGrid, _navTuning.BodyRadius);
+                    runeWall.OnActivated -= HandleRuneWallActivated; // 場景重載後重複接線的防呆
+                    runeWall.OnActivated += HandleRuneWallActivated;
+                    _navRuneWalls[next++] = runeWall;
+                }
+                else if (targets[i] is TestWallTarget testWall)
+                {
+                    testWall.SetNavGrid(_navGrid, _navTuning.BodyRadius);
+                }
+            }
+
+            if (_navGridDebug != null) _navGridDebug.Initialize(_navGrid);
+        }
+
+        // 石牆立起來（且已登記進格點）時：壓到英雄就把他推到最近的空格（使用者裁定 3）。牆照立，不取消施法。
+        private void HandleRuneWallActivated(RuneWall wall)
+        {
+            if (_heroLocomotion == null || wall == null) return;
+            if (!wall.TryGetNavBlockerBox(out float centerX, out float centerZ, out float normalX, out float normalZ,
+                                          out float halfWidth, out float halfThickness))
+                return;
+            _heroLocomotion.EjectFromBox(centerX, centerZ, normalX, normalZ, halfWidth, halfThickness);
+        }
+
+        private bool IsGridDebugVisible()
+        {
+            return _navGridDebug != null && _navGridDebug.Visible;
+        }
+
+        private void ToggleGridDebug()
+        {
+            if (_navGridDebug != null) _navGridDebug.Visible = !_navGridDebug.Visible;
         }
 
         // 目押成功切後搖 → 立即解除上一刀的頓挫幀，滑步動畫不被卡住。
@@ -129,6 +208,7 @@ namespace Vow.Bootstrap
             if (_runeCaster == null) _runeCaster = FindObjectOfType<RuneCaster>();
             if (_runeGhost == null) _runeGhost = FindObjectOfType<RuneGhostPreview>();
             if (_runeButton == null) _runeButton = FindObjectOfType<RuneButtonView>();
+            if (_navGridDebug == null) _navGridDebug = FindObjectOfType<NavGridDebugView>();
             // _tuningAsset 是 ScriptableObject 資產、不在場景裡，手動拼場景時沒有 FindObjectOfType 後備，
             // 缺了它符印相關的三個 Initialize 呼叫會被 Start() 的 null 檢查略過（英雄本體不受影響）。
         }

@@ -44,9 +44,16 @@ namespace Vow.UI
         private int _modeRegion = -1;
         private int _hitboxRegion = -1;
         private int _latencyRegion = -1;
+        private int _gridRegion = -1;
         private Rect _modeRect;
         private Rect _hitboxRect;
         private Rect _latencyRect;
+        private Rect _gridRect;
+
+        // Phase 2 批 2 的 GRID 除錯疊圖開關。疊圖本體在 Vow.Bootstrap（UI 不得反向依賴 Bootstrap），
+        // 所以這裡只收兩個委派，由 Phase1Bootstrap 在組裝時各建一次。
+        private Func<bool> _gridVisible;
+        private Action _toggleGrid;
 
         private float _fpsTimer;
         private int _fpsFrames;
@@ -58,12 +65,14 @@ namespace Vow.UI
         private int _refreshHz;
 
         public void Initialize(HeroController hero, PlayerInputService input, HitboxVisualizer hitboxes,
-            NetworkLatencySimulator latency = null)
+            NetworkLatencySimulator latency = null, Func<bool> gridVisible = null, Action toggleGrid = null)
         {
             _hero = hero;
             _input = input;
             _hitboxes = hitboxes;
             _latency = latency;
+            _gridVisible = gridVisible;
+            _toggleGrid = toggleGrid;
 
             if (_hero != null)
             {
@@ -81,6 +90,7 @@ namespace Vow.UI
                 _modeRegion = _input.Routing.RegisterUiRegion(default);
                 _hitboxRegion = _input.Routing.RegisterUiRegion(default);
                 if (_latency != null) _latencyRegion = _input.Routing.RegisterUiRegion(default);
+                if (_gridVisible != null) _gridRegion = _input.Routing.RegisterUiRegion(default);
             }
             RecalculateLayout();
         }
@@ -134,6 +144,10 @@ namespace Vow.UI
             {
                 _latency.CyclePreset();
             }
+            else if (regionId == _gridRegion && _toggleGrid != null)
+            {
+                _toggleGrid();
+            }
         }
 
         private void RecalculateLayout()
@@ -152,12 +166,16 @@ namespace Vow.UI
             float buttonWidth = (PanelWidth - Pad * 3f) * 0.5f;
             _modeRect = new Rect(Pad * 2f, y, buttonWidth, Row * 1.6f);
             _hitboxRect = new Rect(Pad * 3f + buttonWidth, y, buttonWidth, Row * 1.6f);
-            _latencyRect = new Rect(Pad * 2f, y + Row * 1.6f + Pad, PanelWidth - Pad * 2f, Row * 1.6f);
+            y += Row * 1.6f + Pad;
+            _latencyRect = new Rect(Pad * 2f, y, PanelWidth - Pad * 2f, Row * 1.6f);
+            if (_latency != null) y += Row * 1.6f + Pad; // 沒有延遲模擬時，GRID 鈕頂上來佔那一列
+            _gridRect = new Rect(Pad * 2f, y, PanelWidth - Pad * 2f, Row * 1.6f);
 
             if (_input == null) return;
             _input.Routing.UpdateUiRegion(_modeRegion, ToScreenRegion(_modeRect));
             _input.Routing.UpdateUiRegion(_hitboxRegion, ToScreenRegion(_hitboxRect));
             _input.Routing.UpdateUiRegion(_latencyRegion, ToScreenRegion(_latencyRect));
+            _input.Routing.UpdateUiRegion(_gridRegion, ToScreenRegion(_gridRect));
         }
 
         // IMGUI 座標（原點左上、已縮放）→ 螢幕座標（原點左下、像素）
@@ -178,7 +196,9 @@ namespace Vow.UI
             Matrix4x4 previous = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(_scale, _scale, 1f));
 
-            float panelHeight = Pad + Row * InfoRows + Pad + Row * 1.6f + Pad + (_latency != null ? Row * 1.6f + Pad : 0f);
+            float panelHeight = Pad + Row * InfoRows + Pad + Row * 1.6f + Pad
+                                + (_latency != null ? Row * 1.6f + Pad : 0f)
+                                + (_gridVisible != null ? Row * 1.6f + Pad : 0f);
             Fill(new Rect(Pad, Pad, PanelWidth, panelHeight), PanelColor);
 
             float x = Pad * 2f;
@@ -237,6 +257,13 @@ namespace Vow.UI
                 Fill(_latencyRect, preset == LatencyPreset.Off ? ButtonColor : ButtonOnColor);
                 GUI.Label(_latencyRect, preset == LatencyPreset.Off ? "NET delay: OFF"
                                       : preset == LatencyPreset.Ms50 ? "NET delay: 50 ms" : "NET delay: 80 ms", _buttonLabel);
+            }
+
+            if (_gridVisible != null)
+            {
+                bool gridOn = _gridVisible();
+                Fill(_gridRect, gridOn ? ButtonOnColor : ButtonColor);
+                GUI.Label(_gridRect, gridOn ? "GRID: ON" : "GRID: OFF", _buttonLabel);
             }
 
             GUI.matrix = previous;

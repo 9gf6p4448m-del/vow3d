@@ -1,18 +1,24 @@
 using UnityEngine;
 using UnityEngine.AI;
+using Vow.Core.Logic;
 
 namespace Vow.Core
 {
     // 點地導航與位移落地。
     // NavMesh 100% 靜態預烘焙、石牆不 carving（紅線 5），所以 NavMeshAgent 本身「看不見」石牆：
     // 這裡只拿 agent 算路徑方向，實際位移一律經 ApplyDisplacement 以 SphereCast 對實體 Collider 做裁切與貼牆滑動。
-    // （繞牆尋路屬 Phase 2 的 0.5m 格點向量場，Phase 1 僅保證「撞牆會被擋住」。）
+    // Phase 2 批 2 起，另外接上 0.5m 阻擋格點的向量場（GridNavigator）負責繞牆——
+    // **但只在 SetNavigator 餵了非 null 的導航器之後**。`_navigator == null` 時本類別的行為與 v0.3.2 (1931b53) 逐行相同。
     [RequireComponent(typeof(NavMeshAgent))]
     public sealed class HeroLocomotion : MonoBehaviour
     {
         private const float SkinWidth = 0.02f;
         private const float ChaseRepathInterval = 0.1f;
         private const float CastHeight = 0.9f;
+
+        // 推出重疊時「最近空格」的搜尋半徑（格數）。與 NavGridTuning.EscapeSearchRadiusCells 同值（20 格＝10m）；
+        // GridNavigator 沒有公開它持有的 tuning，而步驟 A 的四個純邏輯檔不在本批可改範圍內，所以在這裡留一份同值常數。
+        private const int EjectSearchRadiusCells = 20;
 
         private readonly RaycastHit[] _hits = new RaycastHit[8];
 
@@ -24,6 +30,20 @@ namespace Vow.Core
         private float _turnSpeed = 1080f;
         private float _bodyRadius = 0.35f;
         private bool _offMeshReported;
+
+        // ── Phase 2 批 2：格點繞牆。以下欄位只有 _navigator != null 時才會被讀到 ──
+        private GridNavigator _navigator;
+        private float _inflateRadius = 0.35f;  // 推出重疊時當作身體半徑用（＝格點的外擴量）
+        private Vector3 _rawDestination;       // 使用者點的原始目的地；格點版本變了要拿它重新解析
+        private float _goalX;
+        private float _goalZ;
+        private bool _goalOnGrid;              // 目的地在格點涵蓋範圍內＝這趟可以用格點轉向
+        private bool _navigatorOrder;          // 當下這道指令是不是在有導航器的情況下發出的（指令早於 SetNavigator 就不接手）
+        private int _resolvedGridVersion = -1;
+        private SteerMode _lastSteerMode = SteerMode.Direct;
+
+        // 供測試觀察「這一幀到底走的是哪條路」：Direct＝沿用 Phase 1 的 NavMesh 速度，Follow＝格點向量場。
+        public SteerMode LastSteerMode => _lastSteerMode;
 
         public bool HasArrived
         {
@@ -91,12 +111,30 @@ namespace Vow.Core
             _bodyRadius = bodyRadius;
         }
 
+        // 接上格點導航器。navigator 為 null（或從未呼叫）時，本類別的行為與 v0.3.2 逐行相同。
+        // inflateRadius＝推出重疊時當作身體半徑用的值，呼叫端傳 NavGridTuning.BodyRadius（＝格點外擴量）。
+        public void SetNavigator(GridNavigator navigator, float inflateRadius)
+        {
+            _navigator = navigator;
+            _inflateRadius = inflateRadius;
+            _resolvedGridVersion = -1;
+            _goalOnGrid = false;
+            _navigatorOrder = false;
+            _lastSteerMode = SteerMode.Direct;
+        }
+
         public void MoveTo(Vector3 destination)
         {
             if (!TryPlaceOnNavMesh()) return; // 不在 NavMesh 上時 SetDestination 只會噴錯；先試著放回去，放不回就不下指令
             _chaseTarget = null;
             _hasOrder = true;
             _agent.isStopped = false;
+            if (_navigator != null)
+            {
+                _rawDestination = destination;
+                _agent.SetDestination(ResolveGoal(destination));
+                return;
+            }
             _agent.SetDestination(destination);
         }
 
@@ -107,6 +145,15 @@ namespace Vow.Core
             _hasOrder = true;
             _repathTimer = 0f;
             _agent.isStopped = false;
+            if (_navigator != null)
+            {
+                if (target != null)
+                {
+                    _rawDestination = target.position;
+                    _agent.SetDestination(ResolveGoal(target.position));
+                }
+                return;
+            }
             if (target != null) _agent.SetDestination(target.position);
         }
 
@@ -142,12 +189,25 @@ namespace Vow.Core
                     if (_repathTimer <= 0f && _agent.enabled && _agent.isOnNavMesh)
                     {
                         _repathTimer = ChaseRepathInterval;
-                        _agent.SetDestination(_chaseTarget.position);
+                        if (_navigator != null)
+                        {
+                            _rawDestination = _chaseTarget.position;
+                            _agent.SetDestination(ResolveGoal(_chaseTarget.position));
+                        }
+                        else _agent.SetDestination(_chaseTarget.position);
                     }
+                }
+                // 牆出現或消失：還持有移動指令的英雄用原始目的地重新解析一次（計畫書 §4 假設 6）。
+                // 追擊每 0.1s 本來就重解析，不必再走這條。
+                else if (_navigator != null && _navigatorOrder && _resolvedGridVersion != _navigator.Grid.Version
+                         && _agent.enabled && _agent.isOnNavMesh)
+                {
+                    _agent.SetDestination(ResolveGoal(_rawDestination));
                 }
 
                 Vector3 velocity = _agent.enabled && _agent.isOnNavMesh ? _agent.desiredVelocity : Vector3.zero;
                 velocity.y = 0f;
+                if (_navigator != null) velocity = SteerAroundWalls(velocity);
                 if (velocity.sqrMagnitude > 1e-6f)
                 {
                     ApplyDisplacement(velocity * dt);
@@ -157,6 +217,73 @@ namespace Vow.Core
             }
 
             SyncAgent();
+        }
+
+        // ───────────────────── Phase 2 批 2：格點繞牆（只在 _navigator != null 時走到）─────────────────────
+
+        // 解析目的地：走得到就原樣用，走不到（被圍死／點在牆腳）就退到「最近可達點」（使用者裁定 2）。
+        // 回傳值直接餵給 _agent.SetDestination，所以 HasArrived 不必改——它比的一直是 agent 當下的目的地。
+        private Vector3 ResolveGoal(Vector3 destination)
+        {
+            _navigatorOrder = true;
+            _resolvedGridVersion = _navigator.Grid.Version;
+
+            // 目的地落在格點涵蓋範圍外——地板恰好 40×40、格點也是 40×40，只有點在最外緣那條線才會發生，
+            // 而那裡本來就在 NavMesh (±19.5) 之外、沒有任何可站的點。格點對它沒有可用資訊，整趟退回 Phase 1 行為。
+            if (!_navigator.Grid.TryWorldToCell(destination.x, destination.z, out _, out _))
+            {
+                _goalOnGrid = false;
+                return destination;
+            }
+
+            Vector3 position = _self.position;
+            _navigator.ResolveGoal(position.x, position.z, destination.x, destination.z,
+                out float goalX, out float goalZ, out _);
+            _goalX = goalX;
+            _goalZ = goalZ;
+            _goalOnGrid = true;
+            return new Vector3(goalX, destination.y, goalZ);
+        }
+
+        // 把 NavMesh 算出來的速度換成「繞得過牆」的速度。
+        // Direct（到目的地有視線）一律原樣回傳：沒有牆擋路時，批 2 對 Phase 1 手感零影響（計畫書 §4 假設 3）。
+        private Vector3 SteerAroundWalls(Vector3 navMeshVelocity)
+        {
+            if (!_goalOnGrid) return navMeshVelocity;
+
+            Vector3 position = _self.position;
+            SteerMode mode = _navigator.Steer(position.x, position.z, _goalX, _goalZ, out float dirX, out float dirZ);
+            _lastSteerMode = mode;
+
+            // Stuck＝連逃脫格都找不到（10m 內全是 Blocked，實務上不會發生）。退回 Phase 1 行為，至少不比 v0.3.2 差。
+            if (mode != SteerMode.Follow) return navMeshVelocity;
+
+            // 速度沿用 agent 這一幀算出來的大小；agent 認為已到達（直線距離近）但格點還要繞路時退回設定速度。
+            float speed = navMeshVelocity.magnitude;
+            if (speed < 1e-6f) speed = _agent.speed;
+            return new Vector3(dirX * speed, 0f, dirZ * speed);
+        }
+
+        // 石牆立在英雄身上時把他推到最近的空格（使用者裁定 3）。只看實體重疊（圓對 OBB），不看外擴區——
+        // 貼牆站著是常態，不該被彈開（計畫書 §4 假設 5）。回傳有沒有真的動過。
+        public bool EjectFromBox(float centerX, float centerZ, float normalX, float normalZ,
+                                 float halfWidth, float halfThickness)
+        {
+            if (_navigator == null) return false;
+
+            Vector3 position = _self.position;
+            if (!BlockGrid.CircleOverlapsBox(position.x, position.z, _inflateRadius,
+                                             centerX, centerZ, normalX, normalZ, halfWidth, halfThickness))
+                return false;
+
+            if (!_navigator.Grid.TryFindNearestFree(position.x, position.z, EjectSearchRadiusCells,
+                                                    out int cx, out int cz))
+                return false;
+
+            _navigator.Grid.CellCenter(cx, cz, out float x, out float z);
+            _self.position = new Vector3(x, position.y, z);
+            SyncAgent();
+            return true;
         }
 
         // 施加一段水平位移；遇到實體 Collider 時裁切並沿牆面滑動一次。回傳實際走出的位移。
