@@ -261,3 +261,5 @@ Simplicity 例外：
 **V11-i（回歸）** `verify.sh` ALL PASS；`mutation_check.py` 全抓到（55＋新增）；Unity EditMode、PlayMode 全綠；`git diff 0dd3eb5.. -- Assets/Tests` 的刪除行逐行列出並說明為什麼不提高通過機率；既有測試的門檻、期望值、容差不得改動（V11-h 點名的兩處除外）。
 
 **N10 記錄不修**：連通區完全空（英雄格 Blocked 且 10m 內無空格）時 `ResolveGoal` 回傳 Blocked 格心——本作牆寬 4m、場地 40m 排不出這個盤面；只在 `GridNavigator.cs` 該處加一行註解說明。N4 照 R10 記錄不修。
+
+**V11-j（2026-09-19 主對話覆核 `4d9bf5f` 後追加；加嚴，不動 V11-a～i）** M3 的快取不得改變「走得到」的追擊行為：現行實作連 `substituted==false` 的結果也快取，空地上追一個只在**同一格內**移動的目標時，agent 目的地會停在舊位置（最多差一格對角線）——違反最高優先序「沒有牆擋路時 Phase 1 行為不變」。條件：無牆空地、追擊靜止木樁 0.3 秒後，把木樁在**同一格內**平移 ≥0.3m（測試要斷言平移前後 `TryWorldToCell` 同格），再過 0.25 秒：`NavMeshAgent.destination` 與木樁當下位置的平面距離 ≤ 0.05m，且整趟 `BuildCount` 增量＝0。紅燈條件：`4d9bf5f` 的碼（目的地停在平移前的位置，差 ≥0.3m）。V11-c／d 照舊要綠。
