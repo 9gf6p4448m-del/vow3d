@@ -237,3 +237,27 @@ Simplicity 例外：
 - R8 括號裡預告 V4-c「預期回到 (−0.25,2.75)」是主對話忘了套用自己寫的平手規則：(39,45) 與 (40,45) 到目的地等距，階段 3 先比路徑成本（50 < 54）→ 正確答案是 **(0.25,2.75)**，實作與測試是對的（r2 N6）。
 - R9 點名的三條線段（45°／水平／垂直）對 DDA 缺陷**沒有鑑別力**（修復前就回 true）；有鑑別力的是實作者加的非 45° 斜線 `(0,0)→(−10,9)`、`(−6,−4)→(9,8)`（r2 N5）。
 - r2 的 M3（表面修好）、N1～N3、N7～N10 排入 v0.4.1；N4（視線在格界上的語意）記錄不修。
+
+### R11 v0.4.1：r2 遺留項的凍結驗收條件（2026-09-19 動手前訂定；已知良好狀態＝main `0dd3eb5`）
+
+範圍只有 r2 的 M3／N1／N2／N3／N7／N8／N9。**行為意圖不變**：替代點選點照 R1a、沒有牆擋路時 Phase 1 行為不變、§3 六個檔與全部 asmdef 零改動。時間量測照 §4-9 不當及格線，所以下面全部用「次數」當代理指標。
+
+**V11-a（N1 掃描合併，純邏輯）** `GridNavigator` 公開唯讀累計計數 `ScannedCellCount`（替代點解析時每檢查一格加 1，仿 `BuildCount`）。80×80 格點、單面牆、點牆腳（目的地格 Blocked）解析一次：`ScannedCellCount` 增量 ≤ 8000（現行三趟＝19200，會紅）。不得為了過這條而每次呼叫配置陣列（見 V11-f）。
+
+**V11-b（N1 不改行為，純邏輯）** 差分測試：固定種子、≥300 個隨機盤面（1～3 面隨機角度的牆、隨機 from／dest），`ResolveGoal` 的 (goalX, goalZ, substituted) 與測試內**獨立的** R1a 暴力參照（沿用 V2-i／j 那份，不得改成呼叫受測物）逐值相同；活性：其中 `substituted==true` ≥ 60 個。**這條要先在未改動的 `0dd3eb5` 程式碼上跑綠**（它是特徵化測試），改完仍綠。新增突變：把合併後的掃描範圍／候選條件改壞一處，必須被這條抓到。
+
+**V11-c（M3 追擊不重算，PlayMode）** r2 的 P10 情境：追一個站在 `TestWall_A` 外擴區內、靜止的木樁。從下追擊指令起 3 秒：`BuildCount` 總增量 ≤ 4，且最後 1 秒增量＝0（現行 2 秒 14 次，會紅）。英雄最後停在與起點同側的替代點。
+
+**V11-d（M3 不得過度快取，PlayMode；三個子情境各自斷言）** ①目標換格：追擊中把木樁瞬移到另一個走不到的位置（另一面牆的外擴區）→ 0.3 秒內 agent 目的地換成新的替代點（與新位置的距離 ≤ 牆半厚＋外擴＋一格對角線）。②格點版本變了：追擊走不到的目標途中那面牆消失 → 英雄改走向目標本身並進入攻擊距離。③目標在可達處移動（r2 P9）：追會動的目標 2 秒，`BuildCount` 增量仍為 0 且英雄與目標距離最後 ≤ 攻擊距離＋0.5m。紅燈條件：快取只看「有沒有解析過」而不看目標格／版本。
+
+**V11-e（N2）** 邊界圈建不出來（`_arenaBoundary` 為 null、或底下 0 個 `BoxCollider`）時必須 `Debug.LogError`，訊息含 `ArenaBoundary`。測試用 `LogAssert.Expect(LogType.Error, …)` 兩個情境各一條；現行程式碼上兩條都紅（沒有任何 log）。正常場景開場不得出現這條 error（既有測試的 LogAssert 無未預期 error 即為證）。
+
+**V11-f（N3 零配置窗口要行使到新路徑）** `ZeroAllocationTests` 的量測窗口內另外發生：至少一次 `substituted==true` 的解析、至少一次 `SteerMode.GoalBlocked` 的當幀重解析；兩者都要在測試裡**斷言發生次數 ≥1**（活性），`UpdateBytes==0` 門檻、`Frames>=240`、正向對照一字不動。另加 dotnet 專用零配置測試：替代點解析 100 次、`StampCell` 200 次皆 0 bytes（Unity 下 `[Ignore]`，理由同 L3）。
+
+**V11-g（N7）** PlayMode 兩條：持有「已被替代」的移動指令時 `SetNavigator(null, 0f)` → agent 目的地＝使用者原始目的地；追擊中 `SetNavigator(null, 0f)` → agent 目的地＝目標當下位置（容差 0.05m）。實作者要貼出「拿掉還原那幾行時這兩條變紅」的輸出。
+
+**V11-h（N8／N9）** V4-d 起點改用精確值 `18 − 4/√2`、T 註解改 2.93930（方向＝加嚴）；`_navStamped1Handler` 改名 `_navStampedHandler`，`grep -rn _navStamped1Handler Assets/` 零命中。
+
+**V11-i（回歸）** `verify.sh` ALL PASS；`mutation_check.py` 全抓到（55＋新增）；Unity EditMode、PlayMode 全綠；`git diff 0dd3eb5.. -- Assets/Tests` 的刪除行逐行列出並說明為什麼不提高通過機率；既有測試的門檻、期望值、容差不得改動（V11-h 點名的兩處除外）。
+
+**N10 記錄不修**：連通區完全空（英雄格 Blocked 且 10m 內無空格）時 `ResolveGoal` 回傳 Blocked 格心——本作牆寬 4m、場地 40m 排不出這個盤面；只在 `GridNavigator.cs` 該處加一行註解說明。N4 照 R10 記錄不修。
