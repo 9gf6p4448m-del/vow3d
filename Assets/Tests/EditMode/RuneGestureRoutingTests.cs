@@ -325,10 +325,24 @@ namespace Vow.Tests
             Assert.GreaterOrEqual(Layout.Button.YMin, saturationPx, "按在按鈕最下緣，往下仍拖得滿");
         }
 
-        // 極低 dpi：15mm 邊距不足 16px 時以 16px 為下限，整顆按鈕仍須在 8px 邊緣死區之外。
-        // （邊距還是 4mm 時 96dpi 就會碰到下限；改 15mm 後要 1px/mm 才碰得到，治具跟著改才繼續走到下限那條分支。）
+        // 低 dpi（桌機 Standalone 約 96dpi，1mm = 3.7795px）：手算錨點。邊距 15mm = 56.69px，已高於 16px 下限，
+        // 所以這裡驗的是真實桌機幾何；下限那條分支另由下一個測試守（邊距還是 4mm 時，96dpi 就會碰到下限）。
         [Test]
         public void Layout_OnALowDpiScreen_StillClearsTheEdgeDeadzone()
+        {
+            const float ppm = 96f / 25.4f;
+            RuneButtonLayout layout = RuneButtonLayout.Compute(1280f, 720f, ppm);
+
+            Assert.AreEqual(1223.31f, layout.Button.XMax, 0.01f, "右緣＝1280 − 15mm（56.69px），未觸發下限");
+            Assert.AreEqual(56.69f, layout.Button.YMin, 0.01f);
+            Assert.AreEqual(16f * ppm, layout.Button.XMax - layout.Button.XMin, 0.01f);
+            Assert.IsFalse(Vow.Core.Logic.GestureMath.IsInEdgeDeadzone(layout.Button.XMax, layout.Button.YMin, 1280f, 720f,
+                Vow.Core.Logic.GestureMath.EdgeDeadzonePixels));
+        }
+
+        // 極低 dpi（1px/mm）：15mm 邊距只有 15px，不足 16px 時以 16px 為下限，整顆按鈕仍須在 8px 邊緣死區之外。
+        [Test]
+        public void Layout_OnAnExtremelyLowDpiScreen_FallsBackToTheSixteenPixelFloor()
         {
             const float ppm = 1f; // 15mm = 15px < 16px
             RuneButtonLayout layout = RuneButtonLayout.Compute(1280f, 720f, ppm);
