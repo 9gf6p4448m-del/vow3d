@@ -242,7 +242,7 @@ Tools/DotnetCheck/       不需 Unity 的驗證工具鏈
 依賴方向只有一條：`Bootstrap → {UI, Combat, Input, Animation} → Core`，由 asmdef 在編譯期強制。
 `Core/Logic` 的 `CadenceSim.SimulateStep` 是純函數，30/60 Tick 客戶端預測可直接重播。
 
-## 11. Phase 2 批 1：地脈符印與石牆（v0.3.0～v0.3.2）
+## 11. Phase 2 批 1：地脈符印與石牆（v0.3.0～v0.3.3）
 
 > 使用者 2026-09-19 裁定：`ARCHITECTURE.md` §貳「10 人實機盲測通過才解鎖 Phase 2」**延後**，盲測於 Phase 2 期間平行補做（原文不改）。
 > Phase 2 分四批：批 1＝輸入路由＋符印按鈕＋`IRuneWall`（本節）；批 2＝0.5m 格點＋向量場繞牆；批 3＝破敵牆得護盾＋友軍穿透；批 4＝元素 Combo。
@@ -259,7 +259,7 @@ Tools/DotnetCheck/       不需 Unity 的驗證工具鏈
 ### 11.2 數值（`Assets/Scripts/Core/Logic/RuneTuning.cs`，經 `HeroTuningAsset.Rune` 可在 Inspector 調）
 GDD 有給的：壽命 5s、極速距離 4m、上限 2 面、穿透 10 發（前 5 發不衰減）。
 **GDD 沒給、使用者裁定先用暫定值【試玩必調】**：冷卻 8s、石牆 4m×0.6m×2m、血量 300、拖曳距離 2～8m、拇指拉滿行程 14mm。
-按鈕版面（`Assets/Scripts/Input/RuneButtonLayout.cs`）：直徑 16mm、離邊 4mm（下限 16px）。v0.3.2 起沒有取消區。
+按鈕版面（`Assets/Scripts/Input/RuneButtonLayout.cs`）：直徑 16mm、離邊 15mm（v0.3.3 起；原為 4mm；下限 16px）。v0.3.2 起沒有取消區。
 
 ### 11.3 規格留白處的解讀（請確認或推翻）
 1. **補了一個規格沒有的事件**：`IPlayerInputService` 只有符印的拖曳更新／極速施放／取消，沒有「鬆手成牆」。另立 `IRuneCastInput.OnRuneCastReleased`，ARCHITECTURE 逐字抄錄的契約不動。
@@ -301,5 +301,11 @@ v0.3.2（2026-09-19，commit `e0b3d4d`；使用者試玩回饋「取消的紅柱
 - `verify.sh` 純邏輯 102 個 0 失敗、ALL PASS；`mutation_check.py` 35／35（拿掉只屬於取消區的 U3／U9／U11／U12，新增 U13「滑回原點不亮取消旗標」）。
 - Unity batchmode：EditMode 102／102（`unity-cancelfix-2-EditMode.xml`）、PlayMode 18／18（`unity-cancelfix-5-PlayMode.xml`；新增「放手會取消時虛影變色」，顏色由 Renderer 的 PropertyBlock 讀回）。鑑別力：把變色那行拿掉 → 該測試紅在「旗標為真時應顯示取消色」。
 - 線上版瀏覽器實測（截圖 `browser-screenshots/v032-01～04`，console 無 error）：拖曳中畫面上沒有紅柱；拖出再滑回原點 → 虛影與符印鈕變紅，放手後無牆、未進冷卻；往正上方一路拉到螢幕頂放手 → 牆立在正前方最遠處、按鈕進冷卻。
+
+v0.3.3（2026-09-19；使用者試玩回饋「按鈕太靠邊界，想把牆放到右邊容易觸發取消」）：
+- 成因：拖曳原點＝手指按下的位置，按鈕離邊只有 4mm（按鈕中心離邊 12mm）＜拉滿行程 14mm；往右／往下拖的手指撞到邊框後觸控點不再移動，落回 3.5mm 取消半徑，放手＝取消。
+- 修法：`RuneButtonLayout.EdgeMarginMillimeters` 4 → 15（＝拉滿行程 14mm＋1mm 餘裕）。新增不變量測試 `Layout_LeavesAFullSaturationStrokeBetweenTheButtonAndBothScreenEdges`；鑑別力：在 4mm 的舊幾何上紅在行為斷言（右側只剩 72.4px，需要 253.5px）。
+- 兩個手算錨點跟著需求改值（460dpi 四個邊座標；下限分支的治具由 96dpi 改成 1px/mm，否則 15mm 邊距碰不到 16px 下限、那條分支不再被走到）。
+- `verify.sh` 純邏輯 103 個 0 失敗；`mutation_check.py` 35／35；Unity batchmode EditMode 103／103、PlayMode 18／18（`unity-033-*.xml`）。
 
 只有真人能判斷、尚未驗證的：符印鈕在真機上的大小與位置順不順手；0.2 秒／3.5mm／7.5mm 三個輕點判定值（症狀：「點了符印鈕卻沒反應」或「想在正前方立牆卻立歪在旁邊 2m」）；8 秒冷卻與 2～8m 距離的手感；滑回原點取消順不順手、虛影變紅夠不夠明顯；開 NET delay 時虛影與實牆的時間差。

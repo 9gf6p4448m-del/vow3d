@@ -9,7 +9,9 @@ namespace Vow.Input
     public struct RuneButtonLayout
     {
         public const float ButtonDiameterMillimeters = 16f;
-        public const float EdgeMarginMillimeters = 4f;   // 離螢幕邊：避開系統手勢列，也讓拇指不必摳著邊框
+        // 離螢幕邊＝拇指拉滿的行程（RuneTuning.DragSaturationMillimeters＝14mm）＋1mm 餘裕：拖曳原點是手指按下的位置，
+        // 邊距比行程短的話，往右／往下拖的手指還沒離開取消半徑就撞到邊框，放手變成取消（2026-09-19 試玩回饋，原為 4mm）。
+        public const float EdgeMarginMillimeters = 15f;
         private const float MinEdgeMarginPixels = GestureMath.EdgeDeadzonePixels + 8f;
 
         public ScreenRegion Button;

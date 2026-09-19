@@ -308,17 +308,29 @@ namespace Vow.Tests
         {
             RuneButtonLayout layout = RuneButtonLayout.Compute(2796f, 1290f, 460f / 25.4f);
 
-            Assert.AreEqual(2433.8f, layout.Button.XMin, 0.5f, "按鈕左緣＝2796 − 4mm − 16mm");
-            Assert.AreEqual(2723.6f, layout.Button.XMax, 0.5f, "按鈕右緣＝2796 − 4mm");
-            Assert.AreEqual(72.4f, layout.Button.YMin, 0.5f, "按鈕下緣＝4mm");
-            Assert.AreEqual(362.2f, layout.Button.YMax, 0.5f, "按鈕上緣＝4mm + 16mm");
+            Assert.AreEqual(2234.6f, layout.Button.XMin, 0.5f, "按鈕左緣＝2796 − 15mm − 16mm");
+            Assert.AreEqual(2524.3f, layout.Button.XMax, 0.5f, "按鈕右緣＝2796 − 15mm");
+            Assert.AreEqual(271.7f, layout.Button.YMin, 0.5f, "按鈕下緣＝15mm");
+            Assert.AreEqual(561.4f, layout.Button.YMax, 0.5f, "按鈕上緣＝15mm + 16mm");
         }
 
-        // 低 dpi（桌機 Standalone 約 96dpi）：4mm 邊距不足 16px 時以 16px 為下限，整顆按鈕仍須在 8px 邊緣死區之外。
+        // 2026-09-19 試玩回饋：按鈕貼著右邊界時，往右拖的手指還沒離開取消半徑就撞到邊框，放手變成取消。
+        // 不變量：不論按在按鈕上哪一點，往右、往下都還有一整段「拉滿行程」的螢幕可以拖。
+        [Test]
+        public void Layout_LeavesAFullSaturationStrokeBetweenTheButtonAndBothScreenEdges()
+        {
+            float saturationPx = new Vow.Core.Logic.RuneTuning().DragSaturationMillimeters * PxPerMm;
+
+            Assert.GreaterOrEqual(W - Layout.Button.XMax, saturationPx, "按在按鈕最右緣，往右仍拖得滿");
+            Assert.GreaterOrEqual(Layout.Button.YMin, saturationPx, "按在按鈕最下緣，往下仍拖得滿");
+        }
+
+        // 極低 dpi：15mm 邊距不足 16px 時以 16px 為下限，整顆按鈕仍須在 8px 邊緣死區之外。
+        // （邊距還是 4mm 時 96dpi 就會碰到下限；改 15mm 後要 1px/mm 才碰得到，治具跟著改才繼續走到下限那條分支。）
         [Test]
         public void Layout_OnALowDpiScreen_StillClearsTheEdgeDeadzone()
         {
-            const float ppm = 96f / 25.4f; // 4mm = 15.1px < 16px
+            const float ppm = 1f; // 15mm = 15px < 16px
             RuneButtonLayout layout = RuneButtonLayout.Compute(1280f, 720f, ppm);
 
             Assert.AreEqual(1264f, layout.Button.XMax, 0.01f, "右緣＝1280 − 16px 下限");
