@@ -71,7 +71,7 @@ namespace Vow.Tests
             Assert.AreEqual(0f, far.CenterZ, 1e-5);
 
             Assert.IsTrue(cast.TryDragPlacement(0f, 0f, 0f, 1f, 0.5f, out RuneWallPlacement mid));
-            Assert.AreEqual(2.9f, mid.CenterZ, 1e-4, "0.5 已過貼身帶（1/3）：1.2 + 6.8 × (0.5 − 1/3) ÷ (2/3)");
+            Assert.AreEqual(2.9f, mid.CenterZ, 1e-5, "0.5 已過貼身帶（1/3）：1.2 + 6.8 × (0.5 − 1/3) ÷ (2/3)");
 
             Assert.IsTrue(cast.TryDragPlacement(0f, 0f, 0f, 1f, 7f, out RuneWallPlacement clamped));
             Assert.AreEqual(8f, clamped.CenterZ, 1e-5, "拉伸量超出 0~1 要夾住，不得把牆丟到射程外");
