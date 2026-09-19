@@ -43,12 +43,17 @@ namespace Vow.Core
         // 快取放在這一層而不是 GridNavigator：導航器必須維持「輸入相同、輸出相同」的純函式
         // （V11-b 的 300 盤差分測試、V2-p／q／r 全都直接對它連續下不同的 from 呼叫），
         // 而「同一道指令期間」這個範圍只有這裡知道。
-        // 失效條件三個，缺一就會變成 V11-d 抓的那種過度快取：①目標格換了 ②格點版本變了 ③新指令／被牆推出。
+        // 失效條件三個，缺一就會變成 V11-d 抓的那種過度快取：①目的地座標變了（§6 R13 起是連續座標，不是格號）
+        // ②格點版本變了 ③新指令／被牆推出。
         // 而且只有 substituted==true 的結果才進快取（§6 R11 V11-j）——走得到的目的地是原樣回傳的，
         // 快取它會把答案量化到格心，目標在同一格內移動時 agent 目的地就會落後（詳見 ResolveGoal 裡的說明）。
         private bool _hasCachedGoal;
-        private int _cachedDestCx;
-        private int _cachedDestCz;
+        // r3 對抗審查 R3-1（§6 R13）：key 存的是**夾進可達範圍後的連續目的地座標**，不是格號。
+        // R1a 是連續座標的函數（dMin、候選帶 slack、第二／三遍的距離比較都拿 destX/destZ 算），
+        // 只比格號的話，走不到的目標在同一格內移動時 key 不變 → 命中 → 目的地凍在舊的替代點
+        // （r3 實跑：落差 1.803m、停在牆的另一側）。批 3 有會動的敵人之後那是玩家看得到的。
+        private float _cachedDestX;
+        private float _cachedDestZ;
         private int _cachedGoalVersion;
         private float _cachedGoalX;
         private float _cachedGoalZ;
@@ -270,13 +275,21 @@ namespace Vow.Core
             // §6 R8／R3a：夾進「可達範圍」而不只是格點——夾到最外圈格心（±19.75）的話那裡站不到，
             // 解析出來仍然會是替代點。
             _navigator.Grid.ClampToPlayableArea(destination.x, destination.z, out float destX, out float destZ);
-            _navigator.Grid.TryWorldToCell(destX, destZ, out int destCx, out int destCz);
 
-            // M3（§6 R11 V11-c）：同一道指令、同一個目標格、同一個格點版本 → 上一次的答案仍然成立。
+            // M3（§6 R11 V11-c）：同一道指令、**同一個目的地座標**、同一個格點版本 → 上一次的答案仍然成立。
             // 追擊一個站著不動、走不到的目標時，這一段把「每 0.1s 一次全場 Dijkstra ＋候選帶掃描」降成只有第一次。
-            // 目標格或版本一變就重解析（V11-d ①②），所以不會退化成「解析過就永遠不再算」。
+            // 目的地或版本一變就重解析（V11-d ①②、V13-a），所以不會退化成「解析過就永遠不再算」。
+            //
+            // §6 R13：座標用**精確相等**比，不設容差。理由：
+            //   ①靜止的目標每幀回傳的 `transform.position` 逐位元相同，夾進可達範圍也是決定性的純函式，
+            //     所以 V11-c 那種「追靜止目標」仍然 100% 命中，成本與 v0.4.1 相同（實測 BuildCount 仍為 1）。
+            //   ②任何 >0 的容差都沒有物理依據可以訂：R1a 的候選帶邊界是硬判斷，目的地挪動 0.1mm 就可能讓
+            //     答案換到牆的另一側（本測試的 0.5657m 位移換來 1.80m 的落差），容差多大都可能放過一個過期答案。
+            //   ③誤命中：不存在——命中需要座標逐位元相同且版本相同，那樣 R1a 的輸入完全沒變。
+            //   ④誤失效：目標若有次毫米級抖動就每次都重算，退回 v0.4.1 之前那條路的成本（6600 格掃描），
+            //     結果仍然正確，只是沒省到——寧可慢也不要給過期的答案。
             if (_hasCachedGoal && _cachedGoalVersion == gridVersion
-                && _cachedDestCx == destCx && _cachedDestCz == destCz)
+                && _cachedDestX == destX && _cachedDestZ == destZ)
             {
                 _goalX = _cachedGoalX;
                 _goalZ = _cachedGoalZ;
@@ -298,8 +311,8 @@ namespace Vow.Core
             {
                 _cachedGoalX = resolvedX;
                 _cachedGoalZ = resolvedZ;
-                _cachedDestCx = destCx;
-                _cachedDestCz = destCz;
+                _cachedDestX = destX;
+                _cachedDestZ = destZ;
                 _cachedGoalVersion = gridVersion;
                 _hasCachedGoal = true;
             }
