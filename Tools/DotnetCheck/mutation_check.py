@@ -235,6 +235,22 @@ MUTATIONS = [
      "            for (int i = 0; i < _tuning.FollowLookaheadCells; i++)",
      "            for (int i = 0; i < 1; i++)",
      "Steer_LookaheadStraightensThePath_WhileLookaheadOneZigzagsPastTheBudget"),
+
+    # ── 主對話覆核後的更正（PHASE2_BATCH2_PLAN.md §6 R8／R9） ──
+    ("G16", "拿掉 DDA 的「走完就停」（R9：兩端點都在格角時會走出格點外，空場誤判成沒視線）",
+     LOGIC + "BlockGrid.cs",
+     "                if (tMaxX > 1.0 && tMaxZ > 1.0) break;",
+     "",
+     "LineOfSight_OnAnEmptyGrid_CornerAlignedSegments_AreAlwaysClear"),
+    ("G17", "提前跳出後不補檢終點格（R9 的另一半）", LOGIC + "BlockGrid.cs",
+     "            return !IsBlocked(cx1, cz1);",
+     "            return true;",
+     "LineOfSight_WithTheDestinationCellBlocked_IsBlocked_EvenWhenBothEndsSitOnCellCorners"),
+    ("G18", "替代點停在第二階段的 W（R1a：少了「成本寬限內取最近」，停點被往英雄方向多拉一格）",
+     LOGIC + "GridNavigator.cs",
+     "            int costLimit = bestCost + _tuning.SubstituteCostSlack;",
+     "            int costLimit = -1;",
+     "ResolveGoal_SubstitutePoint_TakesTheCellClosestToTheTap_WithinTheCostSlack"),
 ]
 
 

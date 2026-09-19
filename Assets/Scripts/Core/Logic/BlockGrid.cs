@@ -64,6 +64,50 @@ namespace Vow.Core.Logic
             clampedZ = Clamp(z, _originZ + _cellSize * 0.5f, _originZ + (_rows - 0.5f) * _cellSize);
         }
 
+        // 可站立範圍（場景實際邊界內面 − 體半徑）。未設定時等於整張格點，ClampToPlayableArea 退化成 ClampToGrid。
+        private float _playMinX = float.NegativeInfinity, _playMinZ = float.NegativeInfinity;
+        private float _playMaxX = float.PositiveInfinity, _playMaxZ = float.PositiveInfinity;
+
+        public void SetPlayableBounds(float minX, float minZ, float maxX, float maxZ)
+        {
+            _playMinX = minX;
+            _playMinZ = minZ;
+            _playMaxX = maxX;
+            _playMaxZ = maxZ;
+        }
+
+        // §6 R8／R3a：目的地要夾進**可達範圍**，不只是夾進格點——夾到格點最外圈格心（±19.75）的話，
+        // 那個點根本站不到，解析出來仍然是替代點。
+        public void ClampToPlayableArea(float x, float z, out float clampedX, out float clampedZ)
+        {
+            ClampToGrid(x, z, out float gx, out float gz);
+            clampedX = Clamp(gx, _playMinX, _playMaxX);
+            clampedZ = Clamp(gz, _playMinZ, _playMaxZ);
+        }
+
+        // §6 R8／R3a：把單一格登記／撤銷（格心落在可達範圍外的那一圈用）。界外索引直接忽略。
+        public void StampCell(int cx, int cz, int delta)
+        {
+            if (cx < 0 || cx >= _columns || cz < 0 || cz >= _rows) return;
+
+            int idx = Index(cx, cz);
+            int before = _refCount[idx];
+            int after = before + delta;
+            if (after < 0)
+            {
+                after = 0;
+                NegativeStampCount++;
+            }
+            _refCount[idx] = after;
+
+            bool wasBlocked = before > 0;
+            bool isBlocked = after > 0;
+            if (wasBlocked == isBlocked) return;
+
+            Version++;
+            BlockedCount += isBlocked ? 1 : -1;
+        }
+
         // 牆的 OBB（中心、法線、半寬＝沿牆方向、半厚＝沿法線方向）各向外擴 inflate 後，
         // 「格子方塊與它相交」（精確 SAT，不是格心取樣）的每一格計數 += delta。界外部分直接裁掉、不丟例外。
         public void StampBox(float centerX, float centerZ, float normalX, float normalZ,

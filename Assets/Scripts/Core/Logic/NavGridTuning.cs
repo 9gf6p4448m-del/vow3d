@@ -24,5 +24,9 @@ namespace Vow.Core.Logic
 
         // Follow 模式沿整合場前視、嘗試拉直路徑的最多格數（§4 Simplicity 例外表：45° 鋸齒拉直）。
         public int FollowLookaheadCells = 8;
+
+        // 「最近可達點」第三階段的成本寬限（§6 R8／R1a）：決定了哪一側之後，為了更靠近使用者點的位置，
+        // 最多願意多走的路徑成本。28＝兩個斜步（整合場斜走成本 14），約 1.4m。
+        public int SubstituteCostSlack = 28;
     }
 }

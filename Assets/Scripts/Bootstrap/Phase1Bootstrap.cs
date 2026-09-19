@@ -149,26 +149,44 @@ namespace Vow.Bootstrap
             if (_navGridDebug != null) _navGridDebug.Initialize(_navGrid);
         }
 
-        // r1 對抗審查 H1（§6 R3）：格點最外一圈是「自由但英雄到不了」的地方——向量場會把英雄導進去、
-        // 讓他頂在看不見的邊界上不動。把場地四面隱形邊界牆本身也登記進格點（外擴一個 BodyRadius），
-        // 不變量就成立：每一個非 Blocked 格的格心都落在「邊界牆內面 − BodyRadius」以內。
-        // 尺寸一律讀場景裡實際的 BoxCollider（不寫死 19.45）——日後改 BodyRadius 重建場景，關係仍然成立。
+        // r1 對抗審查 H1（§6 R3／R3a）：格點最外一圈是「自由但英雄到不了」的地方——向量場會把英雄導進去、
+        // 讓他頂在看不見的邊界上不動。
+        // R3a：只擋「格心落在可達範圍之外」的格，不用方塊相交（那會連第 78 圈一起擋掉，
+        // 使「沒有牆擋路時」點場地邊緣 19.0～19.45m 被替代到 18.75，違反 Phase 1 手感不變）。
+        // 可達範圍＝場景裡實際的邊界 BoxCollider 內面 − BodyRadius（不寫死 19.45）；
+        // 現行幾何下這剛好是最外一圈 4×80−4 = 316 格。
         private void RegisterArenaBoundary()
         {
             if (_arenaBoundary == null) return;
 
+            float minX = float.NegativeInfinity, minZ = float.NegativeInfinity;
+            float maxX = float.PositiveInfinity, maxZ = float.PositiveInfinity;
+
             BoxCollider[] boxes = _arenaBoundary.GetComponentsInChildren<BoxCollider>();
             for (int i = 0; i < boxes.Length; i++)
             {
-                BoxCollider box = boxes[i];
-                Transform boxTransform = box.transform;
-                Vector3 center = boxTransform.TransformPoint(box.center);
-                Vector3 scale = boxTransform.lossyScale;
-                Vector3 forward = boxTransform.forward; // 立方體的 +Z＝厚度軸，與 RegisterNavBlocker 同一組慣例
-                _navGrid.StampBox(center.x, center.z, forward.x, forward.z,
-                                  Mathf.Abs(box.size.x * scale.x) * 0.5f,
-                                  Mathf.Abs(box.size.z * scale.z) * 0.5f,
-                                  _navTuning.BodyRadius, 1);
+                Bounds bounds = boxes[i].bounds;
+                if (bounds.size.x < bounds.size.z) // 沿 Z 延伸的東西兩面牆：內面在 X 上
+                {
+                    if (bounds.center.x > 0f) maxX = Mathf.Min(maxX, bounds.min.x - _navTuning.BodyRadius);
+                    else minX = Mathf.Max(minX, bounds.max.x + _navTuning.BodyRadius);
+                }
+                else                               // 沿 X 延伸的南北兩面牆：內面在 Z 上
+                {
+                    if (bounds.center.z > 0f) maxZ = Mathf.Min(maxZ, bounds.min.z - _navTuning.BodyRadius);
+                    else minZ = Mathf.Max(minZ, bounds.max.z + _navTuning.BodyRadius);
+                }
+            }
+            _navGrid.SetPlayableBounds(minX, minZ, maxX, maxZ);
+
+            for (int cz = 0; cz < _navGrid.Rows; cz++)
+            {
+                for (int cx = 0; cx < _navGrid.Columns; cx++)
+                {
+                    _navGrid.CellCenter(cx, cz, out float x, out float z);
+                    if (x >= minX && x <= maxX && z >= minZ && z <= maxZ) continue;
+                    _navGrid.StampCell(cx, cz, 1);
+                }
             }
         }
 

@@ -51,10 +51,10 @@ namespace Vow.Tests
             return cost;
         }
 
-        // §6 R1 的「最近可達點」定義，用測試自己的暴力鬆弛法重寫一次（不呼叫受測物）：
-        //   dMin＝起點連通區內「格心到目的地」的最小歐氏距離；
-        //   候選＝距離 ≤ dMin ＋ 一格對角線（0.5×√2）的格；
-        //   候選中取路徑成本最低者；同成本取離目的地較近者；再同取索引較小者。
+        // §6 R8／R1a 的「最近可達點」定義，用測試自己的暴力鬆弛法重寫一次（不呼叫受測物）：
+        //   ① 候選帶 B＝起點連通區內、格心到目的地距離 ≤ dMin ＋ 一格對角線（0.5×√2，含 0.1mm 容差）的格；
+        //   ② W＝B 內路徑成本最低者（決定停在哪一側）；同成本取離目的地近者、再同取索引小者；
+        //   ③ 在 B 內成本 ≤ cost(W)＋28 的格中取離目的地最近者；同距離取成本低者、再同取索引小者。
         private static void NearestInComponent(BlockGrid grid, int startCx, int startCz, float destX, float destZ,
                                                out int bestCx, out int bestCz)
         {
@@ -72,6 +72,8 @@ namespace Vow.Tests
             }
 
             double limit = minDist + 0.5 * Math.Sqrt(2.0) + 1e-4;
+
+            // ② 先挑出 W
             bestCx = startCx;
             bestCz = startCz;
             bool found = false;
@@ -91,6 +93,24 @@ namespace Vow.Tests
                     if (c == bestCost && !(d < bestDist)) continue;
                 }
                 found = true;
+                bestCost = c;
+                bestDist = d;
+                bestCx = cx;
+                bestCz = cz;
+            }
+
+            // ③ 再在成本寬限內取離目的地最近者
+            int costLimit = bestCost + new NavGridTuning().SubstituteCostSlack;
+            for (int cz = 0; cz < rows; cz++)
+            for (int cx = 0; cx < columns; cx++)
+            {
+                int c = cost[cz * columns + cx];
+                if (c == int.MaxValue || c > costLimit) continue;
+                grid.CellCenter(cx, cz, out float ccx, out float ccz);
+                double d = Math.Sqrt((ccx - destX) * (double)(ccx - destX) + (ccz - destZ) * (double)(ccz - destZ));
+                if (d > limit) continue;
+                if (d > bestDist) continue;
+                if (d == bestDist && c >= bestCost) continue;
                 bestCost = c;
                 bestDist = d;
                 bestCx = cx;
@@ -193,6 +213,28 @@ namespace Vow.Tests
             AssertSubstituteSide(0f, 4f, false);   // ② 英雄在南、點牆腳：兩側平手 → 停在南側
             AssertSubstituteSide(8f, 3.8f, true);  // ③ 英雄在北、點稍微偏南（兩側差 0.2m，仍在一格對角線內）→ 仍停北側
             AssertSubstituteSide(8f, 3.4f, false); // ④ 英雄在北、點明顯在南面（兩側差 1.2m）→ 該繞過去，停南側
+        }
+
+        // §6 R8／R1a 階段 3：決定了哪一側之後，還要在成本寬限內**取離目的地最近**的那一格。
+        // 只做到階段 2（＝第一輪的「候選帶內成本最低」）會停在 z=2.25 那一排，離使用者點的牆腳白白遠 0.5m。
+        [Test]
+        public void ResolveGoal_SubstitutePoint_TakesTheCellClosestToTheTap_WithinTheCostSlack()
+        {
+            BlockGrid grid = NewGrid();
+            grid.StampBox(0f, 4f, 0f, 1f, 2f, 0.3f, 0.35f, 1);
+            GridNavigator nav = new GridNavigator(grid, NewTuning());
+
+            // 英雄在南側 (0,0) 點牆腳 (0,4)：南側最靠近目的地的一排格心是 z=2.75（dMin=1.27475），
+            // 其中 (0.25,2.75) 的路徑成本 50 比 (−0.25,2.75) 的 54 低 → 取它。
+            nav.ResolveGoal(0f, 0f, 0f, 4f, out float goalX, out float goalZ, out bool substituted);
+            Assert.IsTrue(substituted);
+            Assert.AreEqual(0.25f, goalX, 1e-4f, "替代點 x 不符 R1a 推導");
+            Assert.AreEqual(2.75f, goalZ, 1e-4f, "替代點 z 不符 R1a 推導：只做到階段 2 會停在 2.25");
+
+            // §5 V4-c 的凍結停點容差（牆半厚 0.3 ＋ 外擴 0.35 ＋ 一格對角線 0.5√2 = 1.35711m）必須守得住
+            double distance = Math.Sqrt((goalX - 0f) * (double)(goalX - 0f) + (goalZ - 4f) * (double)(goalZ - 4f));
+            Assert.LessOrEqual(distance, 0.3 + 0.35 + 0.5 * Math.Sqrt(2.0),
+                $"替代點離使用者點的位置 {distance:F5}m，超過 §5 V4-c 凍結的停點容差");
         }
 
         private static void AssertSubstituteSide(float heroZ, float destZ, bool expectNorthSide)

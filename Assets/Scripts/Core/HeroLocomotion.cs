@@ -232,7 +232,9 @@ namespace Vow.Core
             // r1 對抗審查 H3（§6 R2）：格點外的目的地先夾進格點再照常解析。
             // 舊實作在這裡整趟退回 Phase 1，實測 z=19 繞得過去、z=20 卻頂在牆上——那條分支唯一的作用
             // 是讓兩個與批 2 行為互相矛盾的既有測試維持綠燈，已依 §6 R2 刪除。
-            _navigator.Grid.ClampToGrid(destination.x, destination.z, out float destX, out float destZ);
+            // §6 R8／R3a：夾進「可達範圍」而不只是格點——夾到最外圈格心（±19.75）的話那裡站不到，
+            // 解析出來仍然會是替代點。
+            _navigator.Grid.ClampToPlayableArea(destination.x, destination.z, out float destX, out float destZ);
 
             Vector3 position = _self.position;
             _navigator.ResolveGoal(position.x, position.z, destX, destZ,

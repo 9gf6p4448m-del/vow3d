@@ -50,6 +50,45 @@ namespace Vow.Tests
         // r1 對抗審查 M1（§6 R6）：撤銷不對稱時計數必須夾在 0 並回報，不得留下「存在但不擋路」的負計數格。
         // 修復前實跑：+1、−1、−1 之後看起來正常（BlockedCount=0），但下一面**真的牆** +1 上去仍然是
         // 「不擋路、Version 不翻轉」——壞了不會叫。
+        // §6 R9：DDA 走訪在「線段兩端點都恰好落在格角」時，有可能永遠對不上終點格而一路走出格點外
+        // （界外一律 Blocked → 空場也被判成沒有視線）。這是實作者在第一輪修復中發現並修掉的缺陷，
+        // 不在 r1 findings 之列，所以補一條直接的回歸測試：空格點上這些線段（與其反向）一律有視線。
+        [Test]
+        public void LineOfSight_OnAnEmptyGrid_CornerAlignedSegments_AreAlwaysClear()
+        {
+            BlockGrid grid = NewGrid(); // 原點 −20、格寬 0.5：整數與 .5 座標都恰好落在格角上
+            float[,] segments =
+            {
+                { 0f, 0f, 10f, 10f },      // 45°，每一步都精準命中格角
+                { -5f, 3f, 7f, 3f },       // 水平
+                { 2f, -8f, 2f, 9f },       // 垂直
+                { 0f, 0f, -10f, 9f },      // 非 45° 的斜線（第一輪實測就是這一族在修復前誤判）
+                { -6f, -4f, 9f, 8f },
+            };
+
+            for (int i = 0; i < segments.GetLength(0); i++)
+            {
+                float x0 = segments[i, 0], z0 = segments[i, 1], x1 = segments[i, 2], z1 = segments[i, 3];
+                Assert.IsTrue(grid.HasLineOfSight(x0, z0, x1, z1),
+                    $"空格點上 ({x0},{z0})→({x1},{z1}) 必須有視線");
+                Assert.IsTrue(grid.HasLineOfSight(x1, z1, x0, z0),
+                    $"空格點上 ({x1},{z1})→({x0},{z0})（反向）必須有視線");
+            }
+        }
+
+        // §6 R9 的另一半：提前跳出之後，終點格自己仍然要被檢查過。
+        [Test]
+        public void LineOfSight_WithTheDestinationCellBlocked_IsBlocked_EvenWhenBothEndsSitOnCellCorners()
+        {
+            BlockGrid grid = NewGrid();
+            grid.TryWorldToCell(-10f, 9f, out int destCx, out int destCz);
+            grid.CellCenter(destCx, destCz, out float bx, out float bz);
+            grid.StampBox(bx, bz, 1f, 0f, 0.24f, 0.24f, 0f, 1); // 嚴格小於半格：只封鎖終點那一格
+            Assert.AreEqual(1, grid.BlockedCount, "前置條件：只封鎖了終點格");
+
+            Assert.IsFalse(grid.HasLineOfSight(0f, 0f, -10f, 9f), "終點格被擋住時不得回報有視線");
+        }
+
         // §6 R2：界外的目的地要夾進格點再照常解析（夾到最外圈格心，TryWorldToCell 必定成功）。
         [Test]
         public void ClampToGrid_BringsOutOfRangePointsBackOntoTheGrid_AndLeavesInsidePointsAlone()

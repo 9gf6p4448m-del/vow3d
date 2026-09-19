@@ -253,16 +253,16 @@ namespace Vow.Tests.PlayMode
 
         // V4-c 點牆腳：目的地＝牆心正下方的地板（牆在 Ignore Raycast 層，射線打到牆底下的地板，§4 假設 7）。
         // 目的地格 (x=0,z=4) 是 Blocked → 退到「最近可達點」。
-        //   §6 R1 改了這個點的定義（審查 H2：舊定義只看「離目的地最近」，會把英雄送到牆的另一側）：
-        //   dMin＝連通區內格心到目的地的最小歐氏距離（南北兩側都是 1.27475）；候選＝距離 ≤ dMin＋一格對角線
-        //   （1.27475＋0.70711 = 1.98186）的格；候選中取「從英雄出發的路徑成本最低」者。
-        //   英雄在 (0,0)：候選裡成本最低的是格 (40,44)＝格心 (0.25, 2.25)（4 步直走，成本 40；
-        //   同排其餘候選 ≥44，z=2.75 那排 ≥50）。這是本測試唯一會被接受的停點。
-        // 幾何最短繞行長度＝直線 (0,0)→(0.25,2.25) ＝ √(0.0625 + 5.0625) = 2.26385 m
-        //   → T = 1.5 × 2.26385 ÷ 5.5 = 0.61741 s
-        // 停點容差＝牆半厚 0.3 ＋ 外擴 0.35 ＋ **兩**格對角線 2×0.5√2 = 2.06421 m
-        //   （R1 允許候選點比 dMin 再遠一格對角線，§6 明寫本節優先於 §5 的舊公式；
-        //    真正守住「有沒有停對地方」的是下面那兩條格心座標斷言，比容差嚴格得多。）
+        //   §6 R8／R1a 定義（審查 H2：舊定義只看「離目的地最近」，會把英雄送到牆的另一側）：
+        //   dMin＝連通區內格心到目的地的最小歐氏距離（南北兩側都是 1.27475）；候選帶 B＝距離 ≤ dMin＋一格對角線
+        //   （1.27475＋0.70711 = 1.98186）的格；W＝B 內路徑成本最低者（決定哪一側）；
+        //   最後在 B 內成本 ≤ cost(W)＋28 的格中取**離目的地最近**者。
+        //   英雄在 (0,0)（格 (40,40)）：W＝格 (40,44)（4 步直走、成本 40）＝南側；
+        //   南側離目的地最近的一排是 z=2.75（dMin），其中 (40,45)（成本 50 ≤ 40+28）比 (39,45)（成本 54）低
+        //   → 停點＝格心 (0.25, 2.75)。北側那排要繞過整面牆，成本遠超過 68，不在寬限內。
+        // 幾何最短繞行長度＝直線 (0,0)→(0.25,2.75) ＝ √(0.0625 + 7.5625) = 2.76134 m
+        //   → T = 1.5 × 2.76134 ÷ 5.5 = 0.75309 s
+        // 停點容差＝§5 原文：牆半厚 0.3 ＋ 外擴 0.35 ＋ 一格對角線 0.5√2 = 1.35711 m（實際 1.27475 m）
         [UnityTest]
         public IEnumerator V4c_TappingTheWallFoot_StopsAtTheNearestReachablePoint()
         {
@@ -271,7 +271,7 @@ namespace Vow.Tests.PlayMode
 
             Vector3 heroStart = _hero.transform.position;
             Vector3 destination = new Vector3(_castObb.Center.x, 0f, _castObb.Center.y); // 牆腳
-            float limit = 1.5f * 2.26385f / MoveSpeed;
+            float limit = 1.5f * 2.76134f / MoveSpeed;
 
             _input.TapGround(destination);
             yield return null; // L5：剛下指令的那一幀 _hasOrder 還是 false，HasArrived 會假性回 true
@@ -292,14 +292,14 @@ namespace Vow.Tests.PlayMode
             yield return AssertHeroHasStopped();
 
             Vector3 stop = _hero.transform.position;
-            float stopTolerance = 0.3f + 0.35f + 2f * 0.5f * Mathf.Sqrt(2f);
+            float stopTolerance = 0.3f + 0.35f + 0.5f * Mathf.Sqrt(2f);
             Assert.LessOrEqual(PlanarDistance(stop, destination), stopTolerance,
                 "停點離牆腳太遠：" + stop + "（上限 " + stopTolerance + "m）");
 
             // §6 R1 新增：停點必須與英雄起點在牆的同一側（禁區 z∈[3.35,4.65]）
             Assert.Less(stop.z, 3.35f, "停點跑到牆的另一側去了：" + stop);
-            Assert.AreEqual(0.25f, stop.x, ArriveTolerance, "停點不是 R1 定義的那一格格心 x：" + stop);
-            Assert.AreEqual(2.25f, stop.z, ArriveTolerance, "停點不是 R1 定義的那一格格心 z：" + stop);
+            Assert.AreEqual(0.25f, stop.x, ArriveTolerance, "停點不是 R1a 定義的那一格格心 x：" + stop);
+            Assert.AreEqual(2.75f, stop.z, ArriveTolerance, "停點不是 R1a 定義的那一格格心 z：" + stop);
             Assert.Less(heroStart.z, 3.35f, "前置條件：英雄起點本來就在牆的南側");
         }
 
@@ -309,14 +309,14 @@ namespace Vow.Tests.PlayMode
         // 牆心 (18,18)、法線 (0.7071,0.7071)：英雄站在 (18,18) − 4×(0.7071,0.7071) = (15.1716,15.1716) 極速施放即得。
         //   外擴後的 OBB 兩個外角落在 (20.121,16.798) 與 (16.798,20.121)——都在格點 (±20) 之外，
         //   所以這面牆連同「界外一律 Blocked」把角落封死；實體上牆端到邊界牆內面只剩 0.174m，體半徑 0.35 也鑽不過去。
-        // 解析後的替代點（§6 R1 的新定義）＝候選帶內「從英雄出發路徑成本最低」的那一格：
+        // 解析後的替代點（§6 R8／R1a）：
         //   dMin＝2.47487（格心 (17.25,17.25)，x+z=34.5 是還沒被外擴蓋到的最後一排）；
-        //   候選＝距離 ≤ 2.47487＋0.70711 = 3.18198 的格；
-        //   英雄格 (70,70)＝格心 (15.25,15.25)。候選中 (16.75,16.75)（格 (73,73)）只要 3 個斜步＝成本 42，
-        //   比 (17.25,17.25) 的 4 個斜步 56、(17.25,16.75)／(16.75,17.25) 的 52 都低，所以替代點是 (16.75,16.75)。
-        //   （它的距離 3.18198 恰好等於候選上限，靠 GridNavigator 的 0.1mm 容差決定性地含進來。）
-        // 幾何最短繞行長度＝直線 (15.1716,15.1716)→(16.75,16.75) ＝ √2 × 1.5784 = 2.23223 m
-        //   → T = 1.5 × 2.23223 ÷ 5.5 = 0.60879 s
+        //   候選帶 B＝距離 ≤ 2.47487＋0.70711 = 3.18198 的格；英雄格 (70,70)＝格心 (15.25,15.25)。
+        //   W＝(16.75,16.75)（格 (73,73)，3 個斜步＝成本 42，B 內最低）——決定了「停在牆的外側」。
+        //   最後在 B 內成本 ≤ 42＋28 = 70 的格中取離目的地最近者：B 內成本分別是 42／52／56／58／62／68，
+        //   全部在寬限內，其中離 (19,19) 最近的是 (17.25,17.25)（2.47487）→ 替代點回到 (17.25,17.25)。
+        // 幾何最短繞行長度＝直線 (15.1716,15.1716)→(17.25,17.25) ＝ √2 × 2.07843 = 2.93935 m
+        //   → T = 1.5 × 2.93935 ÷ 5.5 = 0.80164 s
         // 「三角形」＝被牆切下來的角落區，以牆的中心平面 x+z = 36 為界。
         [UnityTest]
         public IEnumerator V4d_WallSealingTheCorner_StopsOutside_AndNeverEntersTheTriangle()
@@ -326,7 +326,7 @@ namespace Vow.Tests.PlayMode
             yield return QuickCastWall(new Vector2(18f, 18f), new Vector2(0.70710678f, 0.70710678f));
 
             Vector3 destination = new Vector3(19f, 0f, 19f);
-            float limit = 1.5f * 2.23223f / MoveSpeed;
+            float limit = 1.5f * 2.93935f / MoveSpeed;
 
             _input.TapGround(destination);
             yield return null; // L5：剛下指令那一幀 _hasOrder 仍為 false，HasArrived 會假性回 true
@@ -356,11 +356,11 @@ namespace Vow.Tests.PlayMode
 
         // ───────────────────────────── V4 e ─────────────────────────────
 
-        // V4-e 牆消失後重新解析：英雄正走向替代點（V4-c 的 (0.25,2.25)）時把牆收掉 → 最終抵達**原始**目的地 (0,4)。
+        // V4-e 牆消失後重新解析：英雄正走向替代點（V4-c 的 (0.25,2.75)）時把牆收掉 → 最終抵達**原始**目的地 (0,4)。
         // 最長的合法路線＝先走完整段替代路徑、再從替代點走到原目的地：
-        //   ① (0,0)→(0.25,2.25)   = √(0.0625 + 5.0625) = 2.26385
-        //   ② (0.25,2.25)→(0,4)   = √(0.0625 + 3.0625) = 1.76777
-        //   合計 L = 4.03162 m  →  T = 1.5 × 4.03162 ÷ 5.5 = 1.09953 s（從下指令那一刻起算）
+        //   ① (0,0)→(0.25,2.75)   = √(0.0625 + 7.5625) = 2.76134
+        //   ② (0.25,2.75)→(0,4)   = √(0.0625 + 1.5625) = 1.27475
+        //   合計 L = 4.03609 m  →  T = 1.5 × 4.03609 ÷ 5.5 = 1.10075 s（從下指令那一刻起算）
         //
         // 鑑別力：光看「最後有沒有走到 (0,4)」是不夠的——牆早早被收掉的話，連格點都沒接上的英雄也會直直走到。
         // 所以前後各釘一次 NavMeshAgent 的實際目的地：收牆前必須是替代點、收牆後必須換回原始目的地。
@@ -374,7 +374,7 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(blockedBeforeWall + 40, _grid.BlockedCount, "一面符印牆應登記 40 格");
 
             Vector3 destination = new Vector3(_castObb.Center.x, 0f, _castObb.Center.y);
-            float limit = 1.5f * 4.03162f / MoveSpeed;
+            float limit = 1.5f * 4.03609f / MoveSpeed;
 
             _input.TapGround(destination);
             float deadline = Time.time + limit;
@@ -382,7 +382,7 @@ namespace Vow.Tests.PlayMode
             // 前置：這一刻英雄真的被導去替代點，不是直接朝原目的地走（否則後面那條綠燈毫無意義）
             Vector3 substituted = _agent.destination;
             Assert.AreEqual(0.25f, substituted.x, 0.1f, "目的地沒有被換成替代點（實際 " + substituted + "）");
-            Assert.AreEqual(2.25f, substituted.z, 0.1f, "目的地沒有被換成替代點（實際 " + substituted + "）");
+            Assert.AreEqual(2.75f, substituted.z, 0.1f, "目的地沒有被換成替代點（實際 " + substituted + "）");
 
             bool collapsed = false;
             bool arrived = false;
@@ -689,18 +689,25 @@ namespace Vow.Tests.PlayMode
             float limitZ = innerZ - BodyRadius;
             Assert.Less(limitX, 20f, "邊界內面量測失敗");
 
+            int outside = 0;
             for (int cz = 0; cz < _grid.Rows; cz++)
             {
                 for (int cx = 0; cx < _grid.Columns; cx++)
                 {
-                    if (_grid.IsBlocked(cx, cz)) continue;
                     _grid.CellCenter(cx, cz, out float x, out float z);
-                    Assert.LessOrEqual(Mathf.Abs(x), limitX,
-                        "格 (" + cx + "," + cz + ") 的格心 x=" + x + " 在英雄身體到得了的範圍之外，卻不是 Blocked");
-                    Assert.LessOrEqual(Mathf.Abs(z), limitZ,
-                        "格 (" + cx + "," + cz + ") 的格心 z=" + z + " 在英雄身體到得了的範圍之外，卻不是 Blocked");
+                    bool reachable = Mathf.Abs(x) <= limitX && Mathf.Abs(z) <= limitZ;
+                    if (!reachable)
+                    {
+                        outside++;
+                        Assert.IsTrue(_grid.IsBlocked(cx, cz),
+                            "格 (" + cx + "," + cz + ") 的格心 (" + x + "," + z + ") 在英雄身體到得了的範圍之外，卻不是 Blocked");
+                    }
                 }
             }
+
+            // §6 R8／R3a：現行幾何下「格心到不了」的恰好是最外一圈 4×80−4 = 316 格。
+            // 擋多了（例如用方塊相交擋兩圈）會讓「沒有牆擋路時」點場地邊緣被替代到更裡面，違反 Phase 1 手感不變。
+            Assert.AreEqual(316, outside, "格心落在可達範圍外的格數與 §6 R3a 的推導不符");
         }
 
         // ───────────────────────────── V4 l（§6 R4）─────────────────────────────
@@ -775,6 +782,54 @@ namespace Vow.Tests.PlayMode
                 yield return null;
             }
             Assert.IsTrue(arrived, "推出之後 T=" + limit + "s 內沒有繞到牆的另一側，停在 " + _hero.transform.position);
+        }
+
+        // ───────────────────────────── V4 m（§6 R8／R3a）─────────────────────────────
+
+        // V4-m 無牆時的 Phase 1 行為回歸：R3 第一輪用「方塊相交」登記邊界，連第 78 圈（格心 19.25）都擋掉，
+        // 於是點場地邊緣 19.0～19.45m 會被替代到 18.75——沒有牆擋路卻改變了 Phase 1 的手感，違反最高優先序。
+        // R3a 只擋「格心落在可達範圍之外」的那一圈，(19.3,6) 落在第 78 圈、格心 19.25 ≤ 19.45，照舊走得到。
+        // 幾何：沒有任何東西擋路（場上兩面測試牆在 x≈±7、z∈[1,5]，離這條線很遠），
+        //   所以「最短繞行長度」就是直線 (10,0)→(19.3,6)＝√(9.3² + 6²) = √122.49 = 11.06752 m
+        //   → T = 1.5 × 11.06752 ÷ 5.5 = 3.01841 s
+        [UnityTest]
+        public IEnumerator V4m_TappingNearTheArenaEdge_WithNoWallInTheWay_IsStillPhase1()
+        {
+            yield return Setup(new Vector3(10f, 0f, 0f), Quaternion.identity, new RuneTuning());
+
+            // 剛開場時格點上只有「格心到不了」的那一圈與兩面測試牆：
+            //   邊界圈 4×80−4 = 316；TestWall_A（牆心 (−7,3)、法線 +Z）外擴後 x 格 21~30 × z 格 44~47 = 40；
+            //   TestWall_B（牆心 (7,3)、轉 90°）外擴後 x 格 52~55 × z 格 41~50 = 40。合計 396。
+            // 這條同時守住「不得擋太多」——用方塊相交擋兩圈會變成 624＋80 = 704。
+            Assert.AreEqual(316 + 40 + 40, _grid.BlockedCount,
+                "開場的 Blocked 格數與 §6 R3a 的推導不符（邊界圈 316 ＋ 兩面測試牆各 40）");
+
+            Vector3 start = _hero.transform.position;
+            Vector3 destination = new Vector3(19.3f, 0f, 6f);
+            Vector2 direction = new Vector2(destination.x - start.x, destination.z - start.z).normalized;
+
+            int buildsBefore = _bootstrap.Navigator.BuildCount;
+            float limit = 1.5f * 11.06752f / MoveSpeed;
+            _input.TapGround(destination);
+
+            float deadline = Time.time + limit;
+            bool arrived = false;
+            float maxLateral = 0f;
+            while (Time.time <= deadline)
+            {
+                Vector3 p = _hero.transform.position;
+                float lateral = Mathf.Abs((p.x - start.x) * direction.y - (p.z - start.z) * direction.x);
+                if (lateral > maxLateral) maxLateral = lateral;
+                if (PlanarDistance(p, destination) <= ArriveTolerance) { arrived = true; break; }
+                yield return null;
+            }
+
+            Assert.IsTrue(arrived,
+                "場地邊緣 19.3m 沒有任何東西擋路，卻走不到：" + _hero.transform.position + "（T=" + limit + "s）");
+            Assert.Less(maxLateral, StraightLineLateralTolerance,
+                "沒有牆擋路的路線上出現了 " + maxLateral + "m 的側向偏移");
+            Assert.AreEqual(buildsBefore, _bootstrap.Navigator.BuildCount,
+                "沒有牆擋路卻重建了整合場：這一趟不該碰到格點的任何 Dijkstra");
         }
 
         // ───────────────────────────── §6 R2 ─────────────────────────────

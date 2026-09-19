@@ -123,8 +123,9 @@ namespace Vow.Core.Logic
             double slack = Math.Sqrt(minDistSq) + _tuning.CellSize * Math.Sqrt(2.0) + CandidateSlackEpsilon;
             double slackSq = slack * slack;
 
-            // 第二遍：候選帶內取路徑成本最低者；同成本取離目的地較近者；再同取索引較小者
-            // （掃描順序 cz 大迴圈、cx 小迴圈＝索引遞增，只在嚴格更優時換人，所以平手時留的是索引最小那格）。
+            // 第二遍（§6 R8／R1a 階段 2）：候選帶 B 內取路徑成本最低者 W——**只用來決定停在哪一側**。
+            // 同成本取離目的地較近者；再同取索引較小者（掃描順序 cz 大迴圈、cx 小迴圈＝索引遞增，
+            // 只在嚴格更優時換人，所以平手時留的是索引最小那格）。
             int bestCx = connCx;
             int bestCz = connCz;
             bool found = false;
@@ -148,6 +149,32 @@ namespace Vow.Core.Logic
                         if (cost == bestCost && !(distSq < bestDistSq)) continue;
                     }
                     found = true;
+                    bestCost = cost;
+                    bestDistSq = distSq;
+                    bestCx = cx;
+                    bestCz = cz;
+                }
+            }
+
+            // 第三遍（§6 R8／R1a 階段 3）：只用「成本最低」會把停點往英雄方向多拉一格，離使用者點的位置
+            // 白白遠 0.5m。所以在「路徑成本 ≤ cost(W)＋SubstituteCostSlack」的候選裡改取**離目的地最近**者，
+            // 同距離取成本低者、再同取索引小者。語意＝為了更靠近你點的位置，最多願意多走約 1.4m。
+            int costLimit = bestCost + _tuning.SubstituteCostSlack;
+            for (int cz = 0; cz < _grid.Rows; cz++)
+            {
+                for (int cx = 0; cx < _grid.Columns; cx++)
+                {
+                    if (!_componentField.IsReached(cx, cz)) continue;
+                    int cost = _componentField.CostAt(cx, cz);
+                    if (cost > costLimit) continue;
+                    _grid.CellCenter(cx, cz, out float cxWorld, out float czWorld);
+                    double dx = cxWorld - destX;
+                    double dz = czWorld - destZ;
+                    double distSq = dx * dx + dz * dz;
+                    if (distSq > slackSq) continue;
+
+                    if (distSq > bestDistSq) continue;
+                    if (distSq == bestDistSq && cost >= bestCost) continue;
                     bestCost = cost;
                     bestDistSq = distSq;
                     bestCx = cx;
