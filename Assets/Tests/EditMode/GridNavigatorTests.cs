@@ -118,6 +118,149 @@ namespace Vow.Tests
             }
         }
 
+        // ───────────────────── §6 R11 V11-b：合併掃描不得改變行為（特徵化差分測試）─────────────────────
+
+        // 決定性的小型 LCG：System.Random 的序列在 .NET 與 Unity Mono 上不保證一致，這條測試要兩邊跑出同一批盤面。
+        private static float NextFloat(ref uint state, float min, float max)
+        {
+            state = state * 1664525u + 1013904223u;
+            double unit = (state >> 8) / (double)(1 << 24);
+            return (float)(min + unit * (max - min));
+        }
+
+        // 連通性的獨立參照：8 鄰接、斜走不切角（與 FlowField 同一套規則），只回答「走不走得到」，不算成本。
+        // 刻意不呼叫 FlowField／GridNavigator：用一個自己的顯式堆疊做泛洪。
+        private static bool[] FloodFill(BlockGrid grid, int startCx, int startCz)
+        {
+            int columns = grid.Columns, rows = grid.Rows;
+            bool[] seen = new bool[columns * rows];
+            if (startCx < 0 || startCx >= columns || startCz < 0 || startCz >= rows) return seen;
+            if (grid.IsBlocked(startCx, startCz)) return seen;
+
+            int[] stack = new int[columns * rows];
+            int top = 0;
+            seen[startCz * columns + startCx] = true;
+            stack[top++] = startCz * columns + startCx;
+
+            int[] dx = { 1, -1, 0, 0, 1, 1, -1, -1 };
+            int[] dz = { 0, 0, 1, -1, 1, -1, 1, -1 };
+            while (top > 0)
+            {
+                int idx = stack[--top];
+                int cx = idx % columns;
+                int cz = idx / columns;
+                for (int n = 0; n < 8; n++)
+                {
+                    int ncx = cx + dx[n], ncz = cz + dz[n];
+                    if (grid.IsBlocked(ncx, ncz)) continue;
+                    bool diagonal = dx[n] != 0 && dz[n] != 0;
+                    if (diagonal && (grid.IsBlocked(cx + dx[n], cz) || grid.IsBlocked(cx, cz + dz[n]))) continue;
+                    int nIdx = ncz * columns + ncx;
+                    if (seen[nIdx]) continue;
+                    seen[nIdx] = true;
+                    stack[top++] = nIdx;
+                }
+            }
+            return seen;
+        }
+
+        // ResolveGoal 的獨立參照：起點連通區的判定 ＋ R1a 選點（後者沿用上面 V2-i／j 那份暴力鬆弛法）。
+        // 不呼叫 GridNavigator／FlowField 的任何一行。
+        private static void ReferenceResolveGoal(BlockGrid grid, float fromX, float fromZ, float destX, float destZ,
+                                                 out float goalX, out float goalZ, out bool substituted)
+        {
+            grid.TryWorldToCell(fromX, fromZ, out int fromCx, out int fromCz);
+            int connCx = fromCx, connCz = fromCz;
+            if (grid.IsBlocked(fromCx, fromCz) &&
+                grid.TryFindNearestFree(fromX, fromZ, NewTuning().EscapeSearchRadiusCells, out int freeCx, out int freeCz))
+            {
+                connCx = freeCx;
+                connCz = freeCz;
+            }
+
+            grid.TryWorldToCell(destX, destZ, out int destCx, out int destCz);
+            if (!grid.IsBlocked(destCx, destCz))
+            {
+                // 圖是無向的（斜走的切角判斷對兩端對稱），所以「從起點連通區走得到目的地」＝「從目的地走得到起點」。
+                bool[] reachable = FloodFill(grid, connCx, connCz);
+                if (connCx >= 0 && connCx < grid.Columns && connCz >= 0 && connCz < grid.Rows &&
+                    reachable[destCz * grid.Columns + destCx])
+                {
+                    goalX = destX;
+                    goalZ = destZ;
+                    substituted = false;
+                    return;
+                }
+            }
+
+            NearestInComponent(grid, connCx, connCz, destX, destZ, out int bestCx, out int bestCz);
+            grid.CellCenter(bestCx, bestCz, out goalX, out goalZ);
+            substituted = true;
+        }
+
+        // V11-b：固定種子、300 個隨機盤面，ResolveGoal 的 (goalX, goalZ, substituted) 必須與獨立參照**逐值相同**。
+        // 這是特徵化測試：它在 N1 的掃描合併之前就要綠（釘住舊行為），合併之後仍要綠（證明只動了掃描次數、沒動語意）。
+        // 活性：substituted==true 的盤面必須 ≥ 60，否則這 300 盤全在測「沒有替代」那條快路，對選點零鑑別力。
+        [Test]
+        public void ResolveGoal_OnRandomBoards_MatchesTheIndependentR1aReference_ValueForValue()
+        {
+            const int boardCount = 300;
+            uint rng = 20260919u;
+            int substitutedBoards = 0;
+
+            for (int board = 0; board < boardCount; board++)
+            {
+                BlockGrid grid = NewGrid();
+                int wallCount = 1 + (int)NextFloat(ref rng, 0f, 2.999f);
+                float lastCx = 0f, lastCz = 0f, lastNx = 0f, lastNz = 1f, lastHalfWidth = 2f;
+                for (int w = 0; w < wallCount; w++)
+                {
+                    float centerX = NextFloat(ref rng, -15f, 15f);
+                    float centerZ = NextFloat(ref rng, -15f, 15f);
+                    float angle = NextFloat(ref rng, 0f, (float)(2.0 * Math.PI));
+                    float nx = (float)Math.Cos(angle);
+                    float nz = (float)Math.Sin(angle);
+                    float halfWidth = NextFloat(ref rng, 1f, 3f);
+                    grid.StampBox(centerX, centerZ, nx, nz, halfWidth, 0.3f, 0.35f, 1);
+                    lastCx = centerX; lastCz = centerZ; lastNx = nx; lastNz = nz; lastHalfWidth = halfWidth;
+                }
+
+                float fromX = NextFloat(ref rng, -18f, 18f);
+                float fromZ = NextFloat(ref rng, -18f, 18f);
+
+                float destX, destZ;
+                if (NextFloat(ref rng, 0f, 1f) < 0.5f)
+                {
+                    // 一半的盤面刻意點在最後那面牆的附近（＝「點牆腳」這個常見操作），
+                    // 否則隨機目的地幾乎不會落在牆上，substituted 的樣本數不足。
+                    float tx = -lastNz, tz = lastNx;
+                    float u = NextFloat(ref rng, -1f, 1f) * (lastHalfWidth + 0.4f);
+                    float v = NextFloat(ref rng, -1f, 1f) * 0.85f;
+                    destX = lastCx + tx * u + lastNx * v;
+                    destZ = lastCz + tz * u + lastNz * v;
+                }
+                else
+                {
+                    destX = NextFloat(ref rng, -18f, 18f);
+                    destZ = NextFloat(ref rng, -18f, 18f);
+                }
+
+                GridNavigator nav = new GridNavigator(grid, NewTuning());
+                nav.ResolveGoal(fromX, fromZ, destX, destZ, out float goalX, out float goalZ, out bool substituted);
+                ReferenceResolveGoal(grid, fromX, fromZ, destX, destZ,
+                                     out float refX, out float refZ, out bool refSubstituted);
+
+                string where = $"盤面 #{board}：from=({fromX},{fromZ}) dest=({destX},{destZ})";
+                Assert.AreEqual(refSubstituted, substituted, $"{where} 的 substituted 與獨立參照不符");
+                Assert.AreEqual(refX, goalX, 0f, $"{where} 的 goalX 與獨立參照不符");
+                Assert.AreEqual(refZ, goalZ, 0f, $"{where} 的 goalZ 與獨立參照不符");
+                if (substituted) substitutedBoards++;
+            }
+
+            Assert.GreaterOrEqual(substitutedBoards, 60,
+                $"300 個盤面裡只有 {substitutedBoards} 個真的走到替代點那條路，這條差分測試對選點沒有鑑別力");
+        }
+
         [Test]
         public void ResolveGoal_DestinationSealedByWalls_SubstitutesNearestReachableCell_ThenOriginalOnceOpened()
         {
