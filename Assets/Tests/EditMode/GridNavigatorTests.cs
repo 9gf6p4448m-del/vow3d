@@ -722,6 +722,47 @@ namespace Vow.Tests
         }
 
         [Test]
+#if UNITY_5_3_OR_NEWER
+        // Unity 的 Mono 上 GC.GetAllocatedBytesForCurrentThread() 恆回 0：零配置斷言會空轉成綠、正向對照必紅。
+        // 這組量測只在 dotnet（verify.sh）下有鑑別力；Unity 下的零配置由 PlayMode 的 Profiler 探針負責（ZeroAllocationTests，V4-i）。
+        [Ignore("dotnet only: GC.GetAllocatedBytesForCurrentThread is always 0 on Unity Mono; Unity-side coverage is the PlayMode profiler probe")]
+#endif
+        // §6 R11 V11-f（r2 N3）：既有的三條零配置測試用的目的地都是**走得到**的，替代點那條路
+        // （R1a 兩階段選點）與 StampCell（邊界圈）從來沒被量過。這條把它們補上。
+        public void SteadyState_SubstituteResolveAndStampCell_AllocateZeroBytes_AfterWarmup()
+        {
+            BlockGrid grid = NewGrid();
+            grid.StampBox(8f, 10f, 1f, 0f, 3f, 0.3f, 0.35f, 1);
+            grid.StampBox(12f, 10f, 1f, 0f, 3f, 0.3f, 0.35f, 1);
+            grid.StampBox(10f, 8f, 0f, 1f, 3f, 0.3f, 0.35f, 1);
+            grid.StampBox(10f, 12f, 0f, 1f, 3f, 0.3f, 0.35f, 1);
+            GridNavigator nav = new GridNavigator(grid, NewTuning());
+            const float fromX = 0f, fromZ = 0f, destX = 10f, destZ = 10f;
+
+            for (int i = 0; i < 8; i++)
+            {
+                nav.ResolveGoal(fromX, fromZ, destX, destZ, out _, out _, out _);
+                grid.StampCell(0, 0, 1);
+                grid.StampCell(0, 0, -1);
+            }
+            int substitutedBefore = nav.SubstitutedCount;
+
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 100; i++)
+                nav.ResolveGoal(fromX, fromZ, destX, destZ, out _, out _, out _);
+            for (int i = 0; i < 100; i++)
+            {
+                grid.StampCell(0, 0, 1);
+                grid.StampCell(0, 0, -1);
+            }
+            long after = GC.GetAllocatedBytesForCurrentThread();
+
+            Assert.AreEqual(100, nav.SubstitutedCount - substitutedBefore,
+                "量測窗口內這 100 次解析必須真的走替代點那條路，否則這條零配置沒有鑑別力");
+            Assert.AreEqual(before, after, "穩態下替代點解析／StampCell 不得配置任何位元組");
+        }
+
+        [Test]
 #if !UNITY_5_3_OR_NEWER
         // dotnet 下這個前提本來就不成立（計數器正常運作），所以只在 Unity 裡跑。
         [Ignore("unity only: this test pins down the Unity-Mono premise that the three [Ignore] above rely on")]
