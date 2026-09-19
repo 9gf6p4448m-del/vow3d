@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.AI;
@@ -306,27 +307,31 @@ namespace Vow.Tests.PlayMode
         // ───────────────────────────── V4 d ─────────────────────────────
 
         // V4-d 角落圍死：45° 牆封住場地 +X/+Z 角，目的地在三角形內、英雄在外。
-        // 牆心 (18,18)、法線 (0.7071,0.7071)：英雄站在 (18,18) − 4×(0.7071,0.7071) = (15.1716,15.1716) 極速施放即得。
+        // 牆心 (18,18)、法線 (0.7071,0.7071)：英雄站在 (18,18) − 4×(0.7071,0.7071) = (18 − 4/√2, 18 − 4/√2) 極速施放即得。
+        // r2 對抗審查 N8（§6 R11 V11-h）：起點原本寫成近似值 15.1716，T 因此算成 2.93935（偏鬆 0.00005）。
+        // 改用精確值 18 − 4/√2 = 15.171573，T = 2.93930——方向是加嚴。
         //   外擴後的 OBB 兩個外角落在 (20.121,16.798) 與 (16.798,20.121)——都在格點 (±20) 之外，
         //   所以這面牆連同「界外一律 Blocked」把角落封死；實體上牆端到邊界牆內面只剩 0.174m，體半徑 0.35 也鑽不過去。
         // 解析後的替代點（§6 R8／R1a）：
         //   dMin＝2.47487（格心 (17.25,17.25)，x+z=34.5 是還沒被外擴蓋到的最後一排）；
+        //   （起點的精確值 15.171573 不影響替代點的推導，只影響下面那條直線的長度。）
         //   候選帶 B＝距離 ≤ 2.47487＋0.70711 = 3.18198 的格；英雄格 (70,70)＝格心 (15.25,15.25)。
         //   W＝(16.75,16.75)（格 (73,73)，3 個斜步＝成本 42，B 內最低）——決定了「停在牆的外側」。
         //   最後在 B 內成本 ≤ 42＋28 = 70 的格中取離目的地最近者：B 內成本分別是 42／52／56／58／62／68，
         //   全部在寬限內，其中離 (19,19) 最近的是 (17.25,17.25)（2.47487）→ 替代點回到 (17.25,17.25)。
-        // 幾何最短繞行長度＝直線 (15.1716,15.1716)→(17.25,17.25) ＝ √2 × 2.07843 = 2.93935 m
-        //   → T = 1.5 × 2.93935 ÷ 5.5 = 0.80164 s
+        // 幾何最短繞行長度＝直線 (15.171573,15.171573)→(17.25,17.25) ＝ √2 × 2.078427 = 2.93930 m
+        //   → T = 1.5 × 2.93930 ÷ 5.5 = 0.80163 s
         // 「三角形」＝被牆切下來的角落區，以牆的中心平面 x+z = 36 為界。
         [UnityTest]
         public IEnumerator V4d_WallSealingTheCorner_StopsOutside_AndNeverEntersTheTriangle()
         {
-            Vector3 heroStart = new Vector3(18f - 2.828427f, 0f, 18f - 2.828427f);
+            float heroStartAxis = 18f - 4f / Mathf.Sqrt(2f);
+            Vector3 heroStart = new Vector3(heroStartAxis, 0f, heroStartAxis);
             yield return Setup(heroStart, Quaternion.Euler(0f, 45f, 0f), new RuneTuning());
             yield return QuickCastWall(new Vector2(18f, 18f), new Vector2(0.70710678f, 0.70710678f));
 
             Vector3 destination = new Vector3(19f, 0f, 19f);
-            float limit = 1.5f * 2.93935f / MoveSpeed;
+            float limit = 1.5f * 2.93930f / MoveSpeed;
 
             _input.TapGround(destination);
             yield return null; // L5：剛下指令那一幀 _hasOrder 仍為 false，HasArrived 會假性回 true
@@ -830,6 +835,306 @@ namespace Vow.Tests.PlayMode
                 "沒有牆擋路的路線上出現了 " + maxLateral + "m 的側向偏移");
             Assert.AreEqual(buildsBefore, _bootstrap.Navigator.BuildCount,
                 "沒有牆擋路卻重建了整合場：這一趟不該碰到格點的任何 Dijkstra");
+        }
+
+        // ───────────────────── §6 R11 V11-c／V11-d（r2 M3：追擊的重解析成本）─────────────────────
+
+        // 這一組刻意**直接對 HeroLocomotion 下追擊指令**，不經 ScriptedInput／戰鬥大腦：
+        // `HeroCombatBrain` 在目標進入攻擊距離時會呼叫 StopMoving()，追擊指令會自己結束，
+        // 就重現不了 r2 P10 那個「指令不會自己結束、每 0.1s 一直付錢」的情境（§3 六個檔不得改動，所以繞過它）。
+        private DummyTarget PlaceDummyInsideTheInflateZoneOfTestWallA()
+        {
+            GameObject wallObject = GameObject.Find("TestWall_A");
+            Assert.IsNotNull(wallObject, "場景缺少 TestWall_A");
+            Obb obb = ReadObb(wallObject.GetComponent<TestWallTarget>());
+            AssertWallGeometry(obb, new Vector2(-7f, 3f), new Vector2(0f, 1f));
+
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            Assert.IsNotNull(dummy, "場景缺少木樁");
+            // 牆心 (−7,3)、半厚 0.3、外擴 0.35 → 核心 z∈[2.7,3.3]、外擴區到 z=3.65。
+            // 3.6 落在「外擴區內、牆體外」，木樁不會穿模，但它所在的格是 Blocked＝走不到。
+            dummy.transform.position = new Vector3(-7f, dummy.transform.position.y, 3.6f);
+            _grid.TryWorldToCell(-7f, 3.6f, out int dcx, out int dcz);
+            Assert.IsTrue(_grid.IsBlocked(dcx, dcz), "前置條件：木樁所在格必須是 Blocked（＝追不到）");
+            return dummy;
+        }
+
+        // V11-c：追一個站在 TestWall_A 外擴區內、靜止的木樁，3 秒內 BuildCount 增量 ≤ 4、最後 1 秒增量 = 0。
+        // 修復前：每 0.1s 重解析一次，而 `_componentField` 以**英雄所在格**為源——英雄每換一格就整場 Dijkstra 重來
+        // （r2 實測 2 秒 14 次、每次 2.24ms）。英雄從 z=8 走到替代點會換 8 格以上，所以 ≤4 這條會紅。
+        [UnityTest]
+        public IEnumerator V11c_ChasingAStationaryUnreachableDummy_StopsRebuildingTheField()
+        {
+            yield return Setup(new Vector3(-7f, 0f, 8f), Quaternion.identity, new RuneTuning());
+            DummyTarget dummy = PlaceDummyInsideTheInflateZoneOfTestWallA();
+
+            GridNavigator nav = _bootstrap.Navigator;
+            Assert.IsNotNull(nav, "Phase1Bootstrap 沒有建立導航器");
+            Vector3 heroStart = _hero.transform.position;
+            Assert.Greater(heroStart.z, 3.65f, "前置條件：英雄起點在牆的北側");
+
+            int buildsBefore = nav.BuildCount;
+            _locomotion.Chase(dummy.transform);
+
+            float start = Time.time;
+            int buildsAtTwoSeconds = -1;
+            while (Time.time - start < 3f)
+            {
+                if (buildsAtTwoSeconds < 0 && Time.time - start >= 2f) buildsAtTwoSeconds = nav.BuildCount;
+                yield return null;
+            }
+            Assert.GreaterOrEqual(buildsAtTwoSeconds, 0, "量測窗口太短，沒有取到第 2 秒的樣本");
+
+            int total = nav.BuildCount - buildsBefore;
+            Assert.LessOrEqual(total, 4,
+                "追一個靜止且走不到的目標 3 秒，整合場重建了 " + total + " 次（上限 4）");
+            Assert.AreEqual(0, nav.BuildCount - buildsAtTwoSeconds,
+                "最後 1 秒仍在重建整合場：英雄已經停在替代點，卻還在每 0.1s 付一次全場 Dijkstra");
+
+            Vector3 stop = _hero.transform.position;
+            Assert.Greater(stop.z, 3.65f, "英雄沒有停在與起點同側（牆北）的替代點：" + stop);
+        }
+
+        // V11-d①：追擊中把目標瞬移到**另一個**走不到的位置 → 0.3 秒內 agent 目的地換成新的替代點。
+        // 紅燈條件：快取只看「這道指令有沒有解析過」——目的地會一直停在 TestWall_A 旁的舊替代點。
+        [UnityTest]
+        public IEnumerator V11d1_ChaseTargetTeleportingToAnotherUnreachableSpot_ReresolvesTheSubstitute()
+        {
+            yield return Setup(new Vector3(-7f, 0f, 8f), Quaternion.identity, new RuneTuning());
+            DummyTarget dummy = PlaceDummyInsideTheInflateZoneOfTestWallA();
+            _locomotion.Chase(dummy.transform);
+            yield return null;
+            yield return null;
+
+            Vector3 firstSubstitute = _agent.destination;
+            Assert.Greater(PlanarDistance(firstSubstitute, dummy.transform.position), 0.3f,
+                "前置條件：第一次解析必須真的被替代（目的地 " + firstSubstitute + "）");
+
+            // TestWall_B：牆心 (7,3)、轉 90° → 核心 x∈[6.7,7.3]、外擴到 x=7.65。7.5 在外擴區內、牆體外。
+            Vector3 elsewhere = new Vector3(7.5f, dummy.transform.position.y, 3f);
+            dummy.transform.position = elsewhere;
+            _grid.TryWorldToCell(elsewhere.x, elsewhere.z, out int ecx, out int ecz);
+            Assert.IsTrue(_grid.IsBlocked(ecx, ecz), "前置條件：新位置也必須是走不到的");
+
+            float deadline = Time.time + 0.3f;
+            bool reresolved = false;
+            float stopTolerance = 0.3f + 0.35f + 0.5f * Mathf.Sqrt(2f);
+            while (Time.time <= deadline)
+            {
+                if (PlanarDistance(_agent.destination, elsewhere) <= stopTolerance) { reresolved = true; break; }
+                yield return null;
+            }
+            Assert.IsTrue(reresolved,
+                "目標換格 0.3 秒後 agent 目的地仍是 " + _agent.destination + "（應在新位置 " + elsewhere +
+                " 的 " + stopTolerance + "m 內）：快取沒有看目標格");
+        }
+
+        // V11-d②：追一個走不到的目標途中那面牆消失 → 英雄改走向目標本身並進入攻擊距離。
+        // 條文那條「進入攻擊距離」在這個幾何下恆真（替代點離目標只有約 1.3m < 攻擊距離 5m），零鑑別力，
+        // 所以另加一條會紅的：agent 目的地必須換回目標本身，不得留在替代點。
+        // 極速施放永遠把牆放在英雄正前方 4m，而木樁要站進那面牆的外擴區（＝離英雄約 4.5m）——那已經在攻擊距離 5m 內，
+        // 條文那條「進入攻擊距離」會恆真。所以立完牆之後把英雄往後挪到 (0,0,−3)：離木樁 7.5m > 5m，那條斷言才有內容。
+        [UnityTest]
+        public IEnumerator V11d2_WallVanishingDuringAnUnreachableChase_ResumesToTheTargetItself()
+        {
+            yield return Setup(Vector3.zero, Quaternion.identity, new RuneTuning());
+            yield return QuickCastWall(new Vector2(0f, 4f), new Vector2(0f, 1f));
+
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            Assert.IsNotNull(dummy, "場景缺少木樁");
+            // 牆心 (0,4)、核心 z∈[3.7,4.3]、外擴區到 4.65：4.5 在外擴區內、牆體外。
+            dummy.transform.position = new Vector3(0f, dummy.transform.position.y, 4.5f);
+            _grid.TryWorldToCell(0f, 4.5f, out int dcx, out int dcz);
+            Assert.IsTrue(_grid.IsBlocked(dcx, dcz), "前置條件：木樁所在格必須是 Blocked");
+
+            Assert.IsTrue(_agent.Warp(new Vector3(0f, 0f, -3f)), "無法把英雄挪到 (0,0,-3)");
+            _hero.transform.position = _agent.nextPosition;
+            yield return null;
+            Assert.Greater(PlanarDistance(_hero.transform.position, dummy.transform.position), _hero.AttackRange,
+                "前置條件：英雄一開始必須在攻擊距離之外，否則「進入攻擊距離」那條斷言恆真");
+
+            _locomotion.Chase(dummy.transform);
+            yield return null;
+            yield return null;
+            Assert.Greater(PlanarDistance(_agent.destination, dummy.transform.position), 0.3f,
+                "前置條件：追擊的目的地必須真的被換成替代點（實際 " + _agent.destination + "）");
+
+            _castWall.CollapseWall(false);
+            Assert.IsFalse(_castWall.IsAlive, "CollapseWall 之後石牆仍存活");
+
+            // 牆沒了之後英雄要從 (0,−3) 走進以木樁 (0,4.5) 為心、半徑 5 的圓＝2.5m
+            //   → T = 1.5 × 2.5 ÷ 5.5 = 0.68182 s，再加一次 0.1s 的追擊重解析窗口。
+            float deadline = Time.time + 1.5f * 2.5f / MoveSpeed + 0.1f;
+            bool resumed = false;
+            while (Time.time <= deadline)
+            {
+                if (PlanarDistance(_agent.destination, dummy.transform.position) <= 0.3f) { resumed = true; break; }
+                yield return null;
+            }
+            Assert.IsTrue(resumed,
+                "牆消失後 agent 目的地仍停在替代點 " + _agent.destination + "：快取沒有看格點版本");
+
+            while (Time.time <= deadline)
+            {
+                if (PlanarDistance(_hero.transform.position, dummy.transform.position) <= _hero.AttackRange) break;
+                yield return null;
+            }
+            Assert.LessOrEqual(PlanarDistance(_hero.transform.position, dummy.transform.position), _hero.AttackRange,
+                "牆消失後英雄沒有進入攻擊距離，停在 " + _hero.transform.position);
+        }
+
+        // V11-d③（r2 P9）：追一個在可達處移動的目標 2 秒，BuildCount 增量仍為 0。
+        // 紅燈條件：快取若連目標格都不看，英雄會一直朝第一次解析的位置走、追不上（最後距離超過 5.5m）。
+        // 幾何挑過，讓那條「最後距離 ≤ 攻擊距離＋0.5 = 5.5m」真的分得出兩者（實跑驗證過壞快取會紅）：
+        //   起始距離 8m、木樁 3.5 m/s、英雄 5.5 m/s、2 秒——
+        //   正確實作：8 − (5.5−3.5)×2 = 4.0m（過，餘裕 1.5m）；
+        //   壞快取：英雄走到木樁的**起始**位置就停，木樁已經離開 3.5×2 = 7.0m（紅，餘裕 1.5m）。
+        [UnityTest]
+        public IEnumerator V11d3_ChasingAMovingReachableTarget_NeverTouchesTheIntegrationField()
+        {
+            yield return Setup(new Vector3(0f, 0f, -10f), Quaternion.identity, new RuneTuning());
+
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            Assert.IsNotNull(dummy, "場景缺少木樁");
+            // z=−10 一帶是空曠的（兩面測試牆在 z∈[1,5]、邊界圈在 |z|>19.45），全程有視線。
+            dummy.transform.position = new Vector3(8f, dummy.transform.position.y, -10f);
+            yield return null;
+
+            GridNavigator nav = _bootstrap.Navigator;
+            int buildsBefore = nav.BuildCount;
+            _locomotion.Chase(dummy.transform);
+
+            float start = Time.time;
+            while (Time.time - start < 2f)
+            {
+                Vector3 p = dummy.transform.position;
+                dummy.transform.position = new Vector3(p.x + 3.5f * Time.deltaTime, p.y, p.z); // 決定性的等速直線
+                yield return null;
+            }
+
+            Assert.AreEqual(buildsBefore, nav.BuildCount,
+                "追一個在空曠處移動的目標不該碰到整合場（重建了 " + (nav.BuildCount - buildsBefore) + " 次）");
+            float gap = PlanarDistance(_hero.transform.position, dummy.transform.position);
+            Assert.LessOrEqual(gap, _hero.AttackRange + 0.5f,
+                "2 秒後英雄離移動中的目標還有 " + gap + "m：追擊沒有跟著目標更新");
+        }
+
+        // V11-j（主對話覆核 4d9bf5f 後追加）：M3 的快取不得改變「走得到」的追擊行為。
+        // 空地上追一個只在**同一格內**移動的目標時，(目的地格, 格點版本) 這組 key 完全不變，
+        // 所以連 substituted==false 的結果也快取的話，agent 目的地會停在舊位置（最多差一格對角線 0.707m）——
+        // 違反最高優先序「沒有牆擋路時 Phase 1 行為不變」。
+        // 幾何：z=−10 一帶空曠（兩面測試牆在 z∈[1,5]），全程有視線 → 整趟 BuildCount 增量必須是 0。
+        // 木樁在 x 格 56（x∈[8.0,8.5)）內從 8.05 平移到 8.45＝0.4m ≥ 0.3m，格號不變。
+        [UnityTest]
+        public IEnumerator V11j_ChasingATargetThatMovesWithinOneCell_KeepsTrackingItExactly()
+        {
+            yield return Setup(new Vector3(0f, 0f, -10f), Quaternion.identity, new RuneTuning());
+
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            Assert.IsNotNull(dummy, "場景缺少木樁");
+            Vector3 before = new Vector3(8.05f, dummy.transform.position.y, -10f);
+            dummy.transform.position = before;
+            yield return null;
+
+            _grid.TryWorldToCell(before.x, before.z, out int cxBefore, out int czBefore);
+            Assert.IsFalse(_grid.IsBlocked(cxBefore, czBefore), "前置條件：這一帶必須是空地，沒有牆擋路");
+
+            GridNavigator nav = _bootstrap.Navigator;
+            int buildsBefore = nav.BuildCount;
+            _locomotion.Chase(dummy.transform);
+
+            float start = Time.time;
+            while (Time.time - start < 0.3f) yield return null;
+
+            // 同一格內平移 ≥0.3m
+            Vector3 after = new Vector3(8.45f, before.y, -10f);
+            dummy.transform.position = after;
+            _grid.TryWorldToCell(after.x, after.z, out int cxAfter, out int czAfter);
+            Assert.AreEqual(cxBefore, cxAfter, "前置條件：平移前後必須落在同一個 x 格，否則測不到快取 key 不變的情況");
+            Assert.AreEqual(czBefore, czAfter, "前置條件：平移前後必須落在同一個 z 格");
+            Assert.GreaterOrEqual(PlanarDistance(before, after), 0.3f, "前置條件：平移距離必須 ≥0.3m");
+
+            float moved = Time.time;
+            while (Time.time - moved < 0.25f) yield return null;
+
+            float gap = PlanarDistance(_agent.destination, dummy.transform.position);
+            Assert.LessOrEqual(gap, 0.05f,
+                "目標在同一格內移動之後，agent 目的地仍停在舊位置（差 " + gap + "m）：" +
+                "走得到的解析結果被快取了，沒有牆擋路時的 Phase 1 行為被改掉了");
+            Assert.AreEqual(buildsBefore, nav.BuildCount,
+                "空地追擊不該碰到整合場（重建了 " + (nav.BuildCount - buildsBefore) + " 次）");
+        }
+
+        // ───────────────────── §6 R11 V11-g（r2 N7）：拔掉導航器要把目的地還給 Phase 1 ─────────────────────
+
+        // V11-g①：持有「已被替代」的移動指令時 SetNavigator(null, 0f) → agent 目的地＝使用者原始目的地。
+        [UnityTest]
+        public IEnumerator V11g1_DetachingTheNavigator_RestoresTheUsersOwnDestination()
+        {
+            yield return Setup(Vector3.zero, Quaternion.identity, new RuneTuning());
+            yield return QuickCastWall(new Vector2(0f, 4f), new Vector2(0f, 1f));
+
+            Vector3 destination = new Vector3(_castObb.Center.x, 0f, _castObb.Center.y); // 牆腳＝走不到
+            _input.TapGround(destination);
+            yield return null;
+
+            Assert.Greater(PlanarDistance(_agent.destination, destination), 0.3f,
+                "前置條件：目的地必須真的被換成替代點（實際 " + _agent.destination + "）");
+
+            _locomotion.SetNavigator(null, 0f); // 同一幀就要還原，不 yield
+            Assert.LessOrEqual(PlanarDistance(_agent.destination, destination), 0.05f,
+                "拔掉導航器之後 agent 目的地仍停在替代點 " + _agent.destination + "（應為 " + destination + "）");
+        }
+
+        // V11-g②：追擊中 SetNavigator(null, 0f) → agent 目的地＝目標當下位置（容差 0.05m）。
+        // 修復前 `SetNavigator` 的還原條件含 `_chaseTarget == null`，追擊這一側完全沒還原。
+        [UnityTest]
+        public IEnumerator V11g2_DetachingTheNavigatorMidChase_RestoresTheTargetsOwnPosition()
+        {
+            yield return Setup(Vector3.zero, Quaternion.identity, new RuneTuning());
+            yield return QuickCastWall(new Vector2(0f, 4f), new Vector2(0f, 1f));
+
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            Assert.IsNotNull(dummy, "場景缺少木樁");
+            dummy.transform.position = new Vector3(0f, dummy.transform.position.y, 4.5f); // 牆的外擴區內＝走不到
+            _grid.TryWorldToCell(0f, 4.5f, out int dcx, out int dcz);
+            Assert.IsTrue(_grid.IsBlocked(dcx, dcz), "前置條件：木樁所在格必須是 Blocked");
+
+            _locomotion.Chase(dummy.transform);
+            yield return null;
+            yield return null;
+
+            Vector3 target = dummy.transform.position;
+            Assert.Greater(PlanarDistance(_agent.destination, target), 0.3f,
+                "前置條件：追擊的目的地必須真的被換成替代點（實際 " + _agent.destination + "）");
+
+            _locomotion.SetNavigator(null, 0f); // 同一幀就要還原，不 yield
+            Assert.LessOrEqual(PlanarDistance(_agent.destination, target), 0.05f,
+                "追擊中拔掉導航器之後 agent 目的地仍停在替代點 " + _agent.destination + "（應為目標當下位置 " + target + "）");
+        }
+
+        // ───────────────────── §6 R11 V11-e（r2 N2）：邊界圈建不出來不得無聲 ─────────────────────
+
+        // 正常場景開場不得出現這條 error——本檔其餘每一條測試都會因為未預期的 LogError 而失敗，那就是它的證據。
+        [UnityTest]
+        public IEnumerator V11e_ArenaBoundaryReferenceMissing_LogsAnError()
+        {
+            yield return Setup(Vector3.zero, Quaternion.identity, new RuneTuning());
+
+            LogAssert.Expect(LogType.Error, new Regex("ArenaBoundary"));
+            _bootstrap.RegisterArenaBoundary(null);
+        }
+
+        [UnityTest]
+        public IEnumerator V11e_ArenaBoundaryWithoutBoxColliders_LogsAnError()
+        {
+            yield return Setup(Vector3.zero, Quaternion.identity, new RuneTuning());
+
+            GameObject empty = new GameObject("BoundaryWithoutColliders");
+            LogAssert.Expect(LogType.Error, new Regex("ArenaBoundary"));
+            _bootstrap.RegisterArenaBoundary(empty.transform);
+            Object.Destroy(empty);
+            yield return null;
         }
 
         // ───────────────────────────── §6 R2 ─────────────────────────────

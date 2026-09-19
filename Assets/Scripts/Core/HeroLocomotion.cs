@@ -37,8 +37,28 @@ namespace Vow.Core
         private int _resolvedGridVersion = -1;
         private SteerMode _lastSteerMode = SteerMode.Direct;
 
+        // ── r2 對抗審查 M3（§6 R11 V11-c／d）：每道指令一份的解析快取 ──
+        // 追擊每 0.1s 重解析一次，而替代點解析要跑全場 Dijkstra ＋候選帶掃描；追擊指令又不會自己結束，
+        // 所以追一個走不到的目標會一直付這筆錢（r2 實測 2 秒 14 次全場重建）。
+        // 快取放在這一層而不是 GridNavigator：導航器必須維持「輸入相同、輸出相同」的純函式
+        // （V11-b 的 300 盤差分測試、V2-p／q／r 全都直接對它連續下不同的 from 呼叫），
+        // 而「同一道指令期間」這個範圍只有這裡知道。
+        // 失效條件三個，缺一就會變成 V11-d 抓的那種過度快取：①目標格換了 ②格點版本變了 ③新指令／被牆推出。
+        // 而且只有 substituted==true 的結果才進快取（§6 R11 V11-j）——走得到的目的地是原樣回傳的，
+        // 快取它會把答案量化到格心，目標在同一格內移動時 agent 目的地就會落後（詳見 ResolveGoal 裡的說明）。
+        private bool _hasCachedGoal;
+        private int _cachedDestCx;
+        private int _cachedDestCz;
+        private int _cachedGoalVersion;
+        private float _cachedGoalX;
+        private float _cachedGoalZ;
+
         // 供測試觀察「這一幀到底走的是哪條路」：Direct＝沿用 Phase 1 的 NavMesh 速度，Follow＝格點向量場。
         public SteerMode LastSteerMode => _lastSteerMode;
+
+        // SteerMode.GoalBlocked 的當幀重解析累計次數（§6 R11 V11-f 的活性：零配置量測窗口要證明
+        // 這條路徑真的被行使過，而不是「什麼都沒跑所以是 0 bytes」）。
+        public int GoalBlockedResolveCount { get; private set; }
 
         public bool HasArrived
         {
@@ -113,15 +133,27 @@ namespace Vow.Core
             // r1 對抗審查 L4：拔掉導航器時，agent 的目的地可能還停在上一次解析出來的替代點——
             // 交還控制權之前先把它換回使用者真正點的那個位置。整段都在「舊的 _navigator 非空」之內，
             // 導航器從未接上過（_navigator == null）時這裡一行都不會執行，行為仍與 v0.3.2 逐行相同。
-            if (_navigator != null && _navigatorOrder && _hasOrder && _chaseTarget == null
+            // r2 對抗審查 N7（§6 R11 V11-g）：原本條件含 `_chaseTarget == null`，追擊這一側完全沒還原——
+            // 拔掉導航器後 agent 還朝著替代點走，要等下一次 0.1s 的 repath 才會被改回去。
+            if (_navigator != null && _navigatorOrder && _hasOrder
                 && _agent.enabled && _agent.isOnNavMesh)
-                _agent.SetDestination(_rawDestination);
+            {
+                if (_chaseTarget != null) _agent.SetDestination(_chaseTarget.position);
+                else _agent.SetDestination(_rawDestination);
+            }
 
             _navigator = navigator;
             _inflateRadius = inflateRadius;
             _resolvedGridVersion = -1;
             _navigatorOrder = false;
             _lastSteerMode = SteerMode.Direct;
+            InvalidateGoalCache();
+        }
+
+        // 新指令、換導航器、或英雄被牆推出時：上一次的解析結果不得沿用（替代點取決於英雄在哪一側）。
+        private void InvalidateGoalCache()
+        {
+            _hasCachedGoal = false;
         }
 
         public void MoveTo(Vector3 destination)
@@ -130,6 +162,7 @@ namespace Vow.Core
             _chaseTarget = null;
             _hasOrder = true;
             _agent.isStopped = false;
+            InvalidateGoalCache();
             if (_navigator != null)
             {
                 _rawDestination = destination;
@@ -146,6 +179,7 @@ namespace Vow.Core
             _hasOrder = true;
             _repathTimer = 0f;
             _agent.isStopped = false;
+            InvalidateGoalCache();
             if (_navigator != null)
             {
                 if (target != null)
@@ -227,7 +261,8 @@ namespace Vow.Core
         private Vector3 ResolveGoal(Vector3 destination)
         {
             _navigatorOrder = true;
-            _resolvedGridVersion = _navigator.Grid.Version;
+            int gridVersion = _navigator.Grid.Version;
+            _resolvedGridVersion = gridVersion;
 
             // r1 對抗審查 H3（§6 R2）：格點外的目的地先夾進格點再照常解析。
             // 舊實作在這裡整趟退回 Phase 1，實測 z=19 繞得過去、z=20 卻頂在牆上——那條分支唯一的作用
@@ -235,13 +270,48 @@ namespace Vow.Core
             // §6 R8／R3a：夾進「可達範圍」而不只是格點——夾到最外圈格心（±19.75）的話那裡站不到，
             // 解析出來仍然會是替代點。
             _navigator.Grid.ClampToPlayableArea(destination.x, destination.z, out float destX, out float destZ);
+            _navigator.Grid.TryWorldToCell(destX, destZ, out int destCx, out int destCz);
+
+            // M3（§6 R11 V11-c）：同一道指令、同一個目標格、同一個格點版本 → 上一次的答案仍然成立。
+            // 追擊一個站著不動、走不到的目標時，這一段把「每 0.1s 一次全場 Dijkstra ＋候選帶掃描」降成只有第一次。
+            // 目標格或版本一變就重解析（V11-d ①②），所以不會退化成「解析過就永遠不再算」。
+            if (_hasCachedGoal && _cachedGoalVersion == gridVersion
+                && _cachedDestCx == destCx && _cachedDestCz == destCz)
+            {
+                _goalX = _cachedGoalX;
+                _goalZ = _cachedGoalZ;
+                return new Vector3(_goalX, destination.y, _goalZ);
+            }
 
             Vector3 position = _self.position;
             _navigator.ResolveGoal(position.x, position.z, destX, destZ,
-                out float goalX, out float goalZ, out _);
-            _goalX = goalX;
-            _goalZ = goalZ;
-            return new Vector3(goalX, destination.y, goalZ);
+                out float resolvedX, out float resolvedZ, out bool substituted);
+
+            // §6 R11 V11-j：**只有替代點才進快取**。
+            // 走得到的目的地是原樣回傳的，快取它等於把答案量化到格心解析度——目標在同一個格子裡移動時
+            // （key 完全沒變）agent 目的地會停在舊位置，最多落後一格對角線 0.707m，
+            // 那就違反了最高優先序「沒有牆擋路時 Phase 1 行為不變」。
+            // 而且這條路本來就便宜：有視線時 ResolveGoal 直接回傳（r2 實測 0.0003ms、不碰整合場），
+            // 沒視線但走得到時 _goalField 以**目的地格**為 key，同一格重複呼叫也不會重建。
+            // 貴的只有替代點那條（全場 Dijkstra ＋候選帶掃描），而它的輸入就是格號——量化到格心本來就是它的語意。
+            if (substituted)
+            {
+                _cachedGoalX = resolvedX;
+                _cachedGoalZ = resolvedZ;
+                _cachedDestCx = destCx;
+                _cachedDestCz = destCz;
+                _cachedGoalVersion = gridVersion;
+                _hasCachedGoal = true;
+            }
+            else
+            {
+                // 這一格現在走得到了：舊的替代點結果不得再被命中（同一格、同一版本也不行）。
+                InvalidateGoalCache();
+            }
+
+            _goalX = resolvedX;
+            _goalZ = resolvedZ;
+            return new Vector3(resolvedX, destination.y, resolvedZ);
         }
 
         // 把 NavMesh 算出來的速度換成「繞得過牆」的速度。
@@ -257,6 +327,7 @@ namespace Vow.Core
             // 當幀立刻拿原始目的地重新解析，不得無聲退回 v0.3.2 的頂牆。
             if (mode == SteerMode.GoalBlocked && _agent.enabled && _agent.isOnNavMesh)
             {
+                GoalBlockedResolveCount++;
                 _agent.SetDestination(ResolveGoal(_rawDestination));
                 mode = _navigator.Steer(position.x, position.z, _goalX, _goalZ, out dirX, out dirZ);
             }
@@ -290,6 +361,8 @@ namespace Vow.Core
 
             _navigator.Grid.CellCenter(cx, cz, out float x, out float z);
             _self.position = new Vector3(x, position.y, z);
+            // 英雄被瞬移到別的地方了：替代點取決於他在牆的哪一側，上一次的解析結果不得沿用（§6 R11 V11-d）。
+            InvalidateGoalCache();
             SyncAgent();
             return true;
         }

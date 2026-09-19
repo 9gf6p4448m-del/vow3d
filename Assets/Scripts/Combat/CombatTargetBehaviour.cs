@@ -91,7 +91,7 @@ namespace Vow.Combat
         private bool _navStamped;   // 這組參數目前有沒有蓋在格點上
         private bool _navWanted;    // 邏輯上這面牆現在該不該擋路（物件暫時停用時仍為 true）
         private float _navCenterX, _navCenterZ, _navNormalX, _navNormalZ, _navHalfWidth, _navHalfThickness;
-        private Action<CombatTargetBehaviour> _navStamped1Handler; // 蓋上格子之後要通知誰（推出被壓住的英雄）
+        private Action<CombatTargetBehaviour> _navStampedHandler; // 蓋上格子之後要通知誰（推出被壓住的英雄）
 
         // 這面牆目前有沒有真的蓋在格點上（測試用）。
         public bool NavBlockerStamped => _navStamped;
@@ -108,7 +108,7 @@ namespace Vow.Combat
             if (_navStamped) Stamp(-1);
             _navGrid = grid;
             _navInflate = inflateRadius;
-            _navStamped1Handler = stampedHandler;
+            _navStampedHandler = stampedHandler;
             if (_navWanted) Stamp(1);
         }
 
@@ -175,7 +175,7 @@ namespace Vow.Combat
             _navGrid.StampBox(_navCenterX, _navCenterZ, _navNormalX, _navNormalZ,
                               _navHalfWidth, _navHalfThickness, _navInflate, delta);
             _navStamped = delta > 0;
-            if (_navStamped && _navStamped1Handler != null) _navStamped1Handler(this);
+            if (_navStamped && _navStampedHandler != null) _navStampedHandler(this);
         }
     }
 }
