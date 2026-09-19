@@ -32,6 +32,10 @@ namespace Vow.Core.Logic
 
         public int BlockedCount { get; private set; }
 
+        // r1 對抗審查 M1：撤銷不對稱（撤兩次、或撤了從沒登記過的格）而被夾回 0 的次數。
+        // 正常運作恆為 0；>0 代表某條離場路徑重複撤銷，是「壞了要叫」用的。
+        public int NegativeStampCount { get; private set; }
+
         public bool IsBlocked(int cx, int cz)
         {
             if (cx < 0 || cx >= _columns || cz < 0 || cz >= _rows) return true; // 界外一律 Blocked
@@ -49,6 +53,15 @@ namespace Vow.Core.Logic
         {
             x = _originX + (cx + 0.5f) * _cellSize;
             z = _originZ + (cz + 0.5f) * _cellSize;
+        }
+
+        // 把一個世界座標夾進格點涵蓋範圍（夾到最外圈格心，保證 TryWorldToCell 必定成功）。
+        // r1 對抗審查 H3（§6 R2）：界外的目的地不得讓整趟導航退回 Phase 1——地板與格點都恰好 ±20，
+        // 點在最外那條線上就會踩到；夾進來之後照常解析，繞牆行為不因為多按了半公尺而消失。
+        public void ClampToGrid(float x, float z, out float clampedX, out float clampedZ)
+        {
+            clampedX = Clamp(x, _originX + _cellSize * 0.5f, _originX + (_columns - 0.5f) * _cellSize);
+            clampedZ = Clamp(z, _originZ + _cellSize * 0.5f, _originZ + (_rows - 0.5f) * _cellSize);
         }
 
         // 牆的 OBB（中心、法線、半寬＝沿牆方向、半厚＝沿法線方向）各向外擴 inflate 後，
@@ -102,6 +115,15 @@ namespace Vow.Core.Logic
                     int after = before + delta;
                     _refCount[idx] = after;
 
+                    // M1：計數不得為負。不夾的話那一格會變成「存在但不擋路」——下一面真的牆 +1 上去仍然是 0，
+                    // Blocked 狀態不翻轉、Version 不動、整合場不重建，壞了不會叫（審查 M1 實跑）。
+                    if (after < 0)
+                    {
+                        after = 0;
+                        _refCount[idx] = 0;
+                        NegativeStampCount++;
+                    }
+
                     bool wasBlocked = before > 0;
                     bool isBlocked = after > 0;
                     if (wasBlocked == isBlocked) continue;
@@ -149,6 +171,11 @@ namespace Vow.Core.Logic
             int guard = (_columns + _rows) * 2 + 4;
             while ((x != cx1 || z != cz1) && guard-- > 0)
             {
+                // 線段已經走完（下一個格界都落在 t>1 之外）＝終點就在這一格裡，不再往外走。
+                // 兩個端點都恰好落在格角上時（例如格心對格心的整數座標），DDA 有可能永遠對不上終點格，
+                // 一路走到格點外 —— 界外一律 Blocked，於是空場也被判成「沒有視線」。
+                if (tMaxX > 1.0 && tMaxZ > 1.0) break;
+
                 if (Math.Abs(tMaxX - tMaxZ) < tie && tMaxX < double.PositiveInfinity)
                 {
                     // 線段精準穿過格角：連同 x-only／z-only 鄰格一起算「擦過」
@@ -175,7 +202,8 @@ namespace Vow.Core.Logic
                     if (IsBlocked(x, z)) return false;
                 }
             }
-            return true;
+            // 走完了才提前跳出（上面的 t>1 或 guard）時，終點格自己還沒被檢查過。
+            return !IsBlocked(cx1, cz1);
         }
 
         // 以歐氏距離（到格心）找最近的非 Blocked 格；同距離取索引較小者（決定性）。

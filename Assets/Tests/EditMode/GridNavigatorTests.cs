@@ -10,70 +10,91 @@ namespace Vow.Tests
         private static BlockGrid NewGrid() => new BlockGrid(-20f, -20f, 0.5f, 80, 80);
         private static NavGridTuning NewTuning() => new NavGridTuning();
 
-        // 獨立寫的 BFS 連通區掃描（不呼叫 FlowField／GridNavigator 的任何邏輯）：
-        // 從 startCx/startCz 出發，收集整個連通區（8 鄰接、斜走不切角），回傳其中離 (destX,destZ) 歐氏距離
-        // 最近的格；同距離取索引較小者。
+        // 獨立寫的暴力鬆弛法（反覆掃全場直到不再變動，不呼叫 FlowField／GridNavigator 的任何邏輯）：
+        // 從 startCx/startCz 出發算出整個連通區每一格的路徑成本（直走 10、斜走 14、斜走不切角）。
+        private static int[] BruteForceCosts(BlockGrid grid, int startCx, int startCz)
+        {
+            int columns = grid.Columns, rows = grid.Rows;
+            int[] cost = new int[columns * rows];
+            for (int i = 0; i < cost.Length; i++) cost[i] = int.MaxValue;
+            if (grid.IsBlocked(startCx, startCz)) return cost;
+            cost[startCz * columns + startCx] = 0;
+
+            int[] dx = { 1, -1, 0, 0, 1, 1, -1, -1 };
+            int[] dz = { 0, 0, 1, -1, 1, -1, 1, -1 };
+            int[] stepCost = { 10, 10, 10, 10, 14, 14, 14, 14 };
+
+            bool changed = true;
+            int guard = 500;
+            while (changed && guard-- > 0)
+            {
+                changed = false;
+                for (int cz = 0; cz < rows; cz++)
+                for (int cx = 0; cx < columns; cx++)
+                {
+                    int idx = cz * columns + cx;
+                    if (cost[idx] == int.MaxValue) continue;
+                    for (int n = 0; n < 8; n++)
+                    {
+                        int ncx = cx + dx[n], ncz = cz + dz[n];
+                        if (grid.IsBlocked(ncx, ncz)) continue;
+                        bool diagonal = dx[n] != 0 && dz[n] != 0;
+                        if (diagonal && (grid.IsBlocked(cx + dx[n], cz) || grid.IsBlocked(cx, cz + dz[n]))) continue;
+
+                        int nIdx = ncz * columns + ncx;
+                        int next = cost[idx] + stepCost[n];
+                        if (next < cost[nIdx]) { cost[nIdx] = next; changed = true; }
+                    }
+                }
+            }
+            Assert.LessOrEqual(0, guard, "暴力鬆弛法沒有在合理輪數內收斂");
+            return cost;
+        }
+
+        // §6 R1 的「最近可達點」定義，用測試自己的暴力鬆弛法重寫一次（不呼叫受測物）：
+        //   dMin＝起點連通區內「格心到目的地」的最小歐氏距離；
+        //   候選＝距離 ≤ dMin ＋ 一格對角線（0.5×√2）的格；
+        //   候選中取路徑成本最低者；同成本取離目的地較近者；再同取索引較小者。
         private static void NearestInComponent(BlockGrid grid, int startCx, int startCz, float destX, float destZ,
                                                out int bestCx, out int bestCz)
         {
             int columns = grid.Columns, rows = grid.Rows;
-            bool[] visited = new bool[columns * rows];
-            int[] queueCx = new int[columns * rows];
-            int[] queueCz = new int[columns * rows];
-            int head = 0, tail = 0;
+            int[] cost = BruteForceCosts(grid, startCx, startCz);
 
-            visited[startCz * columns + startCx] = true;
-            queueCx[tail] = startCx;
-            queueCz[tail] = startCz;
-            tail++;
+            double minDist = double.MaxValue;
+            for (int cz = 0; cz < rows; cz++)
+            for (int cx = 0; cx < columns; cx++)
+            {
+                if (cost[cz * columns + cx] == int.MaxValue) continue;
+                grid.CellCenter(cx, cz, out float ccx, out float ccz);
+                double d = Math.Sqrt((ccx - destX) * (double)(ccx - destX) + (ccz - destZ) * (double)(ccz - destZ));
+                if (d < minDist) minDist = d;
+            }
 
-            int[] dx = { 1, -1, 0, 0, 1, 1, -1, -1 };
-            int[] dz = { 0, 0, 1, -1, 1, -1, 1, -1 };
-
+            double limit = minDist + 0.5 * Math.Sqrt(2.0) + 1e-4;
             bestCx = startCx;
             bestCz = startCz;
-            double bestDistSq = double.MaxValue;
             bool found = false;
-
-            while (head < tail)
+            int bestCost = int.MaxValue;
+            double bestDist = double.MaxValue;
+            for (int cz = 0; cz < rows; cz++)
+            for (int cx = 0; cx < columns; cx++)
             {
-                int cx = queueCx[head];
-                int cz = queueCz[head];
-                head++;
-
+                int c = cost[cz * columns + cx];
+                if (c == int.MaxValue) continue;
                 grid.CellCenter(cx, cz, out float ccx, out float ccz);
-                double ddx = ccx - destX, ddz = ccz - destZ;
-                double distSq = ddx * ddx + ddz * ddz;
-                int idx = cz * columns + cx;
-                int bestIdx = bestCz * columns + bestCx;
-                if (!found || distSq < bestDistSq - 1e-9)
+                double d = Math.Sqrt((ccx - destX) * (double)(ccx - destX) + (ccz - destZ) * (double)(ccz - destZ));
+                if (d > limit) continue;
+                if (found)
                 {
-                    found = true;
-                    bestDistSq = distSq;
-                    bestCx = cx;
-                    bestCz = cz;
+                    if (c > bestCost) continue;
+                    if (c == bestCost && !(d < bestDist)) continue;
                 }
-                else if (Math.Abs(distSq - bestDistSq) <= 1e-9 && idx < bestIdx)
-                {
-                    bestCx = cx;
-                    bestCz = cz;
-                }
-
-                for (int n = 0; n < 8; n++)
-                {
-                    int ncx = cx + dx[n];
-                    int ncz = cz + dz[n];
-                    if (grid.IsBlocked(ncx, ncz)) continue;
-                    bool diagonal = dx[n] != 0 && dz[n] != 0;
-                    if (diagonal && (grid.IsBlocked(cx + dx[n], cz) || grid.IsBlocked(cx, cz + dz[n]))) continue;
-
-                    int nIdx = ncz * columns + ncx;
-                    if (visited[nIdx]) continue;
-                    visited[nIdx] = true;
-                    queueCx[tail] = ncx;
-                    queueCz[tail] = ncz;
-                    tail++;
-                }
+                found = true;
+                bestCost = c;
+                bestDist = d;
+                bestCx = cx;
+                bestCz = cz;
             }
         }
 
@@ -160,6 +181,165 @@ namespace Vow.Tests
             Assert.Greater(dot, 0.0, "方向要與「指向最近空格」大致同向");
         }
 
+        // ───────────────────── §6 R1（審查 H2）：替代點優先停在英雄這一側 ─────────────────────
+
+        // V2-p：牆心 (0,4)、法線 +Z、半寬 2、半厚 0.3、外擴 0.35
+        //   → 禁區 x∈[-2.35,2.35]、z∈[3.35,4.65]；格點上 z 格 46~49，南邊第一排空格格心 z=2.75、北邊 z=5.25。
+        // 四個案例的數字照 §6 R1 抄，不得放寬。
+        [Test]
+        public void ResolveGoal_SubstitutePoint_PrefersTheSideTheHeroIsAlreadyOn()
+        {
+            AssertSubstituteSide(8f, 4f, true);    // ① 英雄在北、點牆腳：兩側平手 → 停在北側
+            AssertSubstituteSide(0f, 4f, false);   // ② 英雄在南、點牆腳：兩側平手 → 停在南側
+            AssertSubstituteSide(8f, 3.8f, true);  // ③ 英雄在北、點稍微偏南（兩側差 0.2m，仍在一格對角線內）→ 仍停北側
+            AssertSubstituteSide(8f, 3.4f, false); // ④ 英雄在北、點明顯在南面（兩側差 1.2m）→ 該繞過去，停南側
+        }
+
+        private static void AssertSubstituteSide(float heroZ, float destZ, bool expectNorthSide)
+        {
+            BlockGrid grid = NewGrid();
+            grid.StampBox(0f, 4f, 0f, 1f, 2f, 0.3f, 0.35f, 1);
+            GridNavigator nav = new GridNavigator(grid, NewTuning());
+
+            nav.ResolveGoal(0f, heroZ, 0f, destZ, out float goalX, out float goalZ, out bool substituted);
+            Assert.IsTrue(substituted, $"點在牆上（z={destZ}）必須替代");
+
+            if (expectNorthSide)
+                Assert.Greater(goalZ, 4.65f, $"英雄在 z={heroZ}、點 z={destZ}：替代點應留在牆的北側，實際 ({goalX},{goalZ})");
+            else
+                Assert.Less(goalZ, 3.35f, $"英雄在 z={heroZ}、點 z={destZ}：替代點應落在牆的南側，實際 ({goalX},{goalZ})");
+        }
+
+        // ───────────────────── §6 R5（審查 H4）：有視線就不碰整合場 ─────────────────────
+
+        // V2-q：空格點連下 100 次不同目的地 → Build 次數 0；有牆但不擋視線 → 0；
+        //       牆擋視線 → 第一次 1、同目的地同版本重複呼叫仍 1。
+        [Test]
+        public void ResolveGoal_WithLineOfSight_NeverRebuildsTheIntegrationField()
+        {
+            BlockGrid empty = NewGrid();
+            GridNavigator emptyNav = new GridNavigator(empty, NewTuning());
+            for (int i = 0; i < 100; i++)
+                emptyNav.ResolveGoal(0f, 0f, -10f + i * 0.2f, 9f, out _, out _, out bool sub);
+            Assert.AreEqual(0, emptyNav.BuildCount, "空格點下 100 次指令不該重建任何整合場");
+
+            // 牆在 (0,4)，英雄與目的地都在牆的南側、視線不經過牆
+            BlockGrid grid = NewGrid();
+            grid.StampBox(0f, 4f, 0f, 1f, 2f, 0.3f, 0.35f, 1);
+            GridNavigator nav = new GridNavigator(grid, NewTuning());
+            for (int i = 0; i < 100; i++)
+                nav.ResolveGoal(-8f, 0f, 8f, 0f + i * 0.01f, out _, out _, out _);
+            Assert.AreEqual(0, nav.BuildCount, "牆沒有擋住視線時不該重建整合場");
+
+            // 目的地在牆的正後方：視線被擋，這時才准 Build，而且只准一次
+            nav.ResolveGoal(0f, 0f, 0f, 8f, out _, out _, out bool substituted);
+            Assert.IsFalse(substituted, "牆後方走得到，不該替代");
+            Assert.AreEqual(1, nav.BuildCount, "視線被擋時應該恰好重建一次");
+            for (int i = 0; i < 20; i++) nav.ResolveGoal(0f, 0f, 0f, 8f, out _, out _, out _);
+            Assert.AreEqual(1, nav.BuildCount, "同目的地、同格點版本重複呼叫不該再重建");
+        }
+
+        // ───────────────────── §6 R6 M3：目的地走不到時不得每輪重建 ─────────────────────
+
+        // V2-r：目的地走不到、格點版本不變時，重複 ResolveGoal＋Steer 50 輪，Build 次數在第一輪之後不再增加。
+        [Test]
+        public void ResolveGoalAndSteer_WithAnUnreachableDestination_StopBuildingAfterTheFirstRound()
+        {
+            BlockGrid grid = NewGrid();
+            grid.StampBox(8f, 10f, 1f, 0f, 3f, 0.3f, 0.35f, 1);
+            grid.StampBox(12f, 10f, 1f, 0f, 3f, 0.3f, 0.35f, 1);
+            grid.StampBox(10f, 8f, 0f, 1f, 3f, 0.3f, 0.35f, 1);
+            grid.StampBox(10f, 12f, 0f, 1f, 3f, 0.3f, 0.35f, 1);
+
+            GridNavigator nav = new GridNavigator(grid, NewTuning());
+            const float fromX = 0f, fromZ = 0f, destX = 10f, destZ = 10f;
+
+            nav.ResolveGoal(fromX, fromZ, destX, destZ, out float goalX, out float goalZ, out bool substituted);
+            nav.Steer(fromX, fromZ, goalX, goalZ, out _, out _);
+            Assert.IsTrue(substituted, "前置條件：目的地必須是走不到的");
+            int afterFirstRound = nav.BuildCount;
+            Assert.Greater(afterFirstRound, 0, "第一輪本來就該建場，否則這條斷言沒有鑑別力");
+
+            for (int i = 0; i < 50; i++)
+            {
+                nav.ResolveGoal(fromX, fromZ, destX, destZ, out float gx, out float gz, out _);
+                nav.Steer(fromX, fromZ, gx, gz, out _, out _);
+            }
+            Assert.AreEqual(afterFirstRound, nav.BuildCount,
+                "格點版本沒變、英雄沒動，卻仍在「目的地格」與「替代點格」之間來回重建整合場");
+        }
+
+        // ───────────────────── §6 R6 M4：goal 格被蓋住不是「沒招」 ─────────────────────
+
+        [Test]
+        public void Steer_WhenTheResolvedGoalCellGetsCovered_ReportsGoalBlocked_NotStuck()
+        {
+            BlockGrid grid = NewGrid();
+            GridNavigator nav = new GridNavigator(grid, NewTuning());
+
+            // 先在空場解析出一個 goal，再讓一面新牆蓋住它（＝追擊最長 0.1s 的重解析窗口裡會發生的事）
+            nav.ResolveGoal(-8f, 0f, 0f, 0f, out float goalX, out float goalZ, out bool substituted);
+            Assert.IsFalse(substituted);
+            grid.StampBox(0f, 0f, 0f, 1f, 2f, 0.3f, 0.35f, 1);
+            grid.TryWorldToCell(goalX, goalZ, out int goalCx, out int goalCz);
+            Assert.IsTrue(grid.IsBlocked(goalCx, goalCz), "前置條件：goal 格要真的被蓋住");
+
+            SteerMode mode = nav.Steer(-8f, 0f, goalX, goalZ, out _, out _);
+            Assert.AreEqual(SteerMode.GoalBlocked, mode,
+                "goal 格被蓋住要回 GoalBlocked（呼叫端當幀重新解析），不得與「連逃脫格都找不到」的 Stuck 混為一談");
+        }
+
+        // ───────────────────── §6 R7：拉直路徑的鑑別力 ─────────────────────
+
+        // V2-s：V4-a 的幾何（英雄 (0,0)、牆心 (0,4) 法線 +Z、半寬 2／半厚 0.3、外擴 0.35、目的地 (0,8)）。
+        // 幾何最短繞行 9.48414m（(0,0)→(2.35,3.35)→(2.35,4.65)→(0,8)）；
+        // 前視 8 格的實走長度必須 ≤ 9.48414 × 1.06 = 10.0532m，前視 1 格（退化成 45° 鋸齒）必須超過這個上限。
+        [Test]
+        public void Steer_LookaheadStraightensThePath_WhileLookaheadOneZigzagsPastTheBudget()
+        {
+            const double shortest = 9.48414;
+            const double budget = shortest * 1.06;
+
+            double straightened = WalkLength(8);
+            double zigzag = WalkLength(1);
+
+            Assert.LessOrEqual(straightened, budget,
+                $"前視 8 格的實走長度 {straightened:F4}m 超過 9.48414×1.06 = {budget:F4}m：路徑沒有被拉直");
+            Assert.Greater(zigzag, budget,
+                $"對照失敗：前視 1 格也只走了 {zigzag:F4}m，代表這條上限對「有沒有拉直」沒有鑑別力");
+        }
+
+        // 每步 0.1m 沿 Steer 方向前進，回傳走到目的地 0.1m 內的實走長度（走不到回 double.MaxValue）。
+        private static double WalkLength(int lookaheadCells)
+        {
+            BlockGrid grid = NewGrid();
+            grid.StampBox(0f, 4f, 0f, 1f, 2f, 0.3f, 0.35f, 1);
+            NavGridTuning tuning = new NavGridTuning { FollowLookaheadCells = lookaheadCells };
+            GridNavigator nav = new GridNavigator(grid, tuning);
+
+            const float destX = 0f, destZ = 8f;
+            const double step = 0.1;
+            nav.ResolveGoal(0f, 0f, destX, destZ, out float goalX, out float goalZ, out bool substituted);
+            Assert.IsFalse(substituted, "前置條件：牆後方走得到");
+
+            float x = 0f, z = 0f;
+            double travelled = 0.0;
+            for (int i = 0; i < 400; i++)
+            {
+                double remaining = Math.Sqrt((x - destX) * (double)(x - destX) + (z - destZ) * (double)(z - destZ));
+                if (remaining <= step) return travelled + remaining;
+
+                SteerMode mode = nav.Steer(x, z, goalX, goalZ, out float dirX, out float dirZ);
+                Assert.AreNotEqual(SteerMode.Stuck, mode, $"第 {i} 步卡死（前視 {lookaheadCells} 格）");
+                x += (float)(dirX * step);
+                z += (float)(dirZ * step);
+                travelled += step;
+                grid.TryWorldToCell(x, z, out int cx, out int cz);
+                Assert.IsFalse(grid.IsBlocked(cx, cz), $"第 {i} 步踏進 Blocked 格（前視 {lookaheadCells} 格）");
+            }
+            return double.MaxValue;
+        }
+
         [Test]
         public void Steer_WithClearLineOfSight_ReturnsDirect()
         {
@@ -188,12 +368,15 @@ namespace Vow.Tests
             nav.ResolveGoal(startX, startZ, destX, destZ, out float goalX, out float goalZ, out bool substituted);
             Assert.IsFalse(substituted, "目標繞得到，不該被替代");
 
-            // 幾何最短繞行（繞右側；牆體外擴 0.35 後的包圍：右壁 x∈[1.35,2.65]、z∈[-6.35,0.35]；底 x∈[-2.35,2.35]、z∈[-6.65,-5.35]）：
-            // (0,-3)→右壁上外角 (2.65,0.35)：√(2.65²+3.35²)=4.27m
-            // →右壁下外角 (2.65,-6.35)：6.70m
-            // →目標 (0,-10)：√(2.65²+3.65²)=4.51m（此線在 x=2.35 處 z=-6.76，低於底牆外角 -6.65，不碰底牆）
-            // 覆審更正：原先填的是一條留了安全邊界的 22m 可行路徑（上界），會把 1.5 倍上限實質放寬成 2.1 倍。
-            const double shortestDetourLength = 4.27 + 6.70 + 4.51; // = 15.48m
+            // 幾何最短繞行（繞右側；牆體外擴 0.35 後的包圍：左壁 x∈[-2.65,-1.35]、右壁 x∈[1.35,2.65]，
+            // 兩壁 z∈[-6.35,0.35]；底 x∈[-2.35,2.35]、z∈[-6.65,-5.35]）：
+            // r1 對抗審查 L1（§6 R7）：原先的 15.48m 少算了右壁的**內**上角——(0,-3) 直接拉到 (2.65,0.35)
+            // 這條線在 x=1.35 處 z=-1.29，落在右壁的 z∈[-6.35,0.35] 之內，會穿牆。真正的最短折線多一個轉角：
+            // (0,-3)→右壁內上角 (1.35,0.35)：√(1.35²+3.35²) = 3.6118m
+            // →右壁外上角 (2.65,0.35)：                       1.3000m
+            // →右壁外下角 (2.65,-6.35)：                      6.7000m
+            // →目標 (0,-10)：√(2.65²+3.65²) =                 4.5106m（此線在 x=2.35 處 z=-6.76，低於底牆外角 -6.65，不碰底牆）
+            const double shortestDetourLength = 3.6118 + 1.30 + 6.70 + 4.5106; // = 16.12m
             const double stepDistance = 0.1;
             int maxSteps = (int)Math.Ceiling(1.5 * shortestDetourLength / stepDistance);
 
@@ -320,6 +503,25 @@ namespace Vow.Tests
             int[] leak = new int[16];
             long after = GC.GetAllocatedBytesForCurrentThread();
             Assert.Greater(after, before, "new int[16] 應該讓量到的配置量增加");
+            GC.KeepAlive(leak);
+        }
+
+        [Test]
+#if !UNITY_5_3_OR_NEWER
+        // dotnet 下這個前提本來就不成立（計數器正常運作），所以只在 Unity 裡跑。
+        [Ignore("unity only: this test pins down the Unity-Mono premise that the three [Ignore] above rely on")]
+#endif
+        // r1 對抗審查 L3（§6 R7）：上面三個 [Ignore] 的理由是「Unity 的 Mono 上
+        // GC.GetAllocatedBytesForCurrentThread() 恆回 0」，先前沒有任何實測佐證。這條就是那份佐證：
+        // 在 Unity 裡對一次真實配置量測，若計數器哪天被修好、量得到了，這條會紅——提醒把那三個放回來。
+        public void AllocationMeasurement_OnUnityMono_StillReportsZeroForARealAllocation()
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            int[] leak = new int[4096];
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            Assert.AreEqual(before, after,
+                "Unity 的 GC.GetAllocatedBytesForCurrentThread 已經量得到配置了（" + before + " → " + after +
+                "）：GridNavigatorTests 裡三個 [Ignore] 的前提不再成立，請把它們放回 Unity 端執行");
             GC.KeepAlive(leak);
         }
     }

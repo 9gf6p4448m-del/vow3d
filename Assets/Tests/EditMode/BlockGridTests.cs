@@ -47,6 +47,52 @@ namespace Vow.Tests
             Assert.IsFalse(rotated.IsBlocked(42, 35));
         }
 
+        // r1 對抗審查 M1（§6 R6）：撤銷不對稱時計數必須夾在 0 並回報，不得留下「存在但不擋路」的負計數格。
+        // 修復前實跑：+1、−1、−1 之後看起來正常（BlockedCount=0），但下一面**真的牆** +1 上去仍然是
+        // 「不擋路、Version 不翻轉」——壞了不會叫。
+        // §6 R2：界外的目的地要夾進格點再照常解析（夾到最外圈格心，TryWorldToCell 必定成功）。
+        [Test]
+        public void ClampToGrid_BringsOutOfRangePointsBackOntoTheGrid_AndLeavesInsidePointsAlone()
+        {
+            BlockGrid grid = NewGrid(); // 原點 −20、格寬 0.5、80×80 → 格心範圍 [−19.75, 19.75]
+
+            grid.ClampToGrid(0f, 20f, out float x1, out float z1);
+            Assert.AreEqual(0f, x1, 1e-5f);
+            Assert.AreEqual(19.75f, z1, 1e-5f);
+            Assert.IsTrue(grid.TryWorldToCell(x1, z1, out _, out _), "夾完必須落在格點內");
+
+            grid.ClampToGrid(-25f, -1000f, out float x2, out float z2);
+            Assert.AreEqual(-19.75f, x2, 1e-5f);
+            Assert.AreEqual(-19.75f, z2, 1e-5f);
+            Assert.IsTrue(grid.TryWorldToCell(x2, z2, out _, out _));
+
+            grid.ClampToGrid(3.14f, -7.5f, out float x3, out float z3);
+            Assert.AreEqual(3.14f, x3, 1e-5f, "界內的點不得被動到");
+            Assert.AreEqual(-7.5f, z3, 1e-5f, "界內的點不得被動到");
+        }
+
+        [Test]
+        public void StampBox_NegativeReferenceCounts_AreClampedAtZero_AndReported()
+        {
+            BlockGrid grid = NewGrid();
+            const float cx = 0f, cz = 0f, nx = 0f, nz = 1f, halfWidth = 2f, halfThickness = 0.3f, inflate = 0.35f;
+
+            grid.StampBox(cx, cz, nx, nz, halfWidth, halfThickness, inflate, 1);
+            grid.StampBox(cx, cz, nx, nz, halfWidth, halfThickness, inflate, -1);
+            Assert.AreEqual(0, grid.BlockedCount);
+            Assert.AreEqual(0, grid.NegativeStampCount, "到這裡為止都是對稱的，不該記到任何負計數");
+
+            grid.StampBox(cx, cz, nx, nz, halfWidth, halfThickness, inflate, -1); // 多撤了一次
+            Assert.AreEqual(0, grid.BlockedCount);
+            Assert.AreEqual(40, grid.NegativeStampCount, "多撤的那一次應該被夾回 0 並逐格記一筆");
+
+            int versionBefore = grid.Version;
+            grid.StampBox(cx, cz, nx, nz, halfWidth, halfThickness, inflate, 1); // 下一面真的牆
+            Assert.AreEqual(40, grid.BlockedCount, "計數被夾回 0 之後，下一面真的牆必須照樣擋路");
+            Assert.IsTrue(grid.IsBlocked(40, 40), "牆心那格必須是 Blocked");
+            Assert.Greater(grid.Version, versionBefore, "格子翻轉了，Version 必須跟著動（否則整合場不會重建）");
+        }
+
         [Test]
         public void FortyFiveDegreeWall_TangentEndpointsBlocked_PerpendicularOffsetNot()
         {

@@ -199,6 +199,42 @@ MUTATIONS = [
      "                    int after = before + delta;",
      "                    int after = delta > 0 ? before + delta : before;",
      "ReferenceCounting_OverlapRelease_VersionOnlyFlipsOnTransition"),
+
+    # ── r1 對抗審查後的修訂（PHASE2_BATCH2_PLAN.md §6） ──
+    ("G9", "拿掉「有視線就不碰整合場」的快路（R5／審查 H4：每次下指令都跑一次全場 Dijkstra）",
+     LOGIC + "GridNavigator.cs",
+     "                if (_grid.HasLineOfSight(fromX, fromZ, destX, destZ))",
+     "                if (false)",
+     "ResolveGoal_WithLineOfSight_NeverRebuildsTheIntegrationField"),
+    ("G10", "引用計數不夾負（M1：撤銷不對稱後留下「存在但不擋路」的格）", LOGIC + "BlockGrid.cs",
+     "                    if (after < 0)\n                    {\n                        after = 0;\n"
+     "                        _refCount[idx] = 0;\n                        NegativeStampCount++;\n                    }",
+     "",
+     "StampBox_NegativeReferenceCounts_AreClampedAtZero_AndReported"),
+    ("G11", "TryGetNext 允許斜走切角（R7 補的涵蓋缺口：G1 只打 Build 那一份）", LOGIC + "FlowField.cs",
+     "                bool diagonal = NeighborDx[n] != 0 && NeighborDz[n] != 0;\n                if (diagonal)\n"
+     "                {\n                    if (_grid.IsBlocked(cx + NeighborDx[n], cz)) continue;\n"
+     "                    if (_grid.IsBlocked(cx, cz + NeighborDz[n])) continue;\n                }",
+     "                bool diagonal = false;",
+     "TryGetNext_WalksToGoal_WithStrictlyDecreasingCost_NeverEnteringBlockedOrCuttingCorners"),
+    ("G12", "替代點只看離目的地最近、不看英雄在哪（R1／審查 H2：英雄被送到牆的另一側）",
+     LOGIC + "GridNavigator.cs",
+     "                        if (cost > bestCost) continue;\n"
+     "                        if (cost == bestCost && !(distSq < bestDistSq)) continue;",
+     "                        if (!(distSq < bestDistSq)) continue;",
+     "ResolveGoal_SubstitutePoint_PrefersTheSideTheHeroIsAlreadyOn"),
+    ("G13", "goal 格被蓋住仍回 Stuck（M4：呼叫端無聲退回 v0.3.2 頂牆）", LOGIC + "GridNavigator.cs",
+     "            if (_grid.IsBlocked(goalCx, goalCz)) return SteerMode.GoalBlocked;",
+     "            if (_grid.IsBlocked(goalCx, goalCz)) return SteerMode.Stuck;",
+     "Steer_WhenTheResolvedGoalCellGetsCovered_ReportsGoalBlocked_NotStuck"),
+    ("G14", "界外目的地不夾進格點（R2／審查 H3：整趟退回 Phase 1）", LOGIC + "BlockGrid.cs",
+     "            clampedX = Clamp(x, _originX + _cellSize * 0.5f, _originX + (_columns - 0.5f) * _cellSize);",
+     "            clampedX = x;",
+     "ClampToGrid_BringsOutOfRangePointsBackOntoTheGrid_AndLeavesInsidePointsAlone"),
+    ("G15", "拉直路徑退化成逐格前進（R7 鑑別力缺口：45° 鋸齒）", LOGIC + "GridNavigator.cs",
+     "            for (int i = 0; i < _tuning.FollowLookaheadCells; i++)",
+     "            for (int i = 0; i < 1; i++)",
+     "Steer_LookaheadStraightensThePath_WhileLookaheadOneZigzagsPastTheBudget"),
 ]
 
 
