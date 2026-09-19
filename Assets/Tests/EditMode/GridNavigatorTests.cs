@@ -188,12 +188,12 @@ namespace Vow.Tests
             nav.ResolveGoal(startX, startZ, destX, destZ, out float goalX, out float goalZ, out bool substituted);
             Assert.IsFalse(substituted, "目標繞得到，不該被替代");
 
-            // 具體可行路徑（作為最短繞行長度的上界，由上面牆體座標推得）：
-            // (0,-3)→(0,0.5)：清過兩側牆頂（牆頂在 z=0），3.5m
-            // (0,0.5)→(4,0.5)：橫移到右牆外側（右牆最外緣 x=2.65，留 4 當安全邊界），4m
-            // (4,0.5)→(4,-10)：沿外側下降到目標的 z，10.5m
-            // (4,-10)→(0,-10)：橫移回目標，4m
-            const double shortestDetourLength = 3.5 + 4.0 + 10.5 + 4.0; // = 22m
+            // 幾何最短繞行（繞右側；牆體外擴 0.35 後的包圍：右壁 x∈[1.35,2.65]、z∈[-6.35,0.35]；底 x∈[-2.35,2.35]、z∈[-6.65,-5.35]）：
+            // (0,-3)→右壁上外角 (2.65,0.35)：√(2.65²+3.35²)=4.27m
+            // →右壁下外角 (2.65,-6.35)：6.70m
+            // →目標 (0,-10)：√(2.65²+3.65²)=4.51m（此線在 x=2.35 處 z=-6.76，低於底牆外角 -6.65，不碰底牆）
+            // 覆審更正：原先填的是一條留了安全邊界的 22m 可行路徑（上界），會把 1.5 倍上限實質放寬成 2.1 倍。
+            const double shortestDetourLength = 4.27 + 6.70 + 4.51; // = 15.48m
             const double stepDistance = 0.1;
             int maxSteps = (int)Math.Ceiling(1.5 * shortestDetourLength / stepDistance);
 
