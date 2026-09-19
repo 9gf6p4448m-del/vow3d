@@ -242,6 +242,9 @@ namespace Vow.Tests
         // ───────────────────── §6 R6 M3：目的地走不到時不得每輪重建 ─────────────────────
 
         // V2-r：目的地走不到、格點版本不變時，重複 ResolveGoal＋Steer 50 輪，Build 次數在第一輪之後不再增加。
+        // 鑑別力：光是「目的地走不到」還不夠——若英雄對替代點有視線，Steer 會走 Direct 快路、根本不建場，
+        // 那麼「共用一張場來回重建」這個缺陷就不會顯現。所以另外在英雄與替代點之間斜插一面擋視線的牆，
+        // 逼 Steer 真的進 Follow（＝真的會 EnsureBuilt），修復前才會每輪 +2。
         [Test]
         public void ResolveGoalAndSteer_WithAnUnreachableDestination_StopBuildingAfterTheFirstRound()
         {
@@ -250,13 +253,16 @@ namespace Vow.Tests
             grid.StampBox(12f, 10f, 1f, 0f, 3f, 0.3f, 0.35f, 1);
             grid.StampBox(10f, 8f, 0f, 1f, 3f, 0.3f, 0.35f, 1);
             grid.StampBox(10f, 12f, 0f, 1f, 3f, 0.3f, 0.35f, 1);
+            grid.StampBox(5f, 5f, 0.70710678f, 0.70710678f, 4f, 0.3f, 0.35f, 1); // 擋視線用的斜牆（兩端仍繞得過）
 
             GridNavigator nav = new GridNavigator(grid, NewTuning());
             const float fromX = 0f, fromZ = 0f, destX = 10f, destZ = 10f;
 
             nav.ResolveGoal(fromX, fromZ, destX, destZ, out float goalX, out float goalZ, out bool substituted);
-            nav.Steer(fromX, fromZ, goalX, goalZ, out _, out _);
+            SteerMode mode = nav.Steer(fromX, fromZ, goalX, goalZ, out _, out _);
             Assert.IsTrue(substituted, "前置條件：目的地必須是走不到的");
+            Assert.AreEqual(SteerMode.Follow, mode,
+                "前置條件：Steer 必須真的進 Follow（會建場），否則這條測試對「共用一張場」沒有鑑別力");
             int afterFirstRound = nav.BuildCount;
             Assert.Greater(afterFirstRound, 0, "第一輪本來就該建場，否則這條斷言沒有鑑別力");
 
