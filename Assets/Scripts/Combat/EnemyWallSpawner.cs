@@ -34,6 +34,11 @@ namespace Vow.Combat
             _roster = new RuneWallRoster(projectileTuning.EnemyWallAliveCap);
 
             if (_pool == null) return;
+            // r2 對抗審查 MEDIUM-N1：池的物件數（SceneBuilder）與同時存活上限（tuning）是兩個互不相干的常數。
+            // 池不比上限多至少一面時，池滿就找不到空格、FIFO 擠掉最舊那面走不到（r1 CRITICAL-1 會靜默復活）。
+            if (_pool.Length <= projectileTuning.EnemyWallAliveCap)
+                Debug.LogError("EnemyWallSpawner: 敵方牆池只有 " + _pool.Length + " 面，必須比同時存活上限 "
+                               + projectileTuning.EnemyWallAliveCap + " 多至少一面坍塌緩衝，否則池滿時按鈕沒有反應。");
             for (int i = 0; i < _pool.Length; i++)
                 if (_pool[i] != null) _pool[i].Initialize(runeTuning);
         }

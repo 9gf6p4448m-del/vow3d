@@ -844,6 +844,27 @@ namespace Vow.Tests.PlayMode
         // ───────────────────────── V4-o～r：分池、物理、開關、HUD ─────────────────────────
 
         // V4-o：敵方牆不佔玩家名冊。
+        // r2 對抗審查 MEDIUM-N1：池不比同時存活上限多一面時必須大聲報錯（否則 CRITICAL-1 會靜默復活）。
+        [UnityTest]
+        public IEnumerator N1_EnemyWallSpawner_WithAPoolNotLargerThanTheAliveCap_LogsAnError()
+        {
+            yield return Setup(new RuneTuning());
+
+            ProjectileTuning tuning = new ProjectileTuning();
+            RuneWall[] scenePool = _bootstrap.EnemyWalls.Pool;
+            Assert.Greater(scenePool.Length, tuning.EnemyWallAliveCap, "場景的敵方牆池本身就該比上限多一面");
+
+            RuneWall[] tooSmall = new RuneWall[tuning.EnemyWallAliveCap];
+            for (int i = 0; i < tooSmall.Length; i++) tooSmall[i] = scenePool[i];
+
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("EnemyWallSpawner"));
+            _bootstrap.EnemyWalls.Initialize(new RuneTuning(), tuning, _hero.transform, tooSmall);
+            yield return null;
+
+            // 還原成場景原本的池，避免影響同一場景內後續的清理流程
+            _bootstrap.EnemyWalls.Initialize(new RuneTuning(), tuning, _hero.transform, scenePool);
+        }
+
         [UnityTest]
         public IEnumerator V4o_EnemyWalls_DoNotEatThePlayersRosterSeats()
         {

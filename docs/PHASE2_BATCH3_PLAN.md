@@ -213,3 +213,10 @@ Simplicity 例外：
 - M2：新增一條走真實輸入分流的測試——用 `TURRET`／`ENEMY WALL` 鈕矩形內的螢幕座標送觸控（經 `InputRoutingManager`），砲台被打開／生出紅牆，且**沒有**送出移動指令。做不到（asmdef 看不到）就回報，不得加 asmdef 引用。
 - M1：`ZeroAllocationTests` 把 `FindObjectsOfType<RuneWall>()` 換成 `caster.Pool` 在此補授權——批 3 之後前者會把敵方池掃進來；語意不變＝「玩家池的牆」。
 - M6（記錄不修）：牆在子彈已進入牆體之後才啟用時，那一發不被擋也不記穿透——只影響除錯砲台的觀感，寫進驗收指南 §13 已知限制。L2／L3／L5 記錄不修；L4 的 V4-h① 保留並加註解「本半條恆真，鑑別力在②」。
+
+## 8. r2 三態覆審結果（2026-09-20；報告 `vow-toolchain/REVIEW-p2b3-r2.md`，標的 `9194b51`）
+- 三態：真的修好 10／表面修好 1（L4）／沒修到 1（M3）；新 finding：CRITICAL 0／HIGH 0／MEDIUM 3／LOW 5。r1 的 CRITICAL-1、HIGH-1／2／3 四條覆審員各自重做突變／注入實驗，全部紅在行為斷言。凍結判準未被移動（`e5768c4..9194b51` 的測試刪除行 10 行，全在 V6／§7 範圍）。
+- **MEDIUM-N1（已修，主對話）**：`EnemyWallSpawner.Initialize` 在池的物件數 ≤ 同時存活上限時 `Debug.LogError`；測試 `N1_EnemyWallSpawner_WithAPoolNotLargerThanTheAliveCap_LogsAnError`，沒有這段防呆時紅在 `Expected log did not appear`（`vow-toolchain/unity-p2b3-n1-red.xml`）。
+- **r1 M3（記錄不修，r2 指出 §7 漏記）**：`DebugHud.OnGUI` 的 IMGUI 路徑（含護盾數值列）結構上不在 Update／LateUpdate 零配置夾區內；現行實作用 `IntStringCache` 與常數字串、讀碼無每幀配置，但沒有機械防線。除錯 HUD 不進正式版，記入驗收指南 §13 已知限制。
+- **MEDIUM-N3／r1 M1：`ZeroAllocationTests` 的石牆池來源 `FindObjectsOfType<RuneWall>()`→`caster.Pool`——依 `02 §2.1` 例外條款自行修正、事後回報使用者**。原標準錯在哪：該測試把找到的 `RuneWall` 整批當成「玩家池」重新交給 `RuneCaster.Initialize`；批 3 依 §4-6 新增了同為 `RuneWall` 型別的敵方牆池，原寫法會把敵方牆塞進玩家池。為什麼現在才知道：批 3 之前場上只有玩家池一種 `RuneWall`。主對話實測（`9194b51` 只還原這一行）：完整 PlayMode 64／65，該測試紅在「量測期間從未進入 Follow 轉向（實測 0 幀）」＝治具壞掉，與受測實作對錯無關（`vow-toolchain/unity-p2b3-m1probe-play.xml`）。修正後語意不變＝「玩家池的牆」；門檻 `UpdateBytes==0`／`LateUpdateBytes==0`／`Frames>=240`、deadline `20f`、正向對照一字未動。
+- MEDIUM-N2（記錄不修）：零配置窗口裡「等真實授予」的中途閘被 Driver 每幀 `Grant()` 蓋過，只剩結尾 `GrantCount 增量 >= DriverGrants + 1` 在守（覆審實測關掉真實路徑會紅在 61 vs 62）；潛在假警報，覆審 3 次＋主對話 2 次完整 PlayMode 未觀察到波動。LOW-N4～N8 與 L4 的「回傳內部陣列」記錄不修（只為驗收開的三個生產面 `SendScreenTap`／`RefreshColliderCache`／`TargetRegistry` 生產碼零呼叫點；場邊按 ENEMY WALL 會把牆生到場外、不進格點；己方／敵方牆血條同色）。
