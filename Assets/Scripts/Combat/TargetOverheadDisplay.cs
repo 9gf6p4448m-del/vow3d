@@ -31,6 +31,8 @@ namespace Vow.Combat
         private Transform _cameraTransform;
         private MaterialPropertyBlock _block;
         private int _nextText;
+        private bool _wasAlive;
+        private float _lastNormalized = -1f;
 
         private void Awake()
         {
@@ -126,6 +128,18 @@ namespace Vow.Combat
 
         private void LateUpdate()
         {
+            // 血條盯著「存活狀態」與「血量比例」的變化自己補畫（純浮點比較，零配置）。
+            // 兩個既有缺口：① 池化的石牆重新立起來走的是 Configure，不送 OnRevived；
+            // ② 友軍彈道穿透扣的是 RuneWallLogic 的血，不經 ReceiveDamage，也就不送 OnDamaged。
+            bool aliveNow = _target.IsAlive;
+            float normalizedNow = _target.HealthNormalized;
+            if (aliveNow != _wasAlive || normalizedNow != _lastNormalized)
+            {
+                _wasAlive = aliveNow;
+                _lastNormalized = normalizedNow;
+                RefreshBar();
+            }
+
             _root.position = transform.position + new Vector3(0f, _height, 0f);
             if (_cameraTransform != null) _root.rotation = _cameraTransform.rotation; // 永遠正對鏡頭
 

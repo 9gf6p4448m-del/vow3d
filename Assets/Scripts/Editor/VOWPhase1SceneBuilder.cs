@@ -48,16 +48,19 @@ namespace Vow.EditorTools
             BakeStaticNavMesh(ground);
             GameObject arenaBoundary = CreateArenaBoundary(tuning.BodyRadius); // 必須在烘焙之後：邊界牆不得進入 NavMesh
 
-            HeroController hero = CreateHero(tuning, materials.Hero);
+            HeroController hero = CreateHero(tuning, materials.Hero, materials.Bar);
             CreateDummy(new Vector3(0f, 0f, 6f), materials.Dummy, materials.Bar);
             CreateWall("TestWall_A", new Vector3(-7f, 0f, 3f), 0f, materials.Wall, materials.Bar);
             CreateWall("TestWall_B", new Vector3(7f, 0f, 3f), 90f, materials.Wall, materials.Bar);
-            CreateRuneWallPool(tuning.Rune, materials.RuneWall);
+            Transform runeWallPool = CreateRuneWallPool(tuning.Rune, materials.RuneWall, materials.Bar);
+            Transform enemyWallPool = CreateEnemyWallPool(tuning.Rune, materials.EnemyWall, materials.Bar);
+            TestTurret turret = CreateTurretAndBullets(materials.Turret, materials.Bullet);
             RuneGhostPreview runeGhost = CreateRuneGhostPreview(tuning.Rune, materials.RuneGhost);
             NavGridDebugView navGridDebug = CreateNavGridDebugView(materials.NavGrid);
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
-            CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform);
+            CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform,
+                          runeWallPool, enemyWallPool, turret);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -72,6 +75,7 @@ namespace Vow.EditorTools
         private struct Materials
         {
             public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines, RuneWall, RuneGhost, NavGrid;
+            public Material EnemyWall, Turret, Bullet;
         }
 
         private static Materials CreateMaterials()
@@ -91,7 +95,11 @@ namespace Vow.EditorTools
                 HitboxLines = GreyboxAssetFactory.EnsureGlLineMaterial("VOW_HitboxLines"),
                 RuneWall = GreyboxAssetFactory.EnsureLitMaterial("VOW_RuneWall", new Color(0.35f, 0.4f, 0.58f)),
                 RuneGhost = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_RuneGhost", new Color(0.35f, 0.85f, 1f, 0.35f), true, true),
-                NavGrid = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_NavGridDebug", new Color(1f, 0.35f, 0.25f, 0.45f), true, true)
+                NavGrid = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_NavGridDebug", new Color(1f, 0.35f, 0.25f, 0.45f), true, true),
+                // 批 3：敵方牆是紅的（一眼分得出哪面砸得到）、砲台與子彈用高對比色
+                EnemyWall = GreyboxAssetFactory.EnsureLitMaterial("VOW_EnemyWall", new Color(0.72f, 0.18f, 0.16f)),
+                Turret = GreyboxAssetFactory.EnsureLitMaterial("VOW_Turret", new Color(0.3f, 0.65f, 0.9f)),
+                Bullet = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_Bullet", new Color(1f, 0.92f, 0.45f), false, false)
             };
         }
 
@@ -180,7 +188,7 @@ namespace Vow.EditorTools
             AssetDatabase.CreateAsset(surface.navMeshData, NavMeshDataPath);
         }
 
-        private static HeroController CreateHero(HeroTuningAsset tuning, Material placeholderMaterial)
+        private static HeroController CreateHero(HeroTuningAsset tuning, Material placeholderMaterial, Material barMaterial)
         {
             GameObject hero = new GameObject("Hero_Player");
             hero.transform.position = Vector3.zero;
@@ -200,6 +208,11 @@ namespace Vow.EditorTools
             hero.AddComponent<MicroCadenceMover>();
             HeroController controller = hero.AddComponent<HeroController>();
             SetReference(controller, "_tuningAsset", tuning);
+
+            // 批 3：破牆護盾與頭上護盾條。IL2CPP／WebGL 會剔除沒被場景引用的類別，所以一定要真的掛上去。
+            hero.AddComponent<RockShieldBehaviour>();
+            HeroShieldBar shieldBar = hero.AddComponent<HeroShieldBar>();
+            SetReference(shieldBar, "_barMaterial", barMaterial);
 
             HeroRigFactory.HeroRig rig = HeroRigFactory.Build(tuning.Combat.WindupSeconds, placeholderMaterial);
             rig.ModelInstance.transform.SetParent(hero.transform, false);
@@ -248,6 +261,9 @@ namespace Vow.EditorTools
             TestWallTarget target = wall.AddComponent<TestWallTarget>();
             SetFloat(target, "_maxHealth", 300f);
             SetEnum(target, "_faction", (int)Faction.DestructibleWall);
+            // 批 3 §4-2：兩面灰色測試牆視為**中立**牆——砸碎給盾、點得到、子彈擋得下。
+            // 明寫而不是靠欄位初始值：序列化的預設值若哪天變成 0（BlueTeam）會讓它靜默變成「自家牆」。
+            SetEnum(target, "_ownerFaction", (int)Faction.Neutral);
 
             TargetOverheadDisplay overhead = wall.AddComponent<TargetOverheadDisplay>();
             SetReference(overhead, "_barMaterial", barMaterial);
@@ -258,29 +274,97 @@ namespace Vow.EditorTools
         // 只關 Collider／Renderer——RuneWall.Awake 會在建立當下立刻把自己關成「待命」狀態。
         // 執行期禁止 CreatePrimitive（IL2CPP 剔除），這裡是 Editor-only 程式碼，不受此限。
         private const int RuneWallPoolSize = 3;
+        // 3 面＝同時存活上限 2 ＋ 1 面坍塌緩衝（與玩家池同結構）。少了緩衝格，池滿時 FIFO 擠掉最舊
+        // 那面永遠走不到，除錯鈕會變成沒反應（r1 對抗審查 CRITICAL-1）。
+        private const int EnemyWallPoolSize = 3;
 
-        private static void CreateRuneWallPool(RuneTuning runeTuning, Material material)
+        // 批 3 §4-1：石牆**回到 Default 層**。批 1 靠 Ignore Raycast 層讓點擊射線穿過自家牆，代價是
+        // 所有符印石牆都無法被點擊鎖定（全專案唯一的選取路徑就是那條射線），而 GDD §參-2 的
+        // 「近戰砸碎敵方／中立石牆得護盾」需要牆打得到。現在改成「射線照常打到牆，再做陣營校驗、
+        // 己方牆沿射線往後找」（PlayerInputService.OnWorldTap ＋ TapPickLogic）。
+        // 分陣營圖層的做法被否決（要寫 TagManager.asset，且層 2 目前同時住著英雄本體、邊界牆、GRID 疊圖、
+        // 血條四邊形與技能預警，把層 2 加進點擊 mask 會讓這五類全部變成可點）。
+        // 身體阻擋不受影響：HeroLocomotion 的 SphereCast 用 Physics.AllLayers，兩種層都擋得住。
+        private static Transform CreateRuneWallPool(RuneTuning runeTuning, Material material, Material barMaterial)
         {
+            GameObject root = new GameObject("RuneWallPool");
             for (int i = 0; i < RuneWallPoolSize; i++)
+                CreatePooledRuneWall(root.transform, "RuneWall_Pool_" + i, runeTuning, material, barMaterial, Faction.Neutral);
+            return root.transform;
+        }
+
+        // 除錯鈕用的敵方（紅隊）石牆池。獨立於玩家名冊（§4-6）：敵方牆不得佔用玩家的 2 面上限，
+        // 所以兩個池各有一個父物件，Phase1Bootstrap 依父物件分割，不再用 FindObjectsOfType 整批當池。
+        private static Transform CreateEnemyWallPool(RuneTuning runeTuning, Material material, Material barMaterial)
+        {
+            GameObject root = new GameObject("EnemyWallPool");
+            for (int i = 0; i < EnemyWallPoolSize; i++)
+                CreatePooledRuneWall(root.transform, "EnemyWall_Pool_" + i, runeTuning, material, barMaterial, Faction.RedTeam);
+            return root.transform;
+        }
+
+        private static void CreatePooledRuneWall(Transform parent, string objectName, RuneTuning runeTuning,
+                                                 Material material, Material barMaterial, Faction ownerFaction)
+        {
+            GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube); // 自帶 BoxCollider（紅線 5）
+            wall.name = objectName;
+            wall.transform.SetParent(parent, false);
+            wall.transform.position = new Vector3(0f, runeTuning.WallHeight * 0.5f, 0f);
+            wall.transform.localScale = new Vector3(runeTuning.WallWidth, runeTuning.WallHeight, runeTuning.WallThickness);
+            wall.GetComponent<Renderer>().sharedMaterial = material;
+
+            RuneWall runeWall = wall.AddComponent<RuneWall>();
+            SetFloat(runeWall, "_maxHealth", runeTuning.WallMaxHealth);
+            SetEnum(runeWall, "_faction", (int)Faction.DestructibleWall);
+            SetEnum(runeWall, "_ownerFaction", (int)ownerFaction); // RuneWall.Activate 施放時會覆寫成實際擁有者
+
+            // 頭頂血條：砸牆／穿透的進度要看得見（r1 對抗審查 MEDIUM-4／LOW-1；V8-② 靠它量）。
+            // 與木樁、測試牆同一個既有元件，全部物件在 Awake 預熱，戰鬥中零配置。
+            TargetOverheadDisplay overhead = wall.AddComponent<TargetOverheadDisplay>();
+            SetReference(overhead, "_barMaterial", barMaterial);
+            SetFloat(overhead, "_height", runeTuning.WallHeight * 0.5f + 0.4f); // 自牆心起算，落在牆頂上方
+        }
+
+        // 友軍測試砲台（§4-7）：固定在 (−8, 1.0, 6)，開火方向於 Initialize 時朝木樁 (0,1,6) 算出＝+X、距離 8m。
+        // 這條 z=6 的橫向走廊與英雄出生點 (0,0,0)、TestWall_A（z∈[2.7,3.3]）、TestWall_B（x∈[6.7,7.3]）皆不相交，
+        // 所以不改變任何既有測試的幾何。**沒有 Collider**：不擋路、不吃點擊。子彈池預建 4 發（執行期禁止 CreatePrimitive）。
+        private static TestTurret CreateTurretAndBullets(Material turretMaterial, Material bulletMaterial)
+        {
+            ProjectileTuning projectileTuning = new ProjectileTuning();
+
+            GameObject turretObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            turretObject.name = "TestTurret";
+            Object.DestroyImmediate(turretObject.GetComponent<BoxCollider>()); // §3：砲台不給 Collider
+            turretObject.transform.position = new Vector3(-8f, 1f, 6f);
+            turretObject.transform.localScale = new Vector3(0.6f, 0.6f, 1.2f);
+            turretObject.GetComponent<Renderer>().sharedMaterial = turretMaterial;
+            turretObject.layer = IgnoreRaycastLayer; // 沒有 Collider，這裡只是把意圖寫死
+
+            GameObject bulletRoot = new GameObject("BulletPool");
+            Projectile[] pool = new Projectile[projectileTuning.BulletPoolSize];
+            for (int i = 0; i < pool.Length; i++)
             {
-                GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube); // 自帶 BoxCollider（紅線 5）
-                wall.name = "RuneWall_Pool_" + i;
-                wall.transform.position = new Vector3(0f, runeTuning.WallHeight * 0.5f, 0f);
-                wall.transform.localScale = new Vector3(runeTuning.WallWidth, runeTuning.WallHeight, runeTuning.WallThickness);
-                wall.GetComponent<Renderer>().sharedMaterial = material;
+                GameObject bullet = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                bullet.name = "Bullet_" + i;
+                Object.DestroyImmediate(bullet.GetComponent<BoxCollider>()); // 子彈不擋路、不進 NavGrid
+                bullet.transform.SetParent(bulletRoot.transform, false);
+                bullet.transform.localScale = new Vector3(0.22f, 0.22f, 0.5f);
+                bullet.layer = IgnoreRaycastLayer;
 
-                RuneWall runeWall = wall.AddComponent<RuneWall>();
-                SetFloat(runeWall, "_maxHealth", runeTuning.WallMaxHealth);
-                SetEnum(runeWall, "_faction", (int)Faction.DestructibleWall);
+                Renderer bulletRenderer = bullet.GetComponent<Renderer>();
+                bulletRenderer.sharedMaterial = bulletMaterial;
+                bulletRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                bulletRenderer.receiveShadows = false;
+                bulletRenderer.enabled = false;
 
-                // r1 對抗審查 H4：PlayerInputService.OnWorldTap 的點擊射線用 Physics.DefaultRaycastLayers，
-                // 石牆若留在 Default 層，點自家石牆後方的地板會先打到牆、英雄原地砍自己的牆。放 Ignore Raycast 層
-                // 讓點擊射線穿過去；HeroLocomotion.ApplyDisplacement 的身體 SphereCast 用 Physics.AllLayers，
-                // 照樣擋得住（邊界牆已經是同一套做法）。批 1 的代價：**所有**符印石牆都無法被點擊鎖定攻擊（全專案唯一的選取路徑就是那條射線）。
-                // GDD §參-2「近戰砸碎敵方／中立石牆得護盾」需要牆打得到——批 3 不能只加陣營校驗，得把這個圖層做法換成分陣營圖層，
-                // 或讓射線解析到牆之後再做陣營校驗。
-                SetLayerRecursively(wall, IgnoreRaycastLayer);
+                Projectile projectile = bullet.AddComponent<Projectile>();
+                SetReference(projectile, "_visual", bulletRenderer);
+                pool[i] = projectile;
             }
+
+            TestTurret turret = turretObject.AddComponent<TestTurret>();
+            SetObjectArray(turret, "_pool", pool);
+            return turret;
         }
 
         // 拖曳中的半透明虛影：只要 Renderer，沒有 Collider（不得擋路、不得吃射線）。
@@ -344,7 +428,7 @@ namespace Vow.EditorTools
 
         private static void CreateSystems(HeroController hero, Camera camera, FollowCameraRig rig, Transform shakePivot,
             Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug,
-            Transform arenaBoundary)
+            Transform arenaBoundary, Transform runeWallPool, Transform enemyWallPool, TestTurret turret)
         {
             GameObject systems = new GameObject("VOW_Systems");
 
@@ -372,6 +456,7 @@ namespace Vow.EditorTools
 
             RuneCaster runeCaster = systems.AddComponent<RuneCaster>();
             RuneButtonView runeButton = systems.AddComponent<RuneButtonView>();
+            EnemyWallSpawner enemyWalls = systems.AddComponent<EnemyWallSpawner>();
 
             Phase1Bootstrap bootstrap = systems.AddComponent<Phase1Bootstrap>();
             SetReference(bootstrap, "_hero", hero);
@@ -391,6 +476,12 @@ namespace Vow.EditorTools
             SetReference(bootstrap, "_runeButton", runeButton);
             SetReference(bootstrap, "_navGridDebug", navGridDebug);
             SetReference(bootstrap, "_arenaBoundary", arenaBoundary);
+            SetReference(bootstrap, "_runeWallPool", runeWallPool);
+            SetReference(bootstrap, "_enemyWallPool", enemyWallPool);
+            SetReference(bootstrap, "_turret", turret);
+            SetReference(bootstrap, "_enemyWalls", enemyWalls);
+            SetReference(bootstrap, "_shield", hero.GetComponent<RockShieldBehaviour>());
+            SetReference(bootstrap, "_shieldBar", hero.GetComponent<HeroShieldBar>());
         }
 
         // ───────────────────────── 專案設定 ─────────────────────────
@@ -454,6 +545,17 @@ namespace Vow.EditorTools
         {
             SerializedObject serialized = new SerializedObject(target);
             RequireProperty(serialized, propertyName).intValue = enumValue;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        // 物件陣列欄位（砲台的子彈池）。陣列長度與每一格都寫進去，欄位名打錯一樣會丟例外。
+        private static void SetObjectArray(Object target, string propertyName, Object[] values)
+        {
+            SerializedObject serialized = new SerializedObject(target);
+            SerializedProperty property = RequireProperty(serialized, propertyName);
+            property.arraySize = values.Length;
+            for (int i = 0; i < values.Length; i++)
+                property.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 

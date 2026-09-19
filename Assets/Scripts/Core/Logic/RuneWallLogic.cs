@@ -18,6 +18,11 @@ namespace Vow.Core.Logic
         public int PenetrationCount { get; private set; }
         public int MaxPenetrations => _tuning.MaxPenetrations;
 
+        // 批 3 §2：供彈道分派查詢「這面牆還放不放行」。純唯讀，不改 TryPenetrate 的算式。
+        // 注意（§4-4④）：在任何射速下都到不了 10 發——壽命成本（10×0.5s＝整條壽命）永遠先歸零，
+        // 所以這個旗標在遊戲內恆為 false，不得拿它寫驗收條文。
+        public bool IsPenetrationExhausted => PenetrationCount >= _tuning.MaxPenetrations;
+
         public void Activate()
         {
             MaxHealth = _tuning.WallMaxHealth;

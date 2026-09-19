@@ -9,21 +9,34 @@ namespace Vow.Combat
     //
     // Phase 2 批 2 另外提供「0.5m 阻擋格點的登記／撤銷」給石牆用（RuneWall 與 TestWallTarget 都繼承本類別）。
     // 刻意做成呼叫端自己開口的 opt-in：木樁（DummyTarget）不進格點（計畫書 §3）。
-    public abstract class CombatTargetBehaviour : MonoBehaviour, ICombatTarget
+    public abstract class CombatTargetBehaviour : MonoBehaviour, ICombatTarget, IFactionOwned
     {
         [SerializeField] private float _maxHealth = 600f;
         [SerializeField] private Faction _faction = Faction.RedTeam;
 
+        // Phase 2 批 3：石牆為獨立陣營（DestructibleWall），TargetFaction 答不出「這是誰的牆」。
+        // 預設 Neutral＝場上兩面灰色測試牆的身分（使用者裁定 3）；符印牆由 RuneWall.Activate 寫入實際擁有者。
+        [SerializeField] private Faction _ownerFaction = Faction.Neutral;
+
         private Transform _cachedTransform;
         private Collider[] _colliders;
         private float _health;
+        private bool _deathAnnounced;   // 一次生命只宣告一次死亡（OnDied／HandleDeath）
 
         public Transform TargetTransform => _cachedTransform;
-        public bool IsAlive => _health > 0f;
+        public bool IsAlive => ReadHealth() > 0f;
         public Faction TargetFaction => _faction;
-        public float MaxHealth => _maxHealth;
-        public float Health => _health;
-        public float HealthNormalized => _maxHealth > 0f ? Mathf.Clamp01(_health / _maxHealth) : 0f;
+        public Faction OwnerFaction => _ownerFaction;
+        public float MaxHealth => ReadMaxHealth();
+        public float Health => ReadHealth();
+        public float HealthNormalized
+        {
+            get
+            {
+                float max = ReadMaxHealth();
+                return max > 0f ? Mathf.Clamp01(ReadHealth() / max) : 0f;
+            }
+        }
 
         public Collider[] TargetColliders
         {
@@ -34,6 +47,13 @@ namespace Vow.Combat
             }
         }
 
+        // 這個目標的 Collider 組成改變之後重新快取（例如驗收替一面牆加上第二個 BoxCollider）。
+        // 呼叫端要自己把目標從 ColliderTargetRegistry 撤銷再重新登記，查表才會跟著更新。
+        public void RefreshColliderCache()
+        {
+            _colliders = GetComponentsInChildren<Collider>(true);
+        }
+
         public event Action<float> OnDamaged;   // 實際扣除的傷害量
         public event Action OnDied;
         public event Action OnRevived;
@@ -41,14 +61,19 @@ namespace Vow.Combat
         protected virtual void Awake()
         {
             _cachedTransform = transform;
-            _health = _maxHealth;
+            BeginNewLife(_maxHealth);
         }
 
         public void Configure(float maxHealth, Faction faction)
         {
-            _maxHealth = maxHealth;
             _faction = faction;
-            _health = maxHealth;
+            BeginNewLife(maxHealth);
+        }
+
+        // 供 RuneWall.Activate 寫入實際擁有者（除錯鈕生的牆＝RedTeam，玩家施放的＝英雄陣營）。
+        protected void SetOwnerFaction(Faction owner)
+        {
+            _ownerFaction = owner;
         }
 
         // 石牆（DestructibleWall）與中立目標任何陣營都可以打；其餘不得攻擊同陣營。
@@ -62,25 +87,62 @@ namespace Vow.Combat
         {
             if (!IsAlive || amount <= 0f) return;
 
-            float applied = Mathf.Min(amount, _health);
-            _health -= applied;
+            float applied = ConsumeDamage(amount);
             OnDamaged?.Invoke(applied);
 
-            if (_health <= 0f)
-            {
-                _health = 0f;
-                OnDied?.Invoke();
-                HandleDeath();
-            }
+            if (ReadHealth() <= 0f) NotifyDeath();
         }
 
         protected void Revive()
         {
-            _health = _maxHealth;
+            BeginNewLife(ReadMaxHealth());
             OnRevived?.Invoke();
         }
 
         protected abstract void HandleDeath();
+
+        // ───────────────────── Phase 2 批 3：血量存取的單一收斂點 ─────────────────────
+        // 石牆原本有兩本帳：這個類別的 _health，與 RuneWallLogic 自己的 Health（穿透只扣後者、近戰只扣前者）。
+        // 把讀寫全部收斂成這四個鉤子之後，RuneWall 覆寫它們轉給 _logic，石牆血量的寫入點就從 9 個
+        // 收斂成 RuneWallLogic 內部那 4 個（分母歸一，不是靠測試涵蓋）。木樁與測試牆走的是下面的預設實作，逐行等價。
+
+        protected virtual float ReadHealth() { return _health; }
+
+        protected virtual float ReadMaxHealth() { return _maxHealth; }
+
+        // 回傳實際扣掉的量（飄字與血條讀的是這個值）。
+        protected virtual float ConsumeDamage(float amount)
+        {
+            float applied = Mathf.Min(amount, _health);
+            _health -= applied;
+            if (_health < 0f) _health = 0f;
+            return applied;
+        }
+
+        protected virtual void ResetHealth(float maxHealth)
+        {
+            _maxHealth = maxHealth;
+            _health = maxHealth;
+        }
+
+        // 死亡宣告的唯一入口：壽命到期、被打爆、穿透耗死、名冊擠掉全部收斂到這裡，
+        // 一次生命只宣告一次。旗標由 BeginNewLife 重置。
+        protected void NotifyDeath()
+        {
+            if (_deathAnnounced) return;
+            _deathAnnounced = true;
+            OnDied?.Invoke();
+            HandleDeath();
+        }
+
+        // 旗標的重置刻意放在這個「非虛擬」的包裝裡，不放進 ResetHealth：
+        // RuneWall 把 ResetHealth 覆寫成 no-op（它的血量在 _logic 裡），旗標若跟著 ResetHealth
+        // 就永遠不會被清掉，池裡再取用的牆第二條命就再也宣告不了死亡。
+        private void BeginNewLife(float maxHealth)
+        {
+            _deathAnnounced = false;
+            ResetHealth(maxHealth);
+        }
 
         // ───────────────────── Phase 2 批 2：阻擋格點登記 ─────────────────────
         // 登記時把當下用的七個參數（中心 x/z、法線 x/z、半寬、半厚、外擴量）存起來，撤銷時用同一組，
