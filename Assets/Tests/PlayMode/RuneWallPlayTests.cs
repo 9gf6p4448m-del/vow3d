@@ -144,6 +144,8 @@ namespace Vow.Tests.PlayMode
             yield return null;
             RuneWall wall = FirstAlive(_pool);
             Assert.IsNotNull(wall, "石牆未成形，阻擋測試沒有意義");
+            // §6 R2：這條守的是「牆的碰撞體擋得住身體」，不是「英雄不會繞路」——批 2 之後英雄本來就該繞過去。
+            _hero.GetComponent<HeroLocomotion>().SetNavigator(null, 0f);
             float wallFaceZ = wall.transform.position.z - tuning.WallThickness * 0.5f - HeroBodyRadius + BodySkinTolerance;
 
             _input.TapGround(new Vector3(0f, 0f, 20f));
@@ -296,6 +298,8 @@ namespace Vow.Tests.PlayMode
             Assert.IsNull(hitWall, "OnWorldTap 的射線不得打中自家石牆：" + raycastHit.collider.name);
 
             float wallFaceZ = wall.transform.position.z - tuning.WallThickness * 0.5f - HeroBodyRadius + BodySkinTolerance;
+            // §6 R2：同上——這條守的是射線穿得過去＋碰撞體擋得住身體，繞牆與否不在它的射程內。
+            _hero.GetComponent<HeroLocomotion>().SetNavigator(null, 0f);
             _input.TapGround(new Vector3(0f, 0f, 20f));
 
             float deadline = Time.time + 3f;

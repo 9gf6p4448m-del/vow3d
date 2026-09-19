@@ -30,6 +30,10 @@ namespace Vow.Bootstrap
         // 目前畫出來的四邊形數；接上格點且已重填時應等於 BlockGrid.BlockedCount。
         public int QuadCount { get; private set; }
 
+        // 累計重填次數（唯讀）。r1 對抗審查 M2：「疊圖重填也不配置」原本只是讀碼的宣稱，
+        // 沒有任何量測——PlayMode 的 Profiler 探針靠這個計數證明量測窗口內真的發生過重填。
+        public int RebuildCount { get; private set; }
+
         public bool Visible
         {
             get { return _renderer != null && _renderer.enabled; }
@@ -73,6 +77,7 @@ namespace Vow.Bootstrap
             _filter.sharedMesh = _mesh;
             _builtVersion = -1;
             QuadCount = 0;
+            RebuildCount = 0;
         }
 
         // LateUpdate 而非 Update：這一幀所有牆的登記／撤銷都跑完了才重填，不會畫到半套的格點。
@@ -87,6 +92,7 @@ namespace Vow.Bootstrap
         private void Rebuild()
         {
             _builtVersion = _grid.Version;
+            RebuildCount++;
 
             int quads = 0;
             for (int cz = 0; cz < _grid.Rows; cz++)

@@ -31,6 +31,7 @@ namespace Vow.Bootstrap
         [SerializeField] private RuneGhostPreview _runeGhost;
         [SerializeField] private RuneButtonView _runeButton;
         [SerializeField] private NavGridDebugView _navGridDebug;
+        [SerializeField] private Transform _arenaBoundary;
 
         private readonly ColliderTargetRegistry _targets = new ColliderTargetRegistry();
 
@@ -39,7 +40,7 @@ namespace Vow.Bootstrap
         private BlockGrid _navGrid;
         private GridNavigator _navigator;
         private HeroLocomotion _heroLocomotion;
-        private RuneWall[] _navRuneWalls;
+        private System.Action<CombatTargetBehaviour> _navStampedHandler; // 只建一次，執行期零配置
 
         public BlockGrid NavGrid => _navGrid;
         public GridNavigator Navigator => _navigator;
@@ -122,11 +123,6 @@ namespace Vow.Bootstrap
         private void OnDestroy()
         {
             if (_hero != null && _feedback != null) _hero.StateMachine.OnStateChanged -= HandleHeroStateChanged;
-            if (_navRuneWalls != null)
-            {
-                for (int i = 0; i < _navRuneWalls.Length; i++)
-                    if (_navRuneWalls[i] != null) _navRuneWalls[i].OnActivated -= HandleRuneWallActivated;
-            }
         }
 
         // ───────────────────── Phase 2 批 2：阻擋格點的組裝 ─────────────────────
@@ -138,39 +134,51 @@ namespace Vow.Bootstrap
             _navGrid = new BlockGrid(_navTuning.OriginX, _navTuning.OriginZ, _navTuning.CellSize,
                                      _navTuning.Columns, _navTuning.Rows);
             _navigator = new GridNavigator(_navGrid, _navTuning);
+            RegisterArenaBoundary();
 
             _heroLocomotion = _hero.GetComponent<HeroLocomotion>();
             if (_heroLocomotion != null) _heroLocomotion.SetNavigator(_navigator, _navTuning.BodyRadius);
 
-            int runeWallCount = 0;
-            for (int i = 0; i < targets.Length; i++) if (targets[i] is RuneWall) runeWallCount++;
-            _navRuneWalls = new RuneWall[runeWallCount];
-
-            int next = 0;
+            _navStampedHandler = HandleNavBlockerStamped;
             for (int i = 0; i < targets.Length; i++)
             {
-                if (targets[i] is RuneWall runeWall)
-                {
-                    runeWall.SetNavGrid(_navGrid, _navTuning.BodyRadius);
-                    runeWall.OnActivated -= HandleRuneWallActivated; // 場景重載後重複接線的防呆
-                    runeWall.OnActivated += HandleRuneWallActivated;
-                    _navRuneWalls[next++] = runeWall;
-                }
-                else if (targets[i] is TestWallTarget testWall)
-                {
-                    testWall.SetNavGrid(_navGrid, _navTuning.BodyRadius);
-                }
+                if (targets[i] is RuneWall runeWall) runeWall.SetNavGrid(_navGrid, _navTuning.BodyRadius, _navStampedHandler);
+                else if (targets[i] is TestWallTarget testWall) testWall.SetNavGrid(_navGrid, _navTuning.BodyRadius, _navStampedHandler);
             }
 
             if (_navGridDebug != null) _navGridDebug.Initialize(_navGrid);
         }
 
-        // 石牆立起來（且已登記進格點）時：壓到英雄就把他推到最近的空格（使用者裁定 3）。牆照立，不取消施法。
-        private void HandleRuneWallActivated(RuneWall wall)
+        // r1 對抗審查 H1（§6 R3）：格點最外一圈是「自由但英雄到不了」的地方——向量場會把英雄導進去、
+        // 讓他頂在看不見的邊界上不動。把場地四面隱形邊界牆本身也登記進格點（外擴一個 BodyRadius），
+        // 不變量就成立：每一個非 Blocked 格的格心都落在「邊界牆內面 − BodyRadius」以內。
+        // 尺寸一律讀場景裡實際的 BoxCollider（不寫死 19.45）——日後改 BodyRadius 重建場景，關係仍然成立。
+        private void RegisterArenaBoundary()
         {
-            if (_heroLocomotion == null || wall == null) return;
-            if (!wall.TryGetNavBlockerBox(out float centerX, out float centerZ, out float normalX, out float normalZ,
-                                          out float halfWidth, out float halfThickness))
+            if (_arenaBoundary == null) return;
+
+            BoxCollider[] boxes = _arenaBoundary.GetComponentsInChildren<BoxCollider>();
+            for (int i = 0; i < boxes.Length; i++)
+            {
+                BoxCollider box = boxes[i];
+                Transform boxTransform = box.transform;
+                Vector3 center = boxTransform.TransformPoint(box.center);
+                Vector3 scale = boxTransform.lossyScale;
+                Vector3 forward = boxTransform.forward; // 立方體的 +Z＝厚度軸，與 RegisterNavBlocker 同一組慣例
+                _navGrid.StampBox(center.x, center.z, forward.x, forward.z,
+                                  Mathf.Abs(box.size.x * scale.x) * 0.5f,
+                                  Mathf.Abs(box.size.z * scale.z) * 0.5f,
+                                  _navTuning.BodyRadius, 1);
+            }
+        }
+
+        // 任何阻擋物蓋上格點（符印牆立起、測試牆重生、物件重新啟用）時：壓到英雄就把他推到最近的空格
+        // （使用者裁定 3）。牆照立，不取消施法。§6 R4：掛在「登記」這個單一入口，不是只掛符印牆的事件。
+        private void HandleNavBlockerStamped(CombatTargetBehaviour blocker)
+        {
+            if (_heroLocomotion == null || blocker == null) return;
+            if (!blocker.TryGetNavBlockerBox(out float centerX, out float centerZ, out float normalX, out float normalZ,
+                                             out float halfWidth, out float halfThickness))
                 return;
             _heroLocomotion.EjectFromBox(centerX, centerZ, normalX, normalZ, halfWidth, halfThickness);
         }
@@ -209,6 +217,11 @@ namespace Vow.Bootstrap
             if (_runeGhost == null) _runeGhost = FindObjectOfType<RuneGhostPreview>();
             if (_runeButton == null) _runeButton = FindObjectOfType<RuneButtonView>();
             if (_navGridDebug == null) _navGridDebug = FindObjectOfType<NavGridDebugView>();
+            if (_arenaBoundary == null)
+            {
+                GameObject boundary = GameObject.Find("ArenaBoundary");
+                if (boundary != null) _arenaBoundary = boundary.transform;
+            }
             // _tuningAsset 是 ScriptableObject 資產、不在場景裡，手動拼場景時沒有 FindObjectOfType 後備，
             // 缺了它符印相關的三個 Initialize 呼叫會被 Start() 的 null 檢查略過（英雄本體不受影響）。
         }

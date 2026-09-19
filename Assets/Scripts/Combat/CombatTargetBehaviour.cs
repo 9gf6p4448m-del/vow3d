@@ -91,6 +91,7 @@ namespace Vow.Combat
         private bool _navStamped;   // 這組參數目前有沒有蓋在格點上
         private bool _navWanted;    // 邏輯上這面牆現在該不該擋路（物件暫時停用時仍為 true）
         private float _navCenterX, _navCenterZ, _navNormalX, _navNormalZ, _navHalfWidth, _navHalfThickness;
+        private Action<CombatTargetBehaviour> _navStamped1Handler; // 蓋上格子之後要通知誰（推出被壓住的英雄）
 
         // 這面牆目前有沒有真的蓋在格點上（測試用）。
         public bool NavBlockerStamped => _navStamped;
@@ -98,9 +99,16 @@ namespace Vow.Combat
         // 由 Phase1Bootstrap 注入。換格點前先把舊格點上的登記撤乾淨。
         public void SetNavGrid(BlockGrid grid, float inflateRadius)
         {
+            SetNavGrid(grid, inflateRadius, null);
+        }
+
+        // stampedHandler：任何一格被蓋上（登記、物件重新啟用、換格點）之後呼叫一次。
+        public void SetNavGrid(BlockGrid grid, float inflateRadius, Action<CombatTargetBehaviour> stampedHandler)
+        {
             if (_navStamped) Stamp(-1);
             _navGrid = grid;
             _navInflate = inflateRadius;
+            _navStamped1Handler = stampedHandler;
             if (_navWanted) Stamp(1);
         }
 
@@ -157,12 +165,17 @@ namespace Vow.Combat
             if (_navWanted && !_navStamped) Stamp(1);
         }
 
+        // r1 對抗審查 C1（§6 R4）：推出要按「危險的效果」寫，不按「已知的入口」寫。
+        // 危險的效果是「英雄與一面正在擋路的牆重疊」，能造成它的入口有三個——RegisterNavBlocker（符印牆立起、
+        // 測試牆重生）、OnEnable（物件重新啟用）、SetNavGrid（換格點）——它們全部收斂在這一個 Stamp(+1) 上，
+        // 所以通知掛在這裡，不掛在 RuneWall.OnActivated 那唯一一個入口（修復前只補了實務上踩不到的那條）。
         private void Stamp(int delta)
         {
             if (_navGrid == null) return;
             _navGrid.StampBox(_navCenterX, _navCenterZ, _navNormalX, _navNormalZ,
                               _navHalfWidth, _navHalfThickness, _navInflate, delta);
             _navStamped = delta > 0;
+            if (_navStamped && _navStamped1Handler != null) _navStamped1Handler(this);
         }
     }
 }

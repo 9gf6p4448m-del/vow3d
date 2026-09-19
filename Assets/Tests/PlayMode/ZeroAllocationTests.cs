@@ -5,6 +5,7 @@ using Unity.Profiling;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
+using Vow.Bootstrap;
 using Vow.Combat;
 using Vow.Combat.Feedback;
 using Vow.Core;
@@ -258,6 +259,17 @@ namespace Vow.Tests.PlayMode
             // 重新 Initialize：重置冷卻與名冊狀態，確保量測窗口內的施放不會被暖機那一次的冷卻擋下
             caster.Initialize(input, input, hero.transform, Camera.main, new RuneTuning(), runeWalls, hero.HeroFaction);
 
+            // r1 對抗審查 M2：「GRID 疊圖重填也不配置」原本只是讀碼的宣稱。把疊圖打開，讓量測窗口內
+            // 至少發生兩次重填（立牆 → Blocked 格變多、牆到期 → 變少）。先在窗口外暖機一次，
+            // 把 Mesh 原生緩衝第一次配置的成本排除在外。
+            NavGridDebugView gridDebug = UnityEngine.Object.FindObjectOfType<NavGridDebugView>();
+            Assert.IsNotNull(gridDebug, "場景缺少 NavGridDebugView");
+            gridDebug.Visible = true;
+            yield return null;
+            yield return null;
+            Assert.GreaterOrEqual(gridDebug.RebuildCount, 1, "疊圖打開後應該至少重填過一次（暖機）");
+            int rebuildsBefore = gridDebug.RebuildCount;
+
             int hitsBefore = hits, dashesBefore = dashes;
             AllocationProbe.Measuring = true;
 
@@ -298,6 +310,9 @@ namespace Vow.Tests.PlayMode
                 if (Time.time > deadline) break;
                 yield return null;
             }
+            // 再放一幀：石牆是在 Update 裡到期的，它造成的格點撤銷與 GRID 疊圖重填發生在同一幀的
+            // LateUpdate——比測試協程晚。不多等這一幀，「牆到期」那一段就落在量測窗口之外。
+            yield return null;
             AllocationProbe.Measuring = false;
             UnityEngine.Object.Destroy(rig);
 
@@ -311,6 +326,10 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(1, detourDriver.Orders, "量測窗口內應該恰好送出一次繞牆移動指令（在探針夾區內的 Update() 裡）");
             Assert.GreaterOrEqual(followFrames, 10,
                 "量測期間從未進入 Follow 轉向：整合場重建與繞牆轉向這條路徑沒有被量到（實測 " + followFrames + " 幀）");
+            Assert.IsTrue(gridDebug.Visible, "量測期間 GRID 疊圖應保持開啟");
+            Assert.GreaterOrEqual(gridDebug.RebuildCount - rebuildsBefore, 2,
+                "量測期間 GRID 疊圖沒有重填過兩次（立牆＋到期）：M2 那條零配置沒有被量到（實測 "
+                + (gridDebug.RebuildCount - rebuildsBefore) + " 次）");
 
             Assert.AreEqual(0L, AllocationProbe.UpdateBytes,
                 "Update 夾區在 " + AllocationProbe.Frames + " 幀內配置了 " + AllocationProbe.UpdateBytes + " bytes");

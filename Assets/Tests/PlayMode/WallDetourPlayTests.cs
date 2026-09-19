@@ -252,36 +252,55 @@ namespace Vow.Tests.PlayMode
         // ───────────────────────────── V4 c ─────────────────────────────
 
         // V4-c 點牆腳：目的地＝牆心正下方的地板（牆在 Ignore Raycast 層，射線打到牆底下的地板，§4 假設 7）。
-        // 目的地格 (x=0,z=4) 是 Blocked → 退到「英雄連通區內離目的地最近的空格格心」。
-        //   格點 0.5m／原點 −20：外擴後的牆佔 x 格 35~44（x∈[−2.5,2.5]）、z 格 46~49（z∈[3.0,5.0]）；
-        //   最近的空格格心＝(−0.25, 2.75)（同距離時取索引較小者，所以是 cx=39 不是 cx=40）。
-        // 幾何最短繞行長度＝直線 (0,0)→(−0.25,2.75) ＝ √(0.0625 + 7.5625) = 2.76134 m
-        //   → T = 1.5 × 2.76134 ÷ 5.5 = 0.75309 s
-        // 停點容差＝牆半厚 0.3 ＋ 外擴 0.35 ＋ 一格對角線 0.5√2 = 1.35711 m
+        // 目的地格 (x=0,z=4) 是 Blocked → 退到「最近可達點」。
+        //   §6 R1 改了這個點的定義（審查 H2：舊定義只看「離目的地最近」，會把英雄送到牆的另一側）：
+        //   dMin＝連通區內格心到目的地的最小歐氏距離（南北兩側都是 1.27475）；候選＝距離 ≤ dMin＋一格對角線
+        //   （1.27475＋0.70711 = 1.98186）的格；候選中取「從英雄出發的路徑成本最低」者。
+        //   英雄在 (0,0)：候選裡成本最低的是格 (40,44)＝格心 (0.25, 2.25)（4 步直走，成本 40；
+        //   同排其餘候選 ≥44，z=2.75 那排 ≥50）。這是本測試唯一會被接受的停點。
+        // 幾何最短繞行長度＝直線 (0,0)→(0.25,2.25) ＝ √(0.0625 + 5.0625) = 2.26385 m
+        //   → T = 1.5 × 2.26385 ÷ 5.5 = 0.61741 s
+        // 停點容差＝牆半厚 0.3 ＋ 外擴 0.35 ＋ **兩**格對角線 2×0.5√2 = 2.06421 m
+        //   （R1 允許候選點比 dMin 再遠一格對角線，§6 明寫本節優先於 §5 的舊公式；
+        //    真正守住「有沒有停對地方」的是下面那兩條格心座標斷言，比容差嚴格得多。）
         [UnityTest]
         public IEnumerator V4c_TappingTheWallFoot_StopsAtTheNearestReachablePoint()
         {
             yield return Setup(Vector3.zero, Quaternion.identity, new RuneTuning());
             yield return QuickCastWall(new Vector2(0f, 4f), new Vector2(0f, 1f));
 
+            Vector3 heroStart = _hero.transform.position;
             Vector3 destination = new Vector3(_castObb.Center.x, 0f, _castObb.Center.y); // 牆腳
-            float limit = 1.5f * 2.76134f / MoveSpeed;
+            float limit = 1.5f * 2.26385f / MoveSpeed;
 
             _input.TapGround(destination);
+            yield return null; // L5：剛下指令的那一幀 _hasOrder 還是 false，HasArrived 會假性回 true
+            yield return null;
+
             float deadline = Time.time + limit;
+            bool sawMoving = false;
             while (Time.time <= deadline)
             {
+                if (_hero.StateMachine.CurrentState == PlayerState.Moving) sawMoving = true;
                 if (_hero.StateMachine.CurrentState == PlayerState.Idle && _locomotion.HasArrived) break;
                 yield return null;
             }
 
+            Assert.IsTrue(sawMoving, "英雄從頭到尾沒有進入 Moving：這個測試沒有測到任何移動");
             Assert.IsTrue(_locomotion.HasArrived, "T=" + limit + "s 內 HasArrived 仍為 false：英雄還在頂牆或發呆");
             Assert.AreEqual(PlayerState.Idle, _hero.StateMachine.CurrentState, "狀態機沒有回到 Idle");
             yield return AssertHeroHasStopped();
 
-            float stopTolerance = 0.3f + 0.35f + 0.5f * Mathf.Sqrt(2f);
-            Assert.LessOrEqual(PlanarDistance(_hero.transform.position, destination), stopTolerance,
-                "停點離牆腳太遠：" + _hero.transform.position + "（上限 " + stopTolerance + "m）");
+            Vector3 stop = _hero.transform.position;
+            float stopTolerance = 0.3f + 0.35f + 2f * 0.5f * Mathf.Sqrt(2f);
+            Assert.LessOrEqual(PlanarDistance(stop, destination), stopTolerance,
+                "停點離牆腳太遠：" + stop + "（上限 " + stopTolerance + "m）");
+
+            // §6 R1 新增：停點必須與英雄起點在牆的同一側（禁區 z∈[3.35,4.65]）
+            Assert.Less(stop.z, 3.35f, "停點跑到牆的另一側去了：" + stop);
+            Assert.AreEqual(0.25f, stop.x, ArriveTolerance, "停點不是 R1 定義的那一格格心 x：" + stop);
+            Assert.AreEqual(2.25f, stop.z, ArriveTolerance, "停點不是 R1 定義的那一格格心 z：" + stop);
+            Assert.Less(heroStart.z, 3.35f, "前置條件：英雄起點本來就在牆的南側");
         }
 
         // ───────────────────────────── V4 d ─────────────────────────────
@@ -290,10 +309,14 @@ namespace Vow.Tests.PlayMode
         // 牆心 (18,18)、法線 (0.7071,0.7071)：英雄站在 (18,18) − 4×(0.7071,0.7071) = (15.1716,15.1716) 極速施放即得。
         //   外擴後的 OBB 兩個外角落在 (20.121,16.798) 與 (16.798,20.121)——都在格點 (±20) 之外，
         //   所以這面牆連同「界外一律 Blocked」把角落封死；實體上牆端到邊界牆內面只剩 0.174m，體半徑 0.35 也鑽不過去。
-        // 解析後的替代點＝英雄連通區內離 (19,19) 最近的空格格心 (17.25,17.25)
-        //   （格心在對角線上，x+z=34.5，落在外擴內面 x+z=35.081 之外；再往角落走的格子都被蓋到）。
-        // 幾何最短繞行長度＝直線 (15.1716,15.1716)→(17.25,17.25) ＝ √2 × 2.07843 = 2.93935 m
-        //   → T = 1.5 × 2.93935 ÷ 5.5 = 0.80164 s
+        // 解析後的替代點（§6 R1 的新定義）＝候選帶內「從英雄出發路徑成本最低」的那一格：
+        //   dMin＝2.47487（格心 (17.25,17.25)，x+z=34.5 是還沒被外擴蓋到的最後一排）；
+        //   候選＝距離 ≤ 2.47487＋0.70711 = 3.18198 的格；
+        //   英雄格 (70,70)＝格心 (15.25,15.25)。候選中 (16.75,16.75)（格 (73,73)）只要 3 個斜步＝成本 42，
+        //   比 (17.25,17.25) 的 4 個斜步 56、(17.25,16.75)／(16.75,17.25) 的 52 都低，所以替代點是 (16.75,16.75)。
+        //   （它的距離 3.18198 恰好等於候選上限，靠 GridNavigator 的 0.1mm 容差決定性地含進來。）
+        // 幾何最短繞行長度＝直線 (15.1716,15.1716)→(16.75,16.75) ＝ √2 × 1.5784 = 2.23223 m
+        //   → T = 1.5 × 2.23223 ÷ 5.5 = 0.60879 s
         // 「三角形」＝被牆切下來的角落區，以牆的中心平面 x+z = 36 為界。
         [UnityTest]
         public IEnumerator V4d_WallSealingTheCorner_StopsOutside_AndNeverEntersTheTriangle()
@@ -303,20 +326,26 @@ namespace Vow.Tests.PlayMode
             yield return QuickCastWall(new Vector2(18f, 18f), new Vector2(0.70710678f, 0.70710678f));
 
             Vector3 destination = new Vector3(19f, 0f, 19f);
-            float limit = 1.5f * 2.93935f / MoveSpeed;
+            float limit = 1.5f * 2.23223f / MoveSpeed;
 
             _input.TapGround(destination);
+            yield return null; // L5：剛下指令那一幀 _hasOrder 仍為 false，HasArrived 會假性回 true
+            yield return null;
+
             float deadline = Time.time + limit;
+            bool sawMoving = false;
             while (Time.time <= deadline)
             {
                 Vector3 p = _hero.transform.position;
                 Assert.Less(p.x + p.z, 36f, "英雄進入了被封死的三角形：" + p);
                 Assert.GreaterOrEqual(DistanceToObb(p, _castObb), BodyRadius - WallPenetrationTolerance,
                     "英雄穿進了 45° 牆：" + p);
+                if (_hero.StateMachine.CurrentState == PlayerState.Moving) sawMoving = true;
                 if (_hero.StateMachine.CurrentState == PlayerState.Idle && _locomotion.HasArrived) break;
                 yield return null;
             }
 
+            Assert.IsTrue(sawMoving, "英雄從頭到尾沒有進入 Moving：這個測試沒有測到任何移動");
             Assert.IsTrue(_locomotion.HasArrived, "T=" + limit + "s 內 HasArrived 仍為 false");
             Assert.AreEqual(PlayerState.Idle, _hero.StateMachine.CurrentState, "狀態機沒有回到 Idle");
             yield return AssertHeroHasStopped();
@@ -327,11 +356,11 @@ namespace Vow.Tests.PlayMode
 
         // ───────────────────────────── V4 e ─────────────────────────────
 
-        // V4-e 牆消失後重新解析：英雄正走向替代點（V4-c 的 (−0.25,2.75)）時把牆收掉 → 最終抵達**原始**目的地 (0,4)。
+        // V4-e 牆消失後重新解析：英雄正走向替代點（V4-c 的 (0.25,2.25)）時把牆收掉 → 最終抵達**原始**目的地 (0,4)。
         // 最長的合法路線＝先走完整段替代路徑、再從替代點走到原目的地：
-        //   ① (0,0)→(−0.25,2.75)   = 2.76134
-        //   ② (−0.25,2.75)→(0,4)   = √(0.0625 + 1.5625) = 1.27475
-        //   合計 L = 4.03609 m  →  T = 1.5 × 4.03609 ÷ 5.5 = 1.10075 s（從下指令那一刻起算）
+        //   ① (0,0)→(0.25,2.25)   = √(0.0625 + 5.0625) = 2.26385
+        //   ② (0.25,2.25)→(0,4)   = √(0.0625 + 3.0625) = 1.76777
+        //   合計 L = 4.03162 m  →  T = 1.5 × 4.03162 ÷ 5.5 = 1.09953 s（從下指令那一刻起算）
         //
         // 鑑別力：光看「最後有沒有走到 (0,4)」是不夠的——牆早早被收掉的話，連格點都沒接上的英雄也會直直走到。
         // 所以前後各釘一次 NavMeshAgent 的實際目的地：收牆前必須是替代點、收牆後必須換回原始目的地。
@@ -345,15 +374,15 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(blockedBeforeWall + 40, _grid.BlockedCount, "一面符印牆應登記 40 格");
 
             Vector3 destination = new Vector3(_castObb.Center.x, 0f, _castObb.Center.y);
-            float limit = 1.5f * 4.03609f / MoveSpeed;
+            float limit = 1.5f * 4.03162f / MoveSpeed;
 
             _input.TapGround(destination);
             float deadline = Time.time + limit;
 
             // 前置：這一刻英雄真的被導去替代點，不是直接朝原目的地走（否則後面那條綠燈毫無意義）
             Vector3 substituted = _agent.destination;
-            Assert.AreEqual(-0.25f, substituted.x, 0.1f, "目的地沒有被換成替代點（實際 " + substituted + "）");
-            Assert.AreEqual(2.75f, substituted.z, 0.1f, "目的地沒有被換成替代點（實際 " + substituted + "）");
+            Assert.AreEqual(0.25f, substituted.x, 0.1f, "目的地沒有被換成替代點（實際 " + substituted + "）");
+            Assert.AreEqual(2.25f, substituted.z, 0.1f, "目的地沒有被換成替代點（實際 " + substituted + "）");
 
             bool collapsed = false;
             bool arrived = false;
@@ -497,7 +526,10 @@ namespace Vow.Tests.PlayMode
 
         // ───────────────────────────── V4 h ─────────────────────────────
 
-        // V4-h 無牆擋路時走直線：(0,0)→(6,8)，全程有視線（場上兩面測試牆在 x≈±7、z∈[1,5]，離這條線最近也有 3m 以上）。
+        // V4-h 無牆擋路時走直線：(0,0)→(6,8)，全程有視線。
+        // r1 對抗審查 L2（§6 R7）更正距離：最近的是 TestWall_B（x∈[6.7,7.3]、z∈[1,5]）外擴 0.35 後的角落
+        // (6.35,5.35)，它到這條線的垂直距離是 |6.35×0.8 − 5.35×0.6| = 1.87m（未外擴的角落 (6.7,5) 是 2.36m）——
+        // 原註解寫「3m 以上」不實。1.87m 仍遠大於體半徑 0.35，這條路線確實全程有視線，測試本身有效。
         // 沒有繞行，所以「幾何最短繞行長度」就是直線 10m → T = 1.5 × 10 ÷ 5.5 = 2.72727 s。
         // 側向偏移＝點到「起點→目的地」那條直線的垂直距離，門檻 0.05m（走格點就會變成 45° 鋸齒，一定超標）。
         [UnityTest]
@@ -567,6 +599,212 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(blocked + 40, _grid.BlockedCount, "多一面符印牆應多 40 格");
             Assert.AreEqual(_grid.BlockedCount, view.QuadCount, "放牆後疊圖的四邊形數沒有跟著變");
             Assert.AreEqual(_grid.BlockedCount * 4, mesh.vertexCount, "放牆後 Mesh 的頂點數沒有跟著變");
+        }
+
+        // ───────────────────────────── V4 k（§6 R3）─────────────────────────────
+
+        // V4-k 貼邊的牆：外擴後的牆端蓋到場地邊界時，格點最外一圈是「自由但英雄到不了」的地方，
+        // 向量場會把英雄導進去頂死（審查 H1，Probe2 實跑：英雄停在 (19.44,−1.09) 永不抵達）。
+        // §6 R3：最外一圈必須是 Blocked——不變量是「每一個非 Blocked 格的格心都落在『邊界牆內面 − BodyRadius』以內」，
+        // 內面由場景裡實際的邊界 BoxCollider 量出來，不寫死 19.45。
+        //
+        // 幾何：英雄 (17.15,−4)、牆心 (17.15,0) 法線 +Z、半寬 2／半厚 0.3，外擴 0.35
+        //   → 禁區 x∈[14.80, 19.50]、z∈[−0.65, 0.65]。東端 19.50 已經超過英雄中心的物理上限（內面 19.80 − 0.35 = 19.45），
+        //     東側沒有任何縫可鑽，唯一的路是繞西端。
+        // 真正最短繞行折線：(17.15,−4) →(14.8,−0.65) →(14.8,0.65) →(17.15,4)
+        //   ① √(2.35² + 3.35²) = 4.09207
+        //   ② 0.65 − (−0.65)   = 1.30000
+        //   ③ √(2.35² + 3.35²) = 4.09207
+        //   合計 L = 9.48414 m  →  T = 1.5 × 9.48414 ÷ 5.5 = 2.58658 s
+        // 對照：同一場景、同一 T，換成一張「最外圈沒有登記」的裸格點（只有這面牆進去）——英雄應該卡在邊界夾角到不了。
+        [UnityTest]
+        public IEnumerator V4k_WallReachingTheArenaEdge_DoesNotWedgeTheHeroAgainstTheBoundary()
+        {
+            const float shortestDetour = 9.48414f;
+            Vector3 heroStart = new Vector3(17.15f, 0f, -4f);
+            Vector3 destination = new Vector3(17.15f, 0f, 4f);
+
+            // ── 實驗組：正式格點（最外圈已登記）──
+            yield return Setup(heroStart, Quaternion.identity, new RuneTuning());
+            yield return QuickCastWall(new Vector2(17.15f, 0f), new Vector2(0f, 1f));
+
+            AssertEveryFreeCellIsReachableByTheBody();
+
+            float limit = 1.5f * shortestDetour / MoveSpeed;
+            _input.TapGround(destination);
+
+            float deadline = Time.time + limit;
+            bool arrived = false;
+            while (Time.time <= deadline)
+            {
+                if (PlanarDistance(_hero.transform.position, destination) <= ArriveTolerance) { arrived = true; break; }
+                yield return null;
+            }
+            Assert.IsTrue(arrived, "最外圈登記之後，" + limit + "s 內應繞過牆的西端抵達目的地，實際停在 " + _hero.transform.position);
+
+            // ── 對照組：最外圈不登記（＝修復前的格點）──
+            yield return Setup(heroStart, Quaternion.identity, new RuneTuning());
+            yield return QuickCastWall(new Vector2(17.15f, 0f), new Vector2(0f, 1f));
+
+            NavGridTuning bareTuning = new NavGridTuning();
+            BlockGrid bare = new BlockGrid(bareTuning.OriginX, bareTuning.OriginZ, bareTuning.CellSize,
+                                           bareTuning.Columns, bareTuning.Rows);
+            _castWall.SetNavGrid(bare, bareTuning.BodyRadius); // 只有這面牆進裸格點，最外圈刻意留空
+            _locomotion.SetNavigator(new GridNavigator(bare, bareTuning), bareTuning.BodyRadius);
+
+            _input.TapGround(destination);
+            deadline = Time.time + limit;
+            bool arrivedWithoutBoundary = false;
+            while (Time.time <= deadline)
+            {
+                if (PlanarDistance(_hero.transform.position, destination) <= ArriveTolerance)
+                {
+                    arrivedWithoutBoundary = true;
+                    break;
+                }
+                yield return null;
+            }
+            Assert.IsFalse(arrivedWithoutBoundary,
+                "對照失敗：最外圈不登記也走得到，代表這條路本來就不會被邊界夾住，實驗組那條綠燈沒有鑑別力");
+        }
+
+        // §6 R3 的不變量：每一個非 Blocked 格的格心，都落在「邊界牆內面 − BodyRadius」以內。
+        // 內面由場景裡實際的四面邊界 BoxCollider 量出來（不寫死 19.45），日後改 BodyRadius 重建場景仍然成立。
+        private void AssertEveryFreeCellIsReachableByTheBody()
+        {
+            GameObject boundary = GameObject.Find("ArenaBoundary");
+            Assert.IsNotNull(boundary, "場景缺少 ArenaBoundary（SceneBuilder 應預建）");
+
+            float innerX = float.MaxValue;
+            float innerZ = float.MaxValue;
+            BoxCollider[] boxes = boundary.GetComponentsInChildren<BoxCollider>();
+            Assert.AreEqual(4, boxes.Length, "場地邊界應為四面牆");
+            for (int i = 0; i < boxes.Length; i++)
+            {
+                Bounds b = boxes[i].bounds;
+                if (b.size.x < b.size.z) innerX = Mathf.Min(innerX, Mathf.Abs(b.center.x) - b.extents.x);
+                else innerZ = Mathf.Min(innerZ, Mathf.Abs(b.center.z) - b.extents.z);
+            }
+            float limitX = innerX - BodyRadius;
+            float limitZ = innerZ - BodyRadius;
+            Assert.Less(limitX, 20f, "邊界內面量測失敗");
+
+            for (int cz = 0; cz < _grid.Rows; cz++)
+            {
+                for (int cx = 0; cx < _grid.Columns; cx++)
+                {
+                    if (_grid.IsBlocked(cx, cz)) continue;
+                    _grid.CellCenter(cx, cz, out float x, out float z);
+                    Assert.LessOrEqual(Mathf.Abs(x), limitX,
+                        "格 (" + cx + "," + cz + ") 的格心 x=" + x + " 在英雄身體到得了的範圍之外，卻不是 Blocked");
+                    Assert.LessOrEqual(Mathf.Abs(z), limitZ,
+                        "格 (" + cx + "," + cz + ") 的格心 z=" + z + " 在英雄身體到得了的範圍之外，卻不是 Blocked");
+                }
+            }
+        }
+
+        // ───────────────────────────── V4 l（§6 R4）─────────────────────────────
+
+        // V4-l 測試牆重生壓住英雄（審查 C1，Probe3 實跑：重生後英雄留在牆體內，接著直接穿牆走出去）。
+        // §6 R4：推出要按「效果」寫——任何阻擋物蓋上格點都要觸發，而不是只掛 RuneWall.OnActivated 一個入口。
+        //
+        // TestWall_A：牆心 (−7,3)、法線 +Z、半寬 2／半厚 0.3（scale 4×2.5×0.6），外擴 0.35
+        //   → 禁區 x∈[−9.35,−4.65]、z∈[2.35,3.65]；格點上 x 格 21~30（x∈[−9.5,−5.0]）、z 格 44~47（z∈[2.0,4.0]）。
+        //   推出落點＝離牆心 (−7,3) 最近的空格格心＝(−7.25, 1.75)（同距離取索引較小者：cz=43 先於 cz=48、cx=25 先於 cx=26）。
+        // 推出後下令走到牆另一側的 (−7,6)，繞西端最短：
+        //   ① (−7.25,1.75)→(−9.35,2.35) = √(2.1² + 0.6²)   = 2.18403
+        //   ② (−9.35,2.35)→(−9.35,3.65) = 1.30000
+        //   ③ (−9.35,3.65)→(−7,6)       = √(2.35² + 2.35²) = 3.32340
+        //   合計 L = 6.80743 m  →  T = 1.5 × 6.80743 ÷ 5.5 = 1.85657 s
+        //   （繞東端是 2.66833＋1.30＋3.32340 = 7.29173 m，較長，所以最短是西端這條。）
+        [UnityTest]
+        public IEnumerator V4l_RespawningTestWallEjectsTheHero_AndHeCannotWalkThroughIt()
+        {
+            yield return Setup(Vector3.zero, Quaternion.identity, new RuneTuning());
+
+            GameObject wallObject = GameObject.Find("TestWall_A");
+            Assert.IsNotNull(wallObject, "場景缺少 TestWall_A");
+            TestWallTarget wall = wallObject.GetComponent<TestWallTarget>();
+            Assert.IsNotNull(wall, "TestWall_A 上沒有 TestWallTarget");
+            Obb obb = ReadObb(wall);
+            AssertWallGeometry(obb, new Vector2(-7f, 3f), new Vector2(0f, 1f));
+
+            // 打爆它：重生前牆心那塊地是空的，英雄站得進去
+            wall.ReceiveDamage(1000f, DamageType.True, null);
+            yield return null;
+            Assert.IsFalse(wall.IsAlive, "TestWall_A 沒有被打爆");
+
+            Vector3 wallCentre = new Vector3(obb.Center.x, 0f, obb.Center.y);
+            Assert.IsTrue(_agent.Warp(wallCentre), "無法把英雄放到牆心");
+            _hero.transform.position = _agent.nextPosition;
+            yield return null;
+
+            // 對照：不推出的話，重生那一幀英雄站的位置就是重疊的
+            Vector3 before = _hero.transform.position;
+            Assert.IsTrue(BlockGrid.CircleOverlapsBox(before.x, before.z, BodyRadius,
+                              obb.Center.x, obb.Center.y, obb.Normal.x, obb.Normal.y, obb.HalfWidth, obb.HalfThickness),
+                "對照失敗：英雄根本沒站進牆體，推出這條斷言沒有鑑別力（" + before + "）");
+
+            float respawnDeadline = Time.time + 10f;
+            while (!wall.IsAlive)
+            {
+                if (Time.time > respawnDeadline) Assert.Fail("TestWall_A 逾時未重生");
+                yield return null;
+            }
+            yield return null; // 重生後的下一幀
+
+            Vector3 after = _hero.transform.position;
+            Assert.IsFalse(BlockGrid.CircleOverlapsBox(after.x, after.z, BodyRadius,
+                               obb.Center.x, obb.Center.y, obb.Normal.x, obb.Normal.y, obb.HalfWidth, obb.HalfThickness),
+                "測試牆重生之後英雄仍留在牆體內：" + after);
+            Assert.IsTrue(_agent.isOnNavMesh, "推出之後英雄掉出 NavMesh");
+            Assert.AreEqual(-7.25f, after.x, 0.01f, "推出的落點不是最近的空格格心 x");
+            Assert.AreEqual(1.75f, after.z, 0.01f, "推出的落點不是最近的空格格心 z");
+
+            Vector3 destination = new Vector3(-7f, 0f, 6f);
+            float limit = 1.5f * 6.80743f / MoveSpeed;
+            _input.TapGround(destination);
+
+            float deadline = Time.time + limit;
+            bool arrived = false;
+            while (Time.time <= deadline)
+            {
+                Assert.GreaterOrEqual(DistanceToObb(_hero.transform.position, obb), BodyRadius - WallPenetrationTolerance,
+                    "英雄穿過了重生的測試牆：" + _hero.transform.position);
+                if (PlanarDistance(_hero.transform.position, destination) <= ArriveTolerance) { arrived = true; break; }
+                yield return null;
+            }
+            Assert.IsTrue(arrived, "推出之後 T=" + limit + "s 內沒有繞到牆的另一側，停在 " + _hero.transform.position);
+        }
+
+        // ───────────────────────────── §6 R2 ─────────────────────────────
+
+        // R2：目的地落在格點涵蓋範圍外（地板恰好 ±20、格點也是 ±20，點在最外那條線上就會發生）時，
+        // 舊實作整趟退回 Phase 1 行為——審查 H3 實跑：z=19 繞得過去、z=20 頂在牆上。
+        // 新標準：夾進格點再照常解析，繞牆行為不因為多按了半公尺而消失。
+        // 幾何：只需要越過牆面（牆心 (0,4)、外擴後 z∈[3.35,4.65]），最短折線 (0,0)→(2.35,3.35)→(2.35,4.65)
+        //   ① √(2.35² + 3.35²) = 4.09207   ② 1.30000
+        //   合計 L = 5.39207 m  →  T = 1.5 × 5.39207 ÷ 5.5 = 1.47057 s
+        [UnityTest]
+        public IEnumerator R2_DestinationOutsideTheGrid_IsClampedAndTheHeroStillDetours()
+        {
+            yield return Setup(Vector3.zero, Quaternion.identity, new RuneTuning());
+            yield return QuickCastWall(new Vector2(0f, 4f), new Vector2(0f, 1f));
+
+            float limit = 1.5f * 5.39207f / MoveSpeed;
+            _input.TapGround(new Vector3(0f, 0f, 20f)); // 恰好在格點之外
+
+            float deadline = Time.time + limit;
+            bool crossed = false;
+            while (Time.time <= deadline)
+            {
+                Assert.GreaterOrEqual(DistanceToObb(_hero.transform.position, _castObb), BodyRadius - WallPenetrationTolerance,
+                    "英雄穿進了牆：" + _hero.transform.position);
+                if (_hero.transform.position.z > 4.65f) { crossed = true; break; }
+                yield return null;
+            }
+            Assert.IsTrue(crossed,
+                "界外目的地被整趟退回 Phase 1 了：T=" + limit + "s 內沒有繞到牆後，停在 " + _hero.transform.position);
         }
     }
 }

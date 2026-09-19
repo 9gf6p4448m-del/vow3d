@@ -46,7 +46,7 @@ namespace Vow.EditorTools
             // NavMesh 在「只有地板」的時候烘焙：石牆、木樁、英雄都還不存在，所以烘出來的是一整片無洞的靜態網格。
             // 石牆之後被打碎也不需要重烘——它從頭到尾就不在 NavMesh 裡（紅線 5：零 carving、零執行期烘焙）。
             BakeStaticNavMesh(ground);
-            CreateArenaBoundary(tuning.BodyRadius); // 必須在烘焙之後：邊界牆不得進入 NavMesh
+            GameObject arenaBoundary = CreateArenaBoundary(tuning.BodyRadius); // 必須在烘焙之後：邊界牆不得進入 NavMesh
 
             HeroController hero = CreateHero(tuning, materials.Hero);
             CreateDummy(new Vector3(0f, 0f, 6f), materials.Dummy, materials.Bar);
@@ -57,7 +57,7 @@ namespace Vow.EditorTools
             NavGridDebugView navGridDebug = CreateNavGridDebugView(materials.NavGrid);
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
-            CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug);
+            CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -131,7 +131,8 @@ namespace Vow.EditorTools
 
         // 場地四周的隱形邊界（只有 BoxCollider、沒有 Renderer）。微滑步與步行的位移都經 SphereCast 裁切，
         // 有了實體邊界，英雄就不可能被滑出平台、掉出 NavMesh——不需要依賴 NavMeshAgent 夾回位置的行為。
-        private static void CreateArenaBoundary(float bodyRadius)
+        // 回傳邊界根物件：Phase1Bootstrap 要拿它把四面牆登記進阻擋格點（§6 R3，格點最外圈必須是 Blocked）。
+        private static GameObject CreateArenaBoundary(float bodyRadius)
         {
             const float height = 3f;
             const float thickness = 1f;
@@ -162,6 +163,7 @@ namespace Vow.EditorTools
                     ? new Vector3(thickness, height, ArenaSize + thickness * 2f)
                     : new Vector3(ArenaSize + thickness * 2f, height, thickness);
             }
+            return root;
         }
 
         private static void BakeStaticNavMesh(GameObject ground)
@@ -341,7 +343,8 @@ namespace Vow.EditorTools
         }
 
         private static void CreateSystems(HeroController hero, Camera camera, FollowCameraRig rig, Transform shakePivot,
-            Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug)
+            Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug,
+            Transform arenaBoundary)
         {
             GameObject systems = new GameObject("VOW_Systems");
 
@@ -387,6 +390,7 @@ namespace Vow.EditorTools
             SetReference(bootstrap, "_runeGhost", runeGhost);
             SetReference(bootstrap, "_runeButton", runeButton);
             SetReference(bootstrap, "_navGridDebug", navGridDebug);
+            SetReference(bootstrap, "_arenaBoundary", arenaBoundary);
         }
 
         // ───────────────────────── 專案設定 ─────────────────────────

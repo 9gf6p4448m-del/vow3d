@@ -16,10 +16,6 @@ namespace Vow.Core
         private const float ChaseRepathInterval = 0.1f;
         private const float CastHeight = 0.9f;
 
-        // 推出重疊時「最近空格」的搜尋半徑（格數）。與 NavGridTuning.EscapeSearchRadiusCells 同值（20 格＝10m）；
-        // GridNavigator 沒有公開它持有的 tuning，而步驟 A 的四個純邏輯檔不在本批可改範圍內，所以在這裡留一份同值常數。
-        private const int EjectSearchRadiusCells = 20;
-
         private readonly RaycastHit[] _hits = new RaycastHit[8];
 
         private NavMeshAgent _agent;
@@ -37,7 +33,6 @@ namespace Vow.Core
         private Vector3 _rawDestination;       // 使用者點的原始目的地；格點版本變了要拿它重新解析
         private float _goalX;
         private float _goalZ;
-        private bool _goalOnGrid;              // 目的地在格點涵蓋範圍內＝這趟可以用格點轉向
         private bool _navigatorOrder;          // 當下這道指令是不是在有導航器的情況下發出的（指令早於 SetNavigator 就不接手）
         private int _resolvedGridVersion = -1;
         private SteerMode _lastSteerMode = SteerMode.Direct;
@@ -115,10 +110,16 @@ namespace Vow.Core
         // inflateRadius＝推出重疊時當作身體半徑用的值，呼叫端傳 NavGridTuning.BodyRadius（＝格點外擴量）。
         public void SetNavigator(GridNavigator navigator, float inflateRadius)
         {
+            // r1 對抗審查 L4：拔掉導航器時，agent 的目的地可能還停在上一次解析出來的替代點——
+            // 交還控制權之前先把它換回使用者真正點的那個位置。整段都在「舊的 _navigator 非空」之內，
+            // 導航器從未接上過（_navigator == null）時這裡一行都不會執行，行為仍與 v0.3.2 逐行相同。
+            if (_navigator != null && _navigatorOrder && _hasOrder && _chaseTarget == null
+                && _agent.enabled && _agent.isOnNavMesh)
+                _agent.SetDestination(_rawDestination);
+
             _navigator = navigator;
             _inflateRadius = inflateRadius;
             _resolvedGridVersion = -1;
-            _goalOnGrid = false;
             _navigatorOrder = false;
             _lastSteerMode = SteerMode.Direct;
         }
@@ -228,20 +229,16 @@ namespace Vow.Core
             _navigatorOrder = true;
             _resolvedGridVersion = _navigator.Grid.Version;
 
-            // 目的地落在格點涵蓋範圍外——地板恰好 40×40、格點也是 40×40，只有點在最外緣那條線才會發生，
-            // 而那裡本來就在 NavMesh (±19.5) 之外、沒有任何可站的點。格點對它沒有可用資訊，整趟退回 Phase 1 行為。
-            if (!_navigator.Grid.TryWorldToCell(destination.x, destination.z, out _, out _))
-            {
-                _goalOnGrid = false;
-                return destination;
-            }
+            // r1 對抗審查 H3（§6 R2）：格點外的目的地先夾進格點再照常解析。
+            // 舊實作在這裡整趟退回 Phase 1，實測 z=19 繞得過去、z=20 卻頂在牆上——那條分支唯一的作用
+            // 是讓兩個與批 2 行為互相矛盾的既有測試維持綠燈，已依 §6 R2 刪除。
+            _navigator.Grid.ClampToGrid(destination.x, destination.z, out float destX, out float destZ);
 
             Vector3 position = _self.position;
-            _navigator.ResolveGoal(position.x, position.z, destination.x, destination.z,
+            _navigator.ResolveGoal(position.x, position.z, destX, destZ,
                 out float goalX, out float goalZ, out _);
             _goalX = goalX;
             _goalZ = goalZ;
-            _goalOnGrid = true;
             return new Vector3(goalX, destination.y, goalZ);
         }
 
@@ -249,10 +246,18 @@ namespace Vow.Core
         // Direct（到目的地有視線）一律原樣回傳：沒有牆擋路時，批 2 對 Phase 1 手感零影響（計畫書 §4 假設 3）。
         private Vector3 SteerAroundWalls(Vector3 navMeshVelocity)
         {
-            if (!_goalOnGrid) return navMeshVelocity;
+            if (!_navigatorOrder) return navMeshVelocity; // 這道指令早於 SetNavigator，格點沒有它的解析結果
 
             Vector3 position = _self.position;
             SteerMode mode = _navigator.Steer(position.x, position.z, _goalX, _goalZ, out float dirX, out float dirZ);
+
+            // r1 對抗審查 M4：解析出來的 goal 格被新的一面牆蓋住了（追擊最長 0.1s 的重解析窗口）。
+            // 當幀立刻拿原始目的地重新解析，不得無聲退回 v0.3.2 的頂牆。
+            if (mode == SteerMode.GoalBlocked && _agent.enabled && _agent.isOnNavMesh)
+            {
+                _agent.SetDestination(ResolveGoal(_rawDestination));
+                mode = _navigator.Steer(position.x, position.z, _goalX, _goalZ, out dirX, out dirZ);
+            }
             _lastSteerMode = mode;
 
             // Stuck＝連逃脫格都找不到（10m 內全是 Blocked，實務上不會發生）。退回 Phase 1 行為，至少不比 v0.3.2 差。
@@ -276,7 +281,8 @@ namespace Vow.Core
                                              centerX, centerZ, normalX, normalZ, halfWidth, halfThickness))
                 return false;
 
-            if (!_navigator.Grid.TryFindNearestFree(position.x, position.z, EjectSearchRadiusCells,
+            // M5：搜尋半徑讀 GridNavigator 持有的 tuning，不在這裡另外複製一份常數（NavGridTuning 是單一來源）。
+            if (!_navigator.Grid.TryFindNearestFree(position.x, position.z, _navigator.Tuning.EscapeSearchRadiusCells,
                                                     out int cx, out int cz))
                 return false;
 
