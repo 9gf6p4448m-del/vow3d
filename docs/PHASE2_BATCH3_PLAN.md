@@ -185,3 +185,31 @@ Simplicity 例外：
 - 目前**沒有**需要使用者再裁定的題目。
 
 > 本節以外的所有選擇（§4 各項、§2 簽名、§5 條文）皆為可逆的實作決定，依 `03 R3` 自決並已在本檔載明。
+
+## 7. r1 對抗審查後的修訂（2026-09-19；報告 `vow-toolchain/REVIEW-p2b3-r1.md`，標的 `f9c2b35`：CRITICAL 1／HIGH 3／MEDIUM 7／LOW 5）
+
+全部是**加嚴或還原**，沒有任何一條放寬 §5。修完送三態覆審（這是第 1 輪，上限 3 輪）。
+
+### R1（CRITICAL-1）ENEMY WALL 鈕在兩面敵方牆都活著時沒有反應
+- 成因：敵方池 2 面／名冊 cap 2，`FindFreeSlot()` 只回已死的格 → 池滿時 `Spawn()` 回 null，§4-6 的「FIFO 擠掉最舊」是死碼。修法：敵方池比照玩家池改 **3 面／名冊 cap 2**（§4-6、§4-10 的「敵方池 2 面」語意＝同時存活上限 2）。
+- **V4-o 加嚴**：記下第 1 次生出來的那面；連按 3 次之後：第 3 次 `Spawn()` 回傳非 null、第 1 面 `IsAlive==false`、存活數＝2、第 3 面在英雄正前方 4m。連按 6 次（間隔 1 幀）每次都回傳非 null。紅燈條件：`f9c2b35` 的碼（第 3 次回 null）。原本的 `AliveCount()==2` 斷言保留。
+
+### R2（HIGH-1）`ZeroAllocationTests` 的 `deadline` 還原成 `20f`
+- 覆審實測量測窗口 10.03s 跑完，`20f` 跑得完 → `40f` 是不必要的放寬，**還原**，連同被刪掉的那行註解。之後窗口若因 R3 變長而真的跑不完，回報主對話走 `02 §2.1`，不得自行改。
+
+### R3（HIGH-2）V5 的護盾活性要落在探針夾區之內
+- 成因：授予由動畫事件驅動，落在 `AllocationProbeEnd.Update` 與 `AllocationProbeBegin.LateUpdate` 之間，不在夾區 → 在 `Grant()` 塞配置測試照樣綠。
+- 修法：窗口內的 Driver 在自己的 `Update()` 直接行使護盾授予路徑（`RockShieldBehaviour` 的授予入口，含 `Grant()` 與護盾條顯示更新），次數 ≥2，並保留既有「真實大腦路徑授予 ≥1」的活性。**鑑別力證據（必附）**：在 `RockShieldBehaviour.Grant()` 注入一個每次配置 → 零配置測試必須紅；注入後還原（用備份副本重寫）。
+- 已知限制（寫進驗收指南 §13）：動畫事件階段（近戰命中結算、真實路徑的護盾授予處理常式）自批 1 起就不在 Update／LateUpdate 夾區內，零配置量不到；本批不改探針結構（測試協程本體也落在那個階段，會污染量測）。
+
+### R4（HIGH-3）V4-m 換成能紅的量法
+- 成因：Unity 射線不回報「起點在其內部」的 Collider，單一 BoxCollider 的牆不可能被同一發子彈回報兩次 → 原 V4-m 恆真，`Projectile.cs` 的 `HasPenetrated` 守衛在任何一層都沒有防線。
+- **新增 V4-m2**：測試替一面己方牆動態加第二個 `BoxCollider`（沿彈道方向錯開、同屬這面牆且解析得到同一個 `RuneWall`）→ 一發子彈通過後 `CurrentPenetrationCount` 增量恰為 1、木樁受到的傷害＝子彈傷害×單次倍率（不是連乘兩次）。**必附紅燈**：拿掉 `Projectile.cs` 的守衛 → 增量 2。原 V4-m 保留並在註解寫明它對守衛零鑑別力。若做不出「第二個 Collider 解析到同一面牆」，回報主對話，不得改成別的較寬的量法。
+
+### R5（MEDIUM／LOW，一併處理）
+- M4／L1：符印牆與敵方牆加上既有的 `TargetOverheadDisplay` 血條（SceneBuilder 編輯期預建、零配置；V8-② 的「牆血條下降」才量得到）。不得影響 V5 的 0 bytes。新增 PlayMode 斷言：己方牆被穿透一次後血條比例＝270/300。
+- M5：子彈掃掠緩衝溢位時 `Debug.LogWarning`（比照點擊路徑）。
+- M7：新增 PlayMode 斷言——同一面池牆歷經「近戰打死→再啟用→壽命到期→再啟用→被擠掉」之後，`BlockGrid.NegativeStampCount==0` 且所有牆消失後 `BlockedCount` 回到開場基線。
+- M2：新增一條走真實輸入分流的測試——用 `TURRET`／`ENEMY WALL` 鈕矩形內的螢幕座標送觸控（經 `InputRoutingManager`），砲台被打開／生出紅牆，且**沒有**送出移動指令。做不到（asmdef 看不到）就回報，不得加 asmdef 引用。
+- M1：`ZeroAllocationTests` 把 `FindObjectsOfType<RuneWall>()` 換成 `caster.Pool` 在此補授權——批 3 之後前者會把敵方池掃進來；語意不變＝「玩家池的牆」。
+- M6（記錄不修）：牆在子彈已進入牆體之後才啟用時，那一發不被擋也不記穿透——只影響除錯砲台的觀感，寫進驗收指南 §13 已知限制。L2／L3／L5 記錄不修；L4 的 V4-h① 保留並加註解「本半條恆真，鑑別力在②」。
