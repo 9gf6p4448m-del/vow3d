@@ -25,8 +25,10 @@ namespace Vow.Core.Logic
         public float ShieldAmount = 150f;
         public float ShieldDurationSeconds = 2.5f;
 
-        // ── 除錯用敵方石牆池（獨立於玩家名冊，§4-6）──
-        public int EnemyWallPoolSize = 2;
+        // ── 除錯用敵方石牆（獨立於玩家名冊，§4-6）──
+        // 同時存活上限。實際預建的物件數要比它多一面（坍塌緩衝），否則池滿時 FIFO 擠掉最舊那面
+        // 永遠走不到——玩家會看到「按鈕沒反應」（r1 對抗審查 CRITICAL-1）。玩家池是同一個結構：3 物件／cap 2。
+        public int EnemyWallAliveCap = 2;
 
         // ── 點擊射線 ──
         public int TapHitBufferSize = 16;                 // 溢位會讓最近的合法命中被丟掉，所以要夠大並在溢位時告警

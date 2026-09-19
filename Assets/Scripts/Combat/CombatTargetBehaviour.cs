@@ -47,6 +47,13 @@ namespace Vow.Combat
             }
         }
 
+        // 這個目標的 Collider 組成改變之後重新快取（例如驗收替一面牆加上第二個 BoxCollider）。
+        // 呼叫端要自己把目標從 ColliderTargetRegistry 撤銷再重新登記，查表才會跟著更新。
+        public void RefreshColliderCache()
+        {
+            _colliders = GetComponentsInChildren<Collider>(true);
+        }
+
         public event Action<float> OnDamaged;   // 實際扣除的傷害量
         public event Action OnDied;
         public event Action OnRevived;

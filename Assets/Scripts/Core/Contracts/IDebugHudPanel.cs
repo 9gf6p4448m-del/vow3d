@@ -15,5 +15,10 @@ namespace Vow.Core
 
         void PressTurretButton();
         void PressEnemyWallButton();
+
+        // 兩顆鈕的中心點（螢幕座標，原點左下、像素）。用來對「登記給 InputRoutingManager 的那個矩形」
+        // 送真實觸控——矩形算錯（例如與 GRID 鈕重疊）時，點下去會路由到別的區域而抓得到。
+        bool TryGetTurretButtonScreenPoint(out float x, out float y);
+        bool TryGetEnemyWallButtonScreenPoint(out float x, out float y);
     }
 }

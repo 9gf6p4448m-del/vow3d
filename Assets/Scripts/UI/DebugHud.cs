@@ -132,6 +132,30 @@ namespace Vow.UI
             if (_spawnEnemyWall != null) _spawnEnemyWall();
         }
 
+        public bool TryGetTurretButtonScreenPoint(out float x, out float y)
+        {
+            return TryGetButtonScreenPoint(_toggleTurret != null, _turretRect, out x, out y);
+        }
+
+        public bool TryGetEnemyWallButtonScreenPoint(out float x, out float y)
+        {
+            return TryGetButtonScreenPoint(_spawnEnemyWall != null, _enemyWallRect, out x, out y);
+        }
+
+        // 用的是餵給 InputRoutingManager 的同一個換算（ToScreenRegion），所以測試點下去的位置
+        // 就是實際登記的那個矩形的中心；矩形算錯時會路由到別的區域。
+        private bool TryGetButtonScreenPoint(bool present, Rect guiRect, out float x, out float y)
+        {
+            x = 0f;
+            y = 0f;
+            if (!present) return false;
+
+            ScreenRegion region = ToScreenRegion(guiRect);
+            x = (region.XMin + region.XMax) * 0.5f;
+            y = (region.YMin + region.YMax) * 0.5f;
+            return true;
+        }
+
         private void Awake()
         {
             useGUILayout = false; // 關掉 Layout 階段：少跑一輪 OnGUI，也是 IMGUI 零配置的前提

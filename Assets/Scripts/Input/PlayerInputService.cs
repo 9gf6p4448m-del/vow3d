@@ -21,6 +21,7 @@ namespace Vow.Input
         private const float RaycastDistance = 500f;
         private const float InputSamplingHz = 120f;
         private const int MouseTouchId = -1000;              // 不會與真實 touchId 相撞的固定編號
+        private const int SimulatedTapTouchIdBase = -2000;   // 驗收用的模擬點擊，同樣不與真實 touchId 相撞
         private const double MouseSuppressSeconds = 0.5;      // 真實觸控之後這段時間內忽略滑鼠
 
         [SerializeField] private Camera _worldCamera;
@@ -37,6 +38,7 @@ namespace Vow.Input
         private float[] _tapDistances;
         private bool[] _tapOwnWall;
         private Faction _localFaction = Faction.BlueTeam;
+        private int _simulatedTapCount;
 
         private ICombatTargetResolver _targetResolver;
         private float _minRadiusPx;
@@ -105,6 +107,18 @@ namespace Vow.Input
         public void SetLocalFaction(Faction faction)
         {
             _localFaction = faction;
+        }
+
+        // 按下與放開在同一次呼叫內完成：EndTouch 會把槽位釋放掉，所以不會被下一幀 EndFrame 的
+        // 「本幀沒出現就回收」誤判。每次用不同的 touchId，避免撞到 router 的「剛結束過」歷史。
+        public void SendScreenTap(float screenX, float screenY)
+        {
+            TouchGestureRouter router = Router;
+            double now = Time.unscaledTimeAsDouble;
+            int touchId = SimulatedTapTouchIdBase - _simulatedTapCount;
+            _simulatedTapCount++;
+            router.ProcessTouch(touchId, TouchPhaseKind.Began, screenX, screenY, now, now);
+            router.ProcessTouch(touchId, TouchPhaseKind.Ended, screenX, screenY, now, now);
         }
 
         private void Awake()

@@ -341,7 +341,9 @@ namespace Vow.Tests.PlayMode
             IRockShield shield = _bootstrap.Shield;
             float melee = MeasureMeleeDamage();
 
-            // ① 字面路徑
+            // ① 字面路徑。**這半條恆真**：HeroController.ResolveAttackHit 不送 OnAttackHitResolved
+            //    （大腦在 HeroCombatBrain.cs:269-270 才送），所以授予路徑根本走不到，不論陣營比較怎麼寫
+            //    都會是 0。鑑別力全部在下面的 ②（r1 對抗審查 LOW-4）。
             _input.RuneQuickCast();
             yield return null;
             RuneWall own = FirstAlive(_playerPool);
@@ -595,6 +597,9 @@ namespace Vow.Tests.PlayMode
         }
 
         // V4-m：一發子彈通過一面己方牆後，穿透計數的增量恰為 1（即使子彈在牆內跨了多幀）。
+        // **這一條對 Projectile 的 HasPenetrated 守衛零鑑別力**（r1 對抗審查 HIGH-3 實測：把守衛整行刪掉
+        // 這條照樣綠）——Unity 的射線不回報「起點落在其內部」的 Collider，單一 BoxCollider 的牆本來就
+        // 不可能被同一發子彈回報兩次。真正守住那個守衛的是下面的 V4-m2。
         [UnityTest]
         public IEnumerator V4m_OneBulletThroughOneWall_CountsExactlyOnce_EvenAcrossFrames()
         {
@@ -623,6 +628,180 @@ namespace Vow.Tests.PlayMode
             {
                 Time.captureDeltaTime = 0f;
             }
+        }
+
+        // V4-m2（r1 對抗審查 HIGH-3）：能真的紅的量法。替同一面己方牆加上第二個 BoxCollider（沿彈道錯開），
+        // 一發子彈會在**不同幀**各回報一次同一面牆——這正是 HasPenetrated 守衛存在的理由。
+        // 先把牆穿到衰減區（第 6 發起 ×0.85），倍率被連乘兩次時木樁受到的傷害也會不一樣。
+        [UnityTest]
+        public IEnumerator V4m2_TwoCollidersOnTheSameWall_StillCountAsOnePenetration()
+        {
+            yield return Setup(new RuneTuning());
+
+            RuneWall wall = PlaceWallOnLane(FirstDead(_playerPool), 1.5f, _hero.HeroFaction);
+            yield return null;
+
+            // 牆的本地 +Z＝牆面法線＝世界 +X（PlaceWallOnLane 用 LookRotation(right)），
+            // 所以 center.z = 2 代表沿彈道往前挪 2 × 0.6 = 1.2m，與第一個 Collider 不重疊。
+            BoxCollider extra = wall.gameObject.AddComponent<BoxCollider>();
+            extra.center = new Vector3(0f, 0f, 2f);
+            extra.size = Vector3.one;
+
+            _bootstrap.TargetRegistry.Unregister(wall);
+            wall.RefreshColliderCache();
+            _bootstrap.TargetRegistry.Register(wall);
+            Assert.AreEqual(2, wall.TargetColliders.Length, "前提：這面牆現在有兩個 Collider");
+            yield return null;
+
+            // 先穿到衰減區：第 UndecayedPenetrations+1 發起倍率才不是 1
+            Vector3 velocity = Vector3.right * _projectile.BulletSpeed;
+            for (int i = 0; i < _rune.UndecayedPenetrations; i++)
+                Assert.IsTrue(wall.TryPenetrateBullet(velocity, out float _), "前置穿透第 " + (i + 1) + " 發應放行");
+
+            RuneWallLogic reference = new RuneWallLogic(_rune);
+            reference.Activate();
+            float expectedMultiplier = 0f;
+            for (int i = 0; i <= _rune.UndecayedPenetrations; i++)
+                Assert.IsTrue(reference.TryPenetrate(out expectedMultiplier), "參考模型第 " + (i + 1) + " 發應放行");
+            Assert.AreEqual(_rune.DecayedDamageMultiplier, expectedMultiplier, 1e-4f, "前提：這一發落在衰減區");
+
+            int penetrationsBefore = wall.CurrentPenetrationCount;
+            int dummyHits = 0;
+            float dummyDamage = 0f;
+            _dummy.OnDamaged += amount => { dummyHits++; dummyDamage = amount; };
+
+            TestTurret turret = _bootstrap.Turret;
+            turret.SetFiring(true);
+            yield return WaitUntil(() => turret.ShotsFired >= 1, 5f, "砲台沒有射出第一發");
+            turret.SetFiring(false);
+            yield return WaitUntil(() => dummyHits >= 1, 10f, "那一發沒有飛到木樁");
+            yield return null;
+
+            Assert.AreEqual(1, turret.ShotsFired, "這條測試只能有一發子彈");
+            Assert.AreEqual(1, wall.CurrentPenetrationCount - penetrationsBefore,
+                "一發子彈穿過同一面牆的兩個 Collider，穿透計數只能加 1（實測 +"
+                + (wall.CurrentPenetrationCount - penetrationsBefore) + "）");
+            Assert.AreEqual(1, dummyHits, "木樁只該挨這一發");
+            Assert.AreEqual(_projectile.BulletDamage * expectedMultiplier, dummyDamage, 1e-2f,
+                "木樁受到的傷害必須是子彈傷害 × 單次倍率，不是連乘兩次");
+        }
+
+        // r1 對抗審查 MEDIUM-4／LOW-1：符印牆與敵方牆現在也有頭頂血條，而且血條要跟著
+        // 「友軍彈道穿透」掉（那條扣的是 RuneWallLogic 的血，不經 ReceiveDamage，不送 OnDamaged）。
+        [UnityTest]
+        public IEnumerator R5m4_TheRuneWallOverheadBar_TracksPenetrationDamage()
+        {
+            yield return Setup(new RuneTuning());
+
+            RuneWall wall = PlaceWallOnLane(FirstDead(_playerPool), 2f, _hero.HeroFaction);
+            yield return null;
+            yield return null; // LateUpdate 把血條帶回來
+
+            GameObject overhead = GameObject.Find(wall.name + "_Overhead");
+            Assert.IsNotNull(overhead, "符印牆缺少頭頂血條（V8-② 量不到「牆血條下降」）");
+            Transform background = overhead.transform.Find("BarBackground");
+            Transform fill = overhead.transform.Find("BarFill");
+            Assert.IsNotNull(background, "血條缺少背景");
+            Assert.IsNotNull(fill, "血條缺少填滿");
+            Assert.IsTrue(fill.GetComponent<Renderer>().enabled, "牆立起來之後血條應該顯示");
+
+            float barWidth = background.localScale.x - 0.06f; // 背景比填滿寬 0.06（TargetOverheadDisplay）
+            Assert.AreEqual(1f, fill.localScale.x / barWidth, 1e-3f, "滿血時血條應該是滿的");
+
+            Assert.IsTrue(wall.TryPenetrateBullet(Vector3.right * _projectile.BulletSpeed, out float _));
+            yield return null;
+            yield return null;
+
+            float expected = (_rune.WallMaxHealth - _rune.WallMaxHealth * _rune.PenetrationHealthFraction)
+                             / _rune.WallMaxHealth;
+            Assert.AreEqual(expected, fill.localScale.x / barWidth, 1e-3f,
+                "穿透一次後血條比例應為 270/300（實測 " + (fill.localScale.x / barWidth) + "）");
+        }
+
+        // r1 對抗審查 MEDIUM-7：同一面池牆歷經三種死因之後，格點的登記／撤銷必須對稱。
+        [UnityTest]
+        public IEnumerator R5m7_APooledWallThroughEveryDeathPath_LeavesTheNavGridSymmetric()
+        {
+            RuneTuning tuning = new RuneTuning { CooldownSeconds = 0f };
+            yield return Setup(tuning);
+
+            BlockGrid grid = _bootstrap.NavGrid;
+            Assert.IsNotNull(grid, "Phase1Bootstrap 沒有建立阻擋格點");
+            int baseline = grid.BlockedCount;
+            float melee = MeasureMeleeDamage();
+
+            // 死因 1：被近戰打碎
+            _input.RuneQuickCast();
+            yield return null;
+            RuneWall first = FirstAlive(_playerPool);
+            Assert.IsNotNull(first, "第一面石牆未成形");
+            for (int i = 0; i < Mathf.CeilToInt(_rune.WallMaxHealth / melee); i++)
+                first.ReceiveDamage(melee, DamageType.Physical, _hero.gameObject);
+            Assert.IsFalse(first.IsAlive, "死因 1：應被近戰打碎");
+            yield return null;
+
+            // 死因 2：壽命到期
+            _input.RuneQuickCast();
+            yield return null;
+            Assert.IsNotNull(FirstAlive(_playerPool), "第二面石牆未成形");
+            yield return new WaitForSeconds(tuning.WallLifespanSeconds + 0.4f);
+            Assert.AreEqual(0, AliveCount(_playerPool), "死因 2：應已壽命到期");
+
+            // 死因 3：被第 3 面擠掉
+            _input.RuneQuickCast();
+            yield return null;
+            RuneWall third = FirstAlive(_playerPool);
+            Assert.IsNotNull(third, "第三輪第一面石牆未成形");
+            _input.RuneQuickCast();
+            yield return null;
+            _input.RuneQuickCast();
+            yield return null;
+            Assert.IsFalse(third.IsAlive, "死因 3：第 3 面成形後最舊那面應已坍塌");
+
+            yield return new WaitForSeconds(tuning.WallLifespanSeconds + 0.4f);
+            Assert.AreEqual(0, AliveCount(_playerPool), "收尾：所有石牆都該消失");
+            yield return null;
+
+            Assert.AreEqual(0, grid.NegativeStampCount,
+                "格點出現過負的引用計數：登記與撤銷不對稱（實測 " + grid.NegativeStampCount + "）");
+            Assert.AreEqual(baseline, grid.BlockedCount,
+                "所有石牆消失後，阻擋格數必須回到開場基線（基線 " + baseline + "、實測 " + grid.BlockedCount + "）");
+        }
+
+        // r1 對抗審查 MEDIUM-2：兩顆新按鈕要走**真實**的輸入分流（InputRoutingManager 的區域判定），
+        // 不是直接呼叫按鈕的處理常式。按鈕矩形算錯（例如與 GRID 鈕重疊）在這裡會露出來。
+        [UnityTest]
+        public IEnumerator R5m2_TheHudButtons_AreReachedThroughTheRealTouchRouting()
+        {
+            yield return Setup(new RuneTuning());
+
+            bool moved = false;
+            ICombatTarget picked = null;
+            _bootstrap.InputService.OnMoveDestinationSelected += _ => moved = true;
+            _bootstrap.InputService.OnCombatTargetSelected += target => picked = target;
+
+            TestTurret turret = _bootstrap.Turret;
+            IDebugHudPanel hud = _bootstrap.HudPanel;
+            Assert.IsFalse(turret.IsFiring, "前提：砲台預設關閉");
+
+            Assert.IsTrue(hud.TryGetTurretButtonScreenPoint(out float turretX, out float turretY),
+                "HUD 沒有 TURRET 鈕");
+            _bootstrap.WorldTapInput.SendScreenTap(turretX, turretY);
+            yield return null;
+            Assert.IsTrue(turret.IsFiring, "對 TURRET 鈕的矩形送真實觸控應該把砲台打開");
+            StringAssert.Contains("ON", hud.TurretButtonLabel);
+            turret.SetFiring(false);
+
+            int aliveBefore = _bootstrap.EnemyWalls.AliveCount();
+            Assert.IsTrue(hud.TryGetEnemyWallButtonScreenPoint(out float wallX, out float wallY),
+                "HUD 沒有 ENEMY WALL 鈕");
+            _bootstrap.WorldTapInput.SendScreenTap(wallX, wallY);
+            yield return null;
+            Assert.AreEqual(aliveBefore + 1, _bootstrap.EnemyWalls.AliveCount(),
+                "對 ENEMY WALL 鈕的矩形送真實觸控應該生出一面紅隊牆");
+
+            Assert.IsFalse(moved, "點 HUD 按鈕不得滲透成移動指令");
+            Assert.IsNull(picked, "點 HUD 按鈕不得滲透成鎖定目標");
         }
 
         // V4-n：不穿隧。每幀位移 1.0m > 牆厚 0.6m，20 發全部必須被登記。
@@ -676,12 +855,35 @@ namespace Vow.Tests.PlayMode
             for (int i = 0; i < pool.Length; i++)
                 Assert.IsTrue(pool[i].name.StartsWith("RuneWall_Pool_"), "玩家池裡混進了 " + pool[i].name);
 
-            for (int i = 0; i < 3; i++)
+            // r1 對抗審查 CRITICAL-1：池滿時 Spawn() 曾經回 null（FIFO 擠掉最舊是死碼），
+            // 而舊斷言只看 AliveCount()==2——有沒有擠掉存活數都是 2，對它要守的行為恆真。
+            RuneWall firstEnemy = _bootstrap.EnemyWalls.Spawn();
+            Assert.IsNotNull(firstEnemy, "第 1 次生成敵方牆失敗");
+            yield return null;
+            Assert.IsNotNull(_bootstrap.EnemyWalls.Spawn(), "第 2 次生成敵方牆失敗");
+            yield return null;
+
+            Vector3 heroPos = _hero.transform.position;
+            Vector3 heroForward = _hero.transform.forward;
+            RuneWall thirdEnemy = _bootstrap.EnemyWalls.Spawn();
+            yield return null;
+            Assert.IsNotNull(thirdEnemy, "池滿時第 3 次生成必須擠掉最舊那面並回傳新牆，不得回 null");
+            Assert.IsFalse(firstEnemy.IsAlive, "第 3 次生成要擠掉的是最舊那面（第 1 面）");
+            Assert.AreEqual(2, _bootstrap.EnemyWalls.AliveCount(), "敵方牆同時存活上限仍是 2");
+
+            Vector3 expectedCenter = heroPos + heroForward * _rune.QuickCastDistance;
+            Vector3 offset = thirdEnemy.transform.position - expectedCenter;
+            offset.y = 0f;
+            Assert.LessOrEqual(offset.magnitude, 0.1f,
+                "新生的敵方牆應該在英雄正前方 " + _rune.QuickCastDistance + "m：" + thirdEnemy.transform.position);
+
+            // 連按 6 次，每次都必須生得出來（不能有「按了沒反應」的那一下）
+            for (int press = 0; press < 6; press++)
             {
-                _bootstrap.HudPanel.PressEnemyWallButton();
+                Assert.IsNotNull(_bootstrap.EnemyWalls.Spawn(), "第 " + (press + 1) + " 次連按沒有生出敵方牆");
                 yield return null;
             }
-            Assert.AreEqual(2, _bootstrap.EnemyWalls.AliveCount(), "敵方池上限 2 面，第 3 次應擠掉最舊那面");
+            Assert.AreEqual(2, _bootstrap.EnemyWalls.AliveCount(), "連按之後同時存活數仍是 2");
 
             _caster.Initialize(_input, _input, _hero.transform, Camera.main,
                                new RuneTuning { CooldownSeconds = 0f }, pool, _hero.HeroFaction);

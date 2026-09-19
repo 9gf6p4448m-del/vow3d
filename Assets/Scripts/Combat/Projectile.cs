@@ -97,7 +97,13 @@ namespace Vow.Combat
             int rawCount = Physics.RaycastNonAlloc(new Ray(_position, _direction), _sweepBuffer, step,
                                                    Physics.AllLayers, QueryTriggerInteraction.Ignore);
             if (rawCount <= 0) return false;
-            if (rawCount > _sweepBuffer.Length) rawCount = _sweepBuffer.Length;
+            if (rawCount >= _sweepBuffer.Length)
+            {
+                rawCount = _sweepBuffer.Length;
+                // RaycastNonAlloc 不保證回報最近者：溢位時子彈可能穿過本該擋它的牆，而且沒有任何線索。
+                // 常數字串，不配置（與 PlayerInputService 的點擊路徑同一套處理）。
+                Debug.LogWarning("[VOW] 子彈掃掠的命中數已達緩衝上限，可能漏掉本該擋下它的目標。");
+            }
 
             // 非 ICombatTarget 的命中（地板、英雄、邊界、疊圖）＝ SweepHitKind.Ignore：直接不收進來、續飛。
             int count = 0;

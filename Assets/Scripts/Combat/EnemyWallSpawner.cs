@@ -30,8 +30,8 @@ namespace Vow.Combat
             _hero = hero;
             if (pool != null) _pool = pool;
 
-            int cap = _pool != null && _pool.Length > 0 ? _pool.Length : projectileTuning.EnemyWallPoolSize;
-            _roster = new RuneWallRoster(cap);
+            // cap 讀「同時存活上限」而不是池的長度：池比 cap 多一面緩衝，FIFO 擠掉最舊那面才走得到。
+            _roster = new RuneWallRoster(projectileTuning.EnemyWallAliveCap);
 
             if (_pool == null) return;
             for (int i = 0; i < _pool.Length; i++)

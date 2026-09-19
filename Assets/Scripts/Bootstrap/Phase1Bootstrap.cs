@@ -65,6 +65,8 @@ namespace Vow.Bootstrap
         public TestTurret Turret => _turret;
         public EnemyWallSpawner EnemyWalls => _enemyWalls;
         public IRockShield Shield => _shield;
+        // 驗收替一面牆加上第二個 Collider 之後要重新登記查表（r1 對抗審查 HIGH-3 的量法）。
+        public ColliderTargetRegistry TargetRegistry => _targets;
 
         private void Awake()
         {

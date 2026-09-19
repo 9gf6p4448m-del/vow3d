@@ -206,6 +206,7 @@ namespace Vow.Tests.PlayMode
         internal RuneWall BlockingWall;
         internal HeroController Hero;
         internal ScriptedInput Input;
+        internal IRockShield Shield;
         internal float WallHeight;
         internal float WallMaxHealth;
         internal float MeleeDamage;
@@ -214,6 +215,7 @@ namespace Vow.Tests.PlayMode
         public bool MeleeGate;   // 由測試在「繞牆那段已經量夠」之後開閘，免得攻擊指令把移動打斷
         public int Stage;
         public int Taps;
+        public int DriverGrants;   // r1 覆審 HIGH-2：授予路徑必須在夾區內被行使，不能只靠動畫事件那條
 
         // 砲台的計數是累計值（窗口外的暖機也算在內），所以窗口內的條件一律看增量。
         internal int ShotsBase;
@@ -254,6 +256,12 @@ namespace Vow.Tests.PlayMode
                     Vector3 lanePoint = View.WorldToScreenPoint(FriendlyWall.transform.position);
                     Tap.OnWorldTap(lanePoint.x, lanePoint.y);
                     Taps++;
+                    // r1 覆審 HIGH-2：真實的授予處理常式掛在**動畫事件**上，那一段落在
+                    // AllocationProbeEnd.Update 與 AllocationProbeBegin.LateUpdate 之間，探針夾不到
+                    // （實測：在 Grant() 塞配置，測試照樣綠）。所以這裡由 Driver 自己在 Update() 內走
+                    // 同一個授予入口，讓 Grant() 與護盾條的顯示更新真的落進量測範圍。
+                    Shield.Grant();
+                    DriverGrants++;
                     if (Turret.ShotsFired - ShotsBase < 3
                         || Turret.Penetrations - PenetrationsBase < 2
                         || Turret.Blocks - BlocksBase < 2) return;
@@ -437,6 +445,7 @@ namespace Vow.Tests.PlayMode
             batch3Driver.WallHeight = batch3Tuning.WallHeight;
             batch3Driver.WallMaxHealth = batch3Tuning.WallMaxHealth;
             batch3Driver.MeleeDamage = meleeDamage;
+            batch3Driver.Shield = shield;
             caster.Initialize(input, input, hero.transform, Camera.main, new RuneTuning(), runeWalls, hero.HeroFaction);
 
             // 量測窗口外先跑一次完整的施放到期（協程本體直接呼叫即可，反正不落在夾區內、不受 H2 約束）：
@@ -496,6 +505,7 @@ namespace Vow.Tests.PlayMode
                 Assert.IsFalse(shieldBar.IsVisible, "暖機的護盾應已到期");
                 batch3Driver.Stage = 0;
                 batch3Driver.Taps = 0;
+                batch3Driver.DriverGrants = 0;
                 batch3Driver.MeleeGate = false;
             }
 
@@ -534,15 +544,13 @@ namespace Vow.Tests.PlayMode
             runeDriver.Trigger = true; // 下一次 RuneCastDriver.Update()（落在探針夾區內）才真的送出施放
             bool sawRuneWallAlive = false;
             int followFrames = 0;
-            // 批 3 把砲台／子彈／護盾／點擊四件事加進同一個窗口，段數變多；門檻（0 bytes、240 幀）與
-            // 既有的活性下限一字不動，只放寬這個「跑不完就中止」的保險絲。
-            deadline = Time.time + 40f;
+            deadline = Time.time + 20f; // 不動：第 3 段跑完約 10s（牆 1 到期 5s ＋ 牆 2 到期 5s），仍有一倍餘裕
             while (AllocationProbe.Frames < 240 || runeDriver.Casts < 1 || detourDriver.Orders < 1
                    || followFrames < 10 || !sawRuneWallAlive || AnyRuneWallAlive(runeWalls)
                    || goalBlockedDriver.Steps < 2
                    || navigator.SubstitutedCount - substitutedBefore < 1
                    || locomotion.GoalBlockedResolveCount - goalBlockedBefore < 1
-                   || batch3Driver.Stage < 5 || batch3Driver.Taps < 2
+                   || batch3Driver.Stage < 5 || batch3Driver.Taps < 2 || batch3Driver.DriverGrants < 2
                    || turret.ShotsFired - shotsBefore < 3
                    || turret.Penetrations - penetrationsBefore < 2
                    || turret.Blocks - blocksBefore < 2
@@ -624,8 +632,11 @@ namespace Vow.Tests.PlayMode
                 "量測期間子彈穿透己方牆不足 2 次：一次性成本可能把這條路徑蓋掉");
             Assert.GreaterOrEqual(turret.Blocks - blocksBefore, 2,
                 "量測期間子彈被敵方牆擋下不足 2 次：一次性成本可能把這條路徑蓋掉");
-            Assert.GreaterOrEqual(shield.GrantCount - shieldGrantsBefore, 1,
-                "量測期間沒有取得過護盾：授予與護盾條這條路徑沒有被量到");
+            Assert.GreaterOrEqual(batch3Driver.DriverGrants, 2,
+                "量測期間 Driver 沒有在自己的 Update() 內行使護盾授予 ≥2 次：授予路徑落在探針夾區外就量不到"
+                + "（實測 " + batch3Driver.DriverGrants + " 次）");
+            Assert.GreaterOrEqual(shield.GrantCount - shieldGrantsBefore, batch3Driver.DriverGrants + 1,
+                "量測期間除了 Driver 直接授予之外，還必須有一次走真實大腦路徑的授予");
             Assert.IsTrue(sawShieldBarVisible, "量測期間護盾條的 Renderer 從未可見");
             Assert.GreaterOrEqual(batch3Driver.Taps, 2,
                 "量測期間送出的真實 OnWorldTap 不足 2 次（RaycastNonAlloc ＋ TapPickLogic 沒有被反覆量到）");

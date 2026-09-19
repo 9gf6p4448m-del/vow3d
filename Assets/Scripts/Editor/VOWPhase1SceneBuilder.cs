@@ -52,8 +52,8 @@ namespace Vow.EditorTools
             CreateDummy(new Vector3(0f, 0f, 6f), materials.Dummy, materials.Bar);
             CreateWall("TestWall_A", new Vector3(-7f, 0f, 3f), 0f, materials.Wall, materials.Bar);
             CreateWall("TestWall_B", new Vector3(7f, 0f, 3f), 90f, materials.Wall, materials.Bar);
-            Transform runeWallPool = CreateRuneWallPool(tuning.Rune, materials.RuneWall);
-            Transform enemyWallPool = CreateEnemyWallPool(tuning.Rune, materials.EnemyWall);
+            Transform runeWallPool = CreateRuneWallPool(tuning.Rune, materials.RuneWall, materials.Bar);
+            Transform enemyWallPool = CreateEnemyWallPool(tuning.Rune, materials.EnemyWall, materials.Bar);
             TestTurret turret = CreateTurretAndBullets(materials.Turret, materials.Bullet);
             RuneGhostPreview runeGhost = CreateRuneGhostPreview(tuning.Rune, materials.RuneGhost);
             NavGridDebugView navGridDebug = CreateNavGridDebugView(materials.NavGrid);
@@ -274,7 +274,9 @@ namespace Vow.EditorTools
         // 只關 Collider／Renderer——RuneWall.Awake 會在建立當下立刻把自己關成「待命」狀態。
         // 執行期禁止 CreatePrimitive（IL2CPP 剔除），這裡是 Editor-only 程式碼，不受此限。
         private const int RuneWallPoolSize = 3;
-        private const int EnemyWallPoolSize = 2;
+        // 3 面＝同時存活上限 2 ＋ 1 面坍塌緩衝（與玩家池同結構）。少了緩衝格，池滿時 FIFO 擠掉最舊
+        // 那面永遠走不到，除錯鈕會變成沒反應（r1 對抗審查 CRITICAL-1）。
+        private const int EnemyWallPoolSize = 3;
 
         // 批 3 §4-1：石牆**回到 Default 層**。批 1 靠 Ignore Raycast 層讓點擊射線穿過自家牆，代價是
         // 所有符印石牆都無法被點擊鎖定（全專案唯一的選取路徑就是那條射線），而 GDD §參-2 的
@@ -283,26 +285,26 @@ namespace Vow.EditorTools
         // 分陣營圖層的做法被否決（要寫 TagManager.asset，且層 2 目前同時住著英雄本體、邊界牆、GRID 疊圖、
         // 血條四邊形與技能預警，把層 2 加進點擊 mask 會讓這五類全部變成可點）。
         // 身體阻擋不受影響：HeroLocomotion 的 SphereCast 用 Physics.AllLayers，兩種層都擋得住。
-        private static Transform CreateRuneWallPool(RuneTuning runeTuning, Material material)
+        private static Transform CreateRuneWallPool(RuneTuning runeTuning, Material material, Material barMaterial)
         {
             GameObject root = new GameObject("RuneWallPool");
             for (int i = 0; i < RuneWallPoolSize; i++)
-                CreatePooledRuneWall(root.transform, "RuneWall_Pool_" + i, runeTuning, material, Faction.Neutral);
+                CreatePooledRuneWall(root.transform, "RuneWall_Pool_" + i, runeTuning, material, barMaterial, Faction.Neutral);
             return root.transform;
         }
 
         // 除錯鈕用的敵方（紅隊）石牆池。獨立於玩家名冊（§4-6）：敵方牆不得佔用玩家的 2 面上限，
         // 所以兩個池各有一個父物件，Phase1Bootstrap 依父物件分割，不再用 FindObjectsOfType 整批當池。
-        private static Transform CreateEnemyWallPool(RuneTuning runeTuning, Material material)
+        private static Transform CreateEnemyWallPool(RuneTuning runeTuning, Material material, Material barMaterial)
         {
             GameObject root = new GameObject("EnemyWallPool");
             for (int i = 0; i < EnemyWallPoolSize; i++)
-                CreatePooledRuneWall(root.transform, "EnemyWall_Pool_" + i, runeTuning, material, Faction.RedTeam);
+                CreatePooledRuneWall(root.transform, "EnemyWall_Pool_" + i, runeTuning, material, barMaterial, Faction.RedTeam);
             return root.transform;
         }
 
         private static void CreatePooledRuneWall(Transform parent, string objectName, RuneTuning runeTuning,
-                                                 Material material, Faction ownerFaction)
+                                                 Material material, Material barMaterial, Faction ownerFaction)
         {
             GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube); // 自帶 BoxCollider（紅線 5）
             wall.name = objectName;
@@ -315,6 +317,12 @@ namespace Vow.EditorTools
             SetFloat(runeWall, "_maxHealth", runeTuning.WallMaxHealth);
             SetEnum(runeWall, "_faction", (int)Faction.DestructibleWall);
             SetEnum(runeWall, "_ownerFaction", (int)ownerFaction); // RuneWall.Activate 施放時會覆寫成實際擁有者
+
+            // 頭頂血條：砸牆／穿透的進度要看得見（r1 對抗審查 MEDIUM-4／LOW-1；V8-② 靠它量）。
+            // 與木樁、測試牆同一個既有元件，全部物件在 Awake 預熱，戰鬥中零配置。
+            TargetOverheadDisplay overhead = wall.AddComponent<TargetOverheadDisplay>();
+            SetReference(overhead, "_barMaterial", barMaterial);
+            SetFloat(overhead, "_height", runeTuning.WallHeight * 0.5f + 0.4f); // 自牆心起算，落在牆頂上方
         }
 
         // 友軍測試砲台（§4-7）：固定在 (−8, 1.0, 6)，開火方向於 Initialize 時朝木樁 (0,1,6) 算出＝+X、距離 8m。

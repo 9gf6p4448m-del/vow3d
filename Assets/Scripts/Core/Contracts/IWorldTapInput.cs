@@ -14,5 +14,10 @@ namespace Vow.Core
 
         // 螢幕座標（原點左下、像素）。命中解析與「跳過己方石牆」的規則由實作負責。
         void OnWorldTap(float screenX, float screenY);
+
+        // 送出一次完整的觸控點擊（按下＋放開，同一點），走的是與真實手指一模一樣的分流路徑：
+        // 邊緣死區 → UI 區域 → 符印 → 微輪盤 → 世界。驗收 HUD 按鈕要驗「區域判定真的把手指攔下來」，
+        // 而不是直接呼叫按鈕的處理常式（r1 對抗審查 MEDIUM-2）。
+        void SendScreenTap(float screenX, float screenY);
     }
 }
