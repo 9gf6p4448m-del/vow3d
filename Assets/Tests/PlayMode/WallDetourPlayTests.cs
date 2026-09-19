@@ -1019,6 +1019,52 @@ namespace Vow.Tests.PlayMode
                 "2 秒後英雄離移動中的目標還有 " + gap + "m：追擊沒有跟著目標更新");
         }
 
+        // V11-j（主對話覆核 4d9bf5f 後追加）：M3 的快取不得改變「走得到」的追擊行為。
+        // 空地上追一個只在**同一格內**移動的目標時，(目的地格, 格點版本) 這組 key 完全不變，
+        // 所以連 substituted==false 的結果也快取的話，agent 目的地會停在舊位置（最多差一格對角線 0.707m）——
+        // 違反最高優先序「沒有牆擋路時 Phase 1 行為不變」。
+        // 幾何：z=−10 一帶空曠（兩面測試牆在 z∈[1,5]），全程有視線 → 整趟 BuildCount 增量必須是 0。
+        // 木樁在 x 格 56（x∈[8.0,8.5)）內從 8.05 平移到 8.45＝0.4m ≥ 0.3m，格號不變。
+        [UnityTest]
+        public IEnumerator V11j_ChasingATargetThatMovesWithinOneCell_KeepsTrackingItExactly()
+        {
+            yield return Setup(new Vector3(0f, 0f, -10f), Quaternion.identity, new RuneTuning());
+
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            Assert.IsNotNull(dummy, "場景缺少木樁");
+            Vector3 before = new Vector3(8.05f, dummy.transform.position.y, -10f);
+            dummy.transform.position = before;
+            yield return null;
+
+            _grid.TryWorldToCell(before.x, before.z, out int cxBefore, out int czBefore);
+            Assert.IsFalse(_grid.IsBlocked(cxBefore, czBefore), "前置條件：這一帶必須是空地，沒有牆擋路");
+
+            GridNavigator nav = _bootstrap.Navigator;
+            int buildsBefore = nav.BuildCount;
+            _locomotion.Chase(dummy.transform);
+
+            float start = Time.time;
+            while (Time.time - start < 0.3f) yield return null;
+
+            // 同一格內平移 ≥0.3m
+            Vector3 after = new Vector3(8.45f, before.y, -10f);
+            dummy.transform.position = after;
+            _grid.TryWorldToCell(after.x, after.z, out int cxAfter, out int czAfter);
+            Assert.AreEqual(cxBefore, cxAfter, "前置條件：平移前後必須落在同一個 x 格，否則測不到快取 key 不變的情況");
+            Assert.AreEqual(czBefore, czAfter, "前置條件：平移前後必須落在同一個 z 格");
+            Assert.GreaterOrEqual(PlanarDistance(before, after), 0.3f, "前置條件：平移距離必須 ≥0.3m");
+
+            float moved = Time.time;
+            while (Time.time - moved < 0.25f) yield return null;
+
+            float gap = PlanarDistance(_agent.destination, dummy.transform.position);
+            Assert.LessOrEqual(gap, 0.05f,
+                "目標在同一格內移動之後，agent 目的地仍停在舊位置（差 " + gap + "m）：" +
+                "走得到的解析結果被快取了，沒有牆擋路時的 Phase 1 行為被改掉了");
+            Assert.AreEqual(buildsBefore, nav.BuildCount,
+                "空地追擊不該碰到整合場（重建了 " + (nav.BuildCount - buildsBefore) + " 次）");
+        }
+
         // ───────────────────── §6 R11 V11-g（r2 N7）：拔掉導航器要把目的地還給 Phase 1 ─────────────────────
 
         // V11-g①：持有「已被替代」的移動指令時 SetNavigator(null, 0f) → agent 目的地＝使用者原始目的地。

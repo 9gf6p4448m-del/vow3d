@@ -44,6 +44,8 @@ namespace Vow.Core
         // （V11-b 的 300 盤差分測試、V2-p／q／r 全都直接對它連續下不同的 from 呼叫），
         // 而「同一道指令期間」這個範圍只有這裡知道。
         // 失效條件三個，缺一就會變成 V11-d 抓的那種過度快取：①目標格換了 ②格點版本變了 ③新指令／被牆推出。
+        // 而且只有 substituted==true 的結果才進快取（§6 R11 V11-j）——走得到的目的地是原樣回傳的，
+        // 快取它會把答案量化到格心，目標在同一格內移動時 agent 目的地就會落後（詳見 ResolveGoal 裡的說明）。
         private bool _hasCachedGoal;
         private int _cachedDestCx;
         private int _cachedDestCz;
@@ -271,14 +273,29 @@ namespace Vow.Core
             _navigator.Grid.TryWorldToCell(destX, destZ, out int destCx, out int destCz);
 
             // M3（§6 R11 V11-c）：同一道指令、同一個目標格、同一個格點版本 → 上一次的答案仍然成立。
-            // 追擊一個站著不動、走不到的目標時，這一行把「每 0.1s 一次全場 Dijkstra ＋候選帶掃描」降成只有第一次。
+            // 追擊一個站著不動、走不到的目標時，這一段把「每 0.1s 一次全場 Dijkstra ＋候選帶掃描」降成只有第一次。
             // 目標格或版本一變就重解析（V11-d ①②），所以不會退化成「解析過就永遠不再算」。
-            if (!(_hasCachedGoal && _cachedGoalVersion == gridVersion
-                  && _cachedDestCx == destCx && _cachedDestCz == destCz))
+            if (_hasCachedGoal && _cachedGoalVersion == gridVersion
+                && _cachedDestCx == destCx && _cachedDestCz == destCz)
             {
-                Vector3 position = _self.position;
-                _navigator.ResolveGoal(position.x, position.z, destX, destZ,
-                    out float resolvedX, out float resolvedZ, out _);
+                _goalX = _cachedGoalX;
+                _goalZ = _cachedGoalZ;
+                return new Vector3(_goalX, destination.y, _goalZ);
+            }
+
+            Vector3 position = _self.position;
+            _navigator.ResolveGoal(position.x, position.z, destX, destZ,
+                out float resolvedX, out float resolvedZ, out bool substituted);
+
+            // §6 R11 V11-j：**只有替代點才進快取**。
+            // 走得到的目的地是原樣回傳的，快取它等於把答案量化到格心解析度——目標在同一個格子裡移動時
+            // （key 完全沒變）agent 目的地會停在舊位置，最多落後一格對角線 0.707m，
+            // 那就違反了最高優先序「沒有牆擋路時 Phase 1 行為不變」。
+            // 而且這條路本來就便宜：有視線時 ResolveGoal 直接回傳（r2 實測 0.0003ms、不碰整合場），
+            // 沒視線但走得到時 _goalField 以**目的地格**為 key，同一格重複呼叫也不會重建。
+            // 貴的只有替代點那條（全場 Dijkstra ＋候選帶掃描），而它的輸入就是格號——量化到格心本來就是它的語意。
+            if (substituted)
+            {
                 _cachedGoalX = resolvedX;
                 _cachedGoalZ = resolvedZ;
                 _cachedDestCx = destCx;
@@ -286,10 +303,15 @@ namespace Vow.Core
                 _cachedGoalVersion = gridVersion;
                 _hasCachedGoal = true;
             }
+            else
+            {
+                // 這一格現在走得到了：舊的替代點結果不得再被命中（同一格、同一版本也不行）。
+                InvalidateGoalCache();
+            }
 
-            _goalX = _cachedGoalX;
-            _goalZ = _cachedGoalZ;
-            return new Vector3(_goalX, destination.y, _goalZ);
+            _goalX = resolvedX;
+            _goalZ = resolvedZ;
+            return new Vector3(resolvedX, destination.y, resolvedZ);
         }
 
         // 把 NavMesh 算出來的速度換成「繞得過牆」的速度。
