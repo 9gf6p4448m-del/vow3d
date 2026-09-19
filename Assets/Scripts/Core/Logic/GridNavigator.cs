@@ -54,6 +54,14 @@ namespace Vow.Core.Logic
         // 目的地走不到時不得每輪重建）。
         public int BuildCount { get; private set; }
 
+        // r2 對抗審查 N1（§6 R11 V11-a）：替代點解析時每檢查一格 +1（唯讀累計，語意同 BuildCount）。
+        // 時間量測不當及格線（§4-9），所以拿「掃了幾格」當代理指標——它是決定性的。
+        public int ScannedCellCount { get; private set; }
+
+        // 替代點解析真的發生（substituted==true）的累計次數。Unity 端的零配置量測窗口用它斷言
+        // 「這條路徑真的被行使過」（§6 R11 V11-f 的活性）。
+        public int SubstitutedCount { get; private set; }
+
         // 目的地那格非 Blocked 且從 (fromX,fromZ) 走得到 → 原樣回傳、substituted=false。
         // 否則回傳「最近可達點」的格心、substituted=true。
         //
@@ -111,6 +119,7 @@ namespace Vow.Core.Logic
             {
                 for (int cx = 0; cx < _grid.Columns; cx++)
                 {
+                    ScannedCellCount++;
                     if (!_componentField.IsReached(cx, cz)) continue;
                     _grid.CellCenter(cx, cz, out float cxWorld, out float czWorld);
                     double dx = cxWorld - destX;
@@ -120,21 +129,45 @@ namespace Vow.Core.Logic
                 }
             }
 
-            double slack = Math.Sqrt(minDistSq) + _tuning.CellSize * Math.Sqrt(2.0) + CandidateSlackEpsilon;
-            double slackSq = slack * slack;
-
-            // 第二遍（§6 R8／R1a 階段 2）：候選帶 B 內取路徑成本最低者 W——**只用來決定停在哪一側**。
-            // 同成本取離目的地較近者；再同取索引較小者（掃描順序 cz 大迴圈、cx 小迴圈＝索引遞增，
-            // 只在嚴格更優時換人，所以平手時留的是索引最小那格）。
+            // N10（§6 R11，記錄不修）：連通區完全空（英雄格 Blocked 且搜尋半徑內無空格）時 found 會留 false，
+            // 回傳的是 connCx/connCz 的格心——那可能是一個 Blocked 格。本作牆寬 4m、場地 40m 排不出這個盤面。
             int bestCx = connCx;
             int bestCz = connCz;
             bool found = false;
             int bestCost = int.MaxValue;
             double bestDistSq = double.MaxValue;
-            for (int cz = 0; cz < _grid.Rows; cz++)
+            if (minDistSq == double.MaxValue)
             {
-                for (int cx = 0; cx < _grid.Columns; cx++)
+                // 連通區一格都沒有：候選帶無從算起，直接走 N10 那條退路。
+                _grid.CellCenter(bestCx, bestCz, out goalX, out goalZ);
+                substituted = true;
+                SubstitutedCount++;
+                return;
+            }
+
+            double slack = Math.Sqrt(minDistSq) + _tuning.CellSize * Math.Sqrt(2.0) + CandidateSlackEpsilon;
+            double slackSq = slack * slack;
+
+            // r2 對抗審查 N1（§6 R11 V11-a）：候選帶 B 的定義是「格心離目的地 ≤ slack」，所以 B 必然落在
+            // 「以目的地為心、半邊長 slack」的方塊內——方塊外的格在下面兩遍都會被 distSq > slackSq 濾掉，
+            // 掃它們只是白跑。修復前這兩遍各掃完整的 80×80，一次解析＝三趟 6400 格（實測 0.92ms）。
+            // 邊界各外擴一格吸收浮點量化誤差；語意與掃全場完全相同（V11-b 的 300 盤差分測試釘住這一點）。
+            _grid.TryWorldToCell((float)(destX - slack), (float)(destZ - slack), out int bandMinCx, out int bandMinCz);
+            _grid.TryWorldToCell((float)(destX + slack), (float)(destZ + slack), out int bandMaxCx, out int bandMaxCz);
+            bandMinCx--; bandMinCz--; bandMaxCx++; bandMaxCz++;
+            if (bandMinCx < 0) bandMinCx = 0;
+            if (bandMinCz < 0) bandMinCz = 0;
+            if (bandMaxCx > _grid.Columns - 1) bandMaxCx = _grid.Columns - 1;
+            if (bandMaxCz > _grid.Rows - 1) bandMaxCz = _grid.Rows - 1;
+
+            // 第二遍（§6 R8／R1a 階段 2）：候選帶 B 內取路徑成本最低者 W——**只用來決定停在哪一側**。
+            // 同成本取離目的地較近者；再同取索引較小者（掃描順序 cz 大迴圈、cx 小迴圈＝索引遞增，
+            // 只在嚴格更優時換人，所以平手時留的是索引最小那格）。
+            for (int cz = bandMinCz; cz <= bandMaxCz; cz++)
+            {
+                for (int cx = bandMinCx; cx <= bandMaxCx; cx++)
                 {
+                    ScannedCellCount++;
                     if (!_componentField.IsReached(cx, cz)) continue;
                     _grid.CellCenter(cx, cz, out float cxWorld, out float czWorld);
                     double dx = cxWorld - destX;
@@ -160,10 +193,11 @@ namespace Vow.Core.Logic
             // 白白遠 0.5m。所以在「路徑成本 ≤ cost(W)＋SubstituteCostSlack」的候選裡改取**離目的地最近**者，
             // 同距離取成本低者、再同取索引小者。語意＝為了更靠近你點的位置，最多願意多走約 1.4m。
             int costLimit = bestCost + _tuning.SubstituteCostSlack;
-            for (int cz = 0; cz < _grid.Rows; cz++)
+            for (int cz = bandMinCz; cz <= bandMaxCz; cz++)
             {
-                for (int cx = 0; cx < _grid.Columns; cx++)
+                for (int cx = bandMinCx; cx <= bandMaxCx; cx++)
                 {
+                    ScannedCellCount++;
                     if (!_componentField.IsReached(cx, cz)) continue;
                     int cost = _componentField.CostAt(cx, cz);
                     if (cost > costLimit) continue;
@@ -184,6 +218,7 @@ namespace Vow.Core.Logic
 
             _grid.CellCenter(bestCx, bestCz, out goalX, out goalZ);
             substituted = true;
+            SubstitutedCount++;
         }
 
         // Direct＝到 goal 有視線（呼叫端沿用 NavMesh 的 desiredVelocity）。

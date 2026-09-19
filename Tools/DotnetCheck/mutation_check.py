@@ -251,6 +251,12 @@ MUTATIONS = [
      "            int costLimit = bestCost + _tuning.SubstituteCostSlack;",
      "            int costLimit = -1;",
      "ResolveGoal_SubstitutePoint_TakesTheCellClosestToTheTap_WithinTheCostSlack"),
+
+    # ── r2 對抗審查後的 v0.4.1（PHASE2_BATCH2_PLAN.md §6 R11） ──
+    ("G19", "合併後的候選帶方塊算窄了一格（V11-a 的掃描合併偷掉合法候選）", LOGIC + "GridNavigator.cs",
+     "            bandMinCx--; bandMinCz--; bandMaxCx++; bandMaxCz++;",
+     "            bandMinCx++; bandMinCz++; bandMaxCx--; bandMaxCz--;",
+     "ResolveGoal_OnRandomBoards_MatchesTheIndependentR1aReference_ValueForValue"),
 ]
 
 

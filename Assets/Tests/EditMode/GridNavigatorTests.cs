@@ -118,6 +118,30 @@ namespace Vow.Tests
             }
         }
 
+        // ───────────────────── §6 R11 V11-a（r2 N1）：替代點解析的掃描次數 ─────────────────────
+
+        // V11-a：80×80 格點、單面牆、點牆腳（目的地格 Blocked）解析一次，ScannedCellCount 增量 ≤ 8000。
+        // 修復前是三趟完整的 80×80 掃描＝19200（r2 實測 ResolveGoal 單次 1.576ms，其中約 0.92ms 花在這三趟）；
+        // 追擊一個走不到的目標時每 0.1s 付一次，而且追擊指令不會自己結束——這是手機卡頓的候選來源。
+        [Test]
+        public void ResolveGoal_TappingTheWallFoot_ScansFarFewerCellsThanThreeFullSweeps()
+        {
+            BlockGrid grid = NewGrid();
+            grid.StampBox(0f, 4f, 0f, 1f, 2f, 0.3f, 0.35f, 1);
+            GridNavigator nav = new GridNavigator(grid, NewTuning());
+
+            grid.TryWorldToCell(0f, 4f, out int destCx, out int destCz);
+            Assert.IsTrue(grid.IsBlocked(destCx, destCz), "前置條件：目的地要真的落在 Blocked 格（＝點牆腳）");
+
+            int before = nav.ScannedCellCount;
+            nav.ResolveGoal(0f, 0f, 0f, 4f, out _, out _, out bool substituted);
+            int scanned = nav.ScannedCellCount - before;
+
+            Assert.IsTrue(substituted, "前置條件：這一次解析必須真的走替代點那條路，否則掃描次數沒有意義");
+            Assert.LessOrEqual(scanned, 8000,
+                $"一次替代點解析掃了 {scanned} 格（上限 8000；三趟全場掃描＝3×6400＝19200）");
+        }
+
         // ───────────────────── §6 R11 V11-b：合併掃描不得改變行為（特徵化差分測試）─────────────────────
 
         // 決定性的小型 LCG：System.Random 的序列在 .NET 與 Unity Mono 上不保證一致，這條測試要兩邊跑出同一批盤面。
