@@ -1065,6 +1065,96 @@ namespace Vow.Tests.PlayMode
                 "空地追擊不該碰到整合場（重建了 " + (nav.BuildCount - buildsBefore) + " 次）");
         }
 
+        // ───────────────────── §6 R13 V13-a（r3 覆審 R3-1）：替代點快取要看目的地的連續座標 ─────────────────────
+
+        // R3-1：快取的命中條件只有「目的地格＋格點版本」，但 R1a 選點用的是**連續的** destX/destZ
+        //（dMin、候選帶 slack、第二／三遍的距離比較全都拿連續座標算）。走不到的目標在**同一格內**移動時，
+        // key 完全沒變 → 命中 → agent 目的地凍在舊的替代點，而當下的 R1a 答案已經換到牆的另一側。
+        // 批 3 會加入會動的敵人，那時這就是玩家看得到的「英雄站到牆的另一邊」。
+        //
+        // 幾何（與 r3 覆審員的重現座標相同）：TestWall_B 牆心 (7,3)、轉 90°（法線 +X）、半寬 2／半厚 0.3、外擴 0.35
+        //   → 禁區 x∈[6.35,7.65]、z∈[0.65,5.35]；Blocked 格 x 格 52~55（格心 6.25~7.75）、z 格 41~50（格心 0.75~5.25）。
+        //   四周第一排空格：西 x=5.75、東 x=8.25、南 z=0.25、北 z=5.75。
+        // 木樁 A=(7.05,1.05) → 格 (54,42)，B=(7.45,1.45) → 同格 (54,42)，位移 √(0.4²+0.4²)=0.5657m。
+        //   A 的 dMin＝0.82462（南側格心 (7.25,0.25)）→ 候選帶 ≤1.53172，**西側 (5.75,1.25) 的 1.31529 在帶內**；
+        //     英雄在西北的 (0,8)，繞南端要多走一大圈，西側路徑成本最低 → 停在西側＝**(5.75,1.25)**。
+        //     （起點換成 (0,3) 的話南端變近、答案會變成 (6.25,0.25)——所以起點照 r3 覆審員的 (0,0,8) 寫死。）
+        //   B 的 dMin＝0.82462（東側格心 (8.25,1.25)）→ 候選帶 ≤1.53172，**西側 (5.75,1.25) 變成 1.71464、被排除**；
+        //     帶內只剩南／東，英雄繞南端最便宜，階段 2 W＝(6.75,0.25)（成本 34），
+        //     階段 3 在成本 ≤34+28=62 的格裡取離 B 最近者＝**(7.25,0.25)**（距離 1.21655、成本 44）。
+        //   兩者相距 √(1.5²+1²) = 1.80278m——與 r3 覆審實跑的 1.803m 相符。
+        [UnityTest]
+        public IEnumerator V13a_ChaseTargetMovingWithinOneCell_RefreshesTheSubstitutePoint()
+        {
+            yield return Setup(new Vector3(0f, 0f, 8f), Quaternion.identity, new RuneTuning());
+
+            GameObject wallObject = GameObject.Find("TestWall_B");
+            Assert.IsNotNull(wallObject, "場景缺少 TestWall_B");
+            Obb obb = ReadObb(wallObject.GetComponent<TestWallTarget>());
+            AssertWallGeometry(obb, new Vector2(7f, 3f), new Vector2(1f, 0f));
+
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            Assert.IsNotNull(dummy, "場景缺少木樁");
+            Vector3 posA = new Vector3(7.05f, dummy.transform.position.y, 1.05f);
+            dummy.transform.position = posA;
+            yield return null;
+
+            _grid.TryWorldToCell(posA.x, posA.z, out int cxA, out int czA);
+            Assert.IsTrue(_grid.IsBlocked(cxA, czA), "前置條件：木樁所在格必須是 Blocked（＝追不到）");
+
+            _locomotion.Chase(dummy.transform);
+
+            // 英雄走到替代點：(0,8)→(5.75,1.25) 直線 √(5.75²+6.75²) = 8.86707m（全程 x ≤ 5.75 < 6.35，不碰禁區）
+            //   → T = 1.5 × 8.86707 ÷ 5.5 = 2.41829 s
+            float deadline = Time.time + 1.5f * 8.86707f / MoveSpeed;
+            while (Time.time <= deadline) yield return null;
+            yield return AssertHeroHasStopped();
+
+            Vector3 oldDestination = _agent.destination;
+            Assert.AreEqual(5.75f, oldDestination.x, 0.05f, "前置條件：舊替代點的格心 x 與推導不符：" + oldDestination);
+            Assert.AreEqual(1.25f, oldDestination.z, 0.05f, "前置條件：舊替代點的格心 z 與推導不符：" + oldDestination);
+
+            // 同一格內平移
+            Vector3 posB = new Vector3(7.45f, posA.y, 1.45f);
+            dummy.transform.position = posB;
+            _grid.TryWorldToCell(posB.x, posB.z, out int cxB, out int czB);
+            Assert.AreEqual(cxA, cxB, "前置條件：平移前後必須落在同一個 x 格，否則測到的是 V11-d① 那條（換格）");
+            Assert.AreEqual(czA, czB, "前置條件：平移前後必須落在同一個 z 格");
+            Assert.GreaterOrEqual(PlanarDistance(posA, posB), 0.3f, "前置條件：平移距離太小");
+
+            // 當下的 R1a 答案：全新的 GridNavigator、同一份格點、英雄當下位置（與 HeroLocomotion 一樣先夾進可達範圍）
+            GridNavigator probe = new GridNavigator(_grid, _bootstrap.Navigator.Tuning);
+            Vector3 heroNow = _hero.transform.position;
+            _grid.ClampToPlayableArea(posB.x, posB.z, out float clampedX, out float clampedZ);
+            probe.ResolveGoal(heroNow.x, heroNow.z, clampedX, clampedZ,
+                out float liveX, out float liveZ, out bool liveSubstituted);
+            Assert.IsTrue(liveSubstituted, "前置條件：平移後的新位置也必須是走不到的");
+
+            // 活性：新答案必須與舊答案**不同格**——同格的話這條測試對「快取沒跟上」零鑑別力，要紅而不是無聲通過
+            _grid.TryWorldToCell(liveX, liveZ, out int liveCx, out int liveCz);
+            _grid.TryWorldToCell(oldDestination.x, oldDestination.z, out int oldCx, out int oldCz);
+            Assert.IsTrue(liveCx != oldCx || liveCz != oldCz,
+                "活性失敗：目標在同一格內平移之後 R1a 答案沒有換格（舊 (" + oldCx + "," + oldCz +
+                ") 新 (" + liveCx + "," + liveCz + ")），幾何挑錯了，這條測試證明不了任何事");
+
+            // 錨點：新答案的格心座標寫死，R1a 或場景幾何漂掉時當場紅
+            Assert.AreEqual(7.25f, liveX, 1e-4f, "當下 R1a 答案的 x 與推導不符");
+            Assert.AreEqual(0.25f, liveZ, 1e-4f, "當下 R1a 答案的 z 與推導不符");
+
+            // 平移後 0.35 秒（≥3 個 0.1s 的追擊重解析窗口）內，agent 目的地要換成當下的 R1a 答案
+            Vector3 live = new Vector3(liveX, 0f, liveZ);
+            float window = Time.time + 0.35f;
+            bool refreshed = false;
+            while (Time.time <= window)
+            {
+                if (PlanarDistance(_agent.destination, live) <= 0.05f) { refreshed = true; break; }
+                yield return null;
+            }
+            Assert.IsTrue(refreshed,
+                "目標在同一格內移動之後 agent 目的地仍是 " + _agent.destination + "，當下的 R1a 答案是 " + live +
+                "（差 " + PlanarDistance(_agent.destination, live) + "m）：替代點快取的 key 沒有看目的地的連續座標");
+        }
+
         // ───────────────────── §6 R11 V11-g（r2 N7）：拔掉導航器要把目的地還給 Phase 1 ─────────────────────
 
         // V11-g①：持有「已被替代」的移動指令時 SetNavigator(null, 0f) → agent 目的地＝使用者原始目的地。
