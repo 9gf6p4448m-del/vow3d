@@ -22,11 +22,19 @@ namespace Vow.Combat
             if (_wallRenderer == null) _wallRenderer = GetComponentInChildren<Renderer>();
         }
 
+        // Phase 2 批 2：靜態測試牆一開場就擋路，所以在 Start 登記（Phase1Bootstrap 是 -1000，它的 Start 先跑完、
+        // 格點已經注入）。萬一注入更晚，SetNavGrid 也會把這筆補蓋上去。
+        private void Start()
+        {
+            if (IsAlive) RegisterNavBlocker(_collider);
+        }
+
         protected override void HandleDeath()
         {
             _respawnTimer = _respawnSeconds;
             _collider.enabled = false;
             if (_wallRenderer != null) _wallRenderer.enabled = false;
+            UnregisterNavBlocker();
         }
 
         private void Update()
@@ -39,6 +47,7 @@ namespace Vow.Combat
             _collider.enabled = true;
             if (_wallRenderer != null) _wallRenderer.enabled = true;
             Revive();
+            RegisterNavBlocker(_collider); // 重生＝重新擋路
         }
     }
 }

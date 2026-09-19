@@ -46,7 +46,7 @@ namespace Vow.EditorTools
             // NavMesh 在「只有地板」的時候烘焙：石牆、木樁、英雄都還不存在，所以烘出來的是一整片無洞的靜態網格。
             // 石牆之後被打碎也不需要重烘——它從頭到尾就不在 NavMesh 裡（紅線 5：零 carving、零執行期烘焙）。
             BakeStaticNavMesh(ground);
-            CreateArenaBoundary(tuning.BodyRadius); // 必須在烘焙之後：邊界牆不得進入 NavMesh
+            GameObject arenaBoundary = CreateArenaBoundary(tuning.BodyRadius); // 必須在烘焙之後：邊界牆不得進入 NavMesh
 
             HeroController hero = CreateHero(tuning, materials.Hero);
             CreateDummy(new Vector3(0f, 0f, 6f), materials.Dummy, materials.Bar);
@@ -54,9 +54,10 @@ namespace Vow.EditorTools
             CreateWall("TestWall_B", new Vector3(7f, 0f, 3f), 90f, materials.Wall, materials.Bar);
             CreateRuneWallPool(tuning.Rune, materials.RuneWall);
             RuneGhostPreview runeGhost = CreateRuneGhostPreview(tuning.Rune, materials.RuneGhost);
+            NavGridDebugView navGridDebug = CreateNavGridDebugView(materials.NavGrid);
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
-            CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost);
+            CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -70,7 +71,7 @@ namespace Vow.EditorTools
 
         private struct Materials
         {
-            public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines, RuneWall, RuneGhost;
+            public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines, RuneWall, RuneGhost, NavGrid;
         }
 
         private static Materials CreateMaterials()
@@ -89,7 +90,8 @@ namespace Vow.EditorTools
                 Telegraph = GreyboxAssetFactory.EnsureVertexColorMaterial("VOW_Telegraph"),
                 HitboxLines = GreyboxAssetFactory.EnsureGlLineMaterial("VOW_HitboxLines"),
                 RuneWall = GreyboxAssetFactory.EnsureLitMaterial("VOW_RuneWall", new Color(0.35f, 0.4f, 0.58f)),
-                RuneGhost = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_RuneGhost", new Color(0.35f, 0.85f, 1f, 0.35f), true, true)
+                RuneGhost = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_RuneGhost", new Color(0.35f, 0.85f, 1f, 0.35f), true, true),
+                NavGrid = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_NavGridDebug", new Color(1f, 0.35f, 0.25f, 0.45f), true, true)
             };
         }
 
@@ -129,7 +131,8 @@ namespace Vow.EditorTools
 
         // 場地四周的隱形邊界（只有 BoxCollider、沒有 Renderer）。微滑步與步行的位移都經 SphereCast 裁切，
         // 有了實體邊界，英雄就不可能被滑出平台、掉出 NavMesh——不需要依賴 NavMeshAgent 夾回位置的行為。
-        private static void CreateArenaBoundary(float bodyRadius)
+        // 回傳邊界根物件：Phase1Bootstrap 要拿它把四面牆登記進阻擋格點（§6 R3，格點最外圈必須是 Blocked）。
+        private static GameObject CreateArenaBoundary(float bodyRadius)
         {
             const float height = 3f;
             const float thickness = 1f;
@@ -160,6 +163,7 @@ namespace Vow.EditorTools
                     ? new Vector3(thickness, height, ArenaSize + thickness * 2f)
                     : new Vector3(ArenaSize + thickness * 2f, height, thickness);
             }
+            return root;
         }
 
         private static void BakeStaticNavMesh(GameObject ground)
@@ -296,6 +300,23 @@ namespace Vow.EditorTools
             return preview;
         }
 
+        // GRID 除錯疊圖的載體：空的 MeshFilter／MeshRenderer，Mesh 由 NavGridDebugView 在執行期填內容。
+        // 執行期禁止 CreatePrimitive（IL2CPP 剔除），所以物件本體一定要在這裡預建好（計畫書 §4 假設 10）。
+        private static NavGridDebugView CreateNavGridDebugView(Material material)
+        {
+            GameObject view = new GameObject("NavGridDebug");
+            view.layer = IgnoreRaycastLayer; // 不吃點擊射線
+            view.AddComponent<MeshFilter>();
+
+            MeshRenderer renderer = view.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.enabled = false; // 預設關
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+
+            return view.AddComponent<NavGridDebugView>();
+        }
+
         private static Camera CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot)
         {
             GameObject rigObject = new GameObject("CameraRig");
@@ -322,7 +343,8 @@ namespace Vow.EditorTools
         }
 
         private static void CreateSystems(HeroController hero, Camera camera, FollowCameraRig rig, Transform shakePivot,
-            Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost)
+            Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug,
+            Transform arenaBoundary)
         {
             GameObject systems = new GameObject("VOW_Systems");
 
@@ -367,6 +389,8 @@ namespace Vow.EditorTools
             SetReference(bootstrap, "_runeCaster", runeCaster);
             SetReference(bootstrap, "_runeGhost", runeGhost);
             SetReference(bootstrap, "_runeButton", runeButton);
+            SetReference(bootstrap, "_navGridDebug", navGridDebug);
+            SetReference(bootstrap, "_arenaBoundary", arenaBoundary);
         }
 
         // ───────────────────────── 專案設定 ─────────────────────────

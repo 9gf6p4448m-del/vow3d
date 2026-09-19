@@ -5,6 +5,7 @@ using Unity.Profiling;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
+using Vow.Bootstrap;
 using Vow.Combat;
 using Vow.Combat.Feedback;
 using Vow.Core;
@@ -129,6 +130,24 @@ namespace Vow.Tests.PlayMode
         }
     }
 
+    // Phase 2 批 2 V4-i：繞牆的移動指令也必須由夾區內的 Update() 送出，才量得到
+    // 「視線被擋 → 重建整合場 → Follow 轉向」這條路徑；寫在測試協程本體會落在探針夾區之外（同 H2）。
+    public sealed class NavDetourDriver : MonoBehaviour
+    {
+        internal ScriptedInput Input;
+        public Vector3 Destination;
+        public bool Trigger;
+        public int Orders;
+
+        private void Update()
+        {
+            if (!Trigger || Input == null) return;
+            Trigger = false;
+            Orders++;
+            Input.TapGround(Destination);
+        }
+    }
+
     public sealed class ZeroAllocationTests
     {
         private const string SceneName = "VOW_Phase1_Greybox";
@@ -137,6 +156,12 @@ namespace Vow.Tests.PlayMode
         {
             for (int i = 0; i < pool.Length; i++) if (pool[i].IsAlive) return true;
             return false;
+        }
+
+        private static RuneWall FirstAliveRuneWall(RuneWall[] pool)
+        {
+            for (int i = 0; i < pool.Length; i++) if (pool[i].IsAlive) return pool[i];
+            return null;
         }
 
         private static IEnumerator WaitUntilNoRuneWallIsAlive(RuneWall[] pool, float timeoutSeconds)
@@ -204,7 +229,12 @@ namespace Vow.Tests.PlayMode
             driver.Target = dummy;
             RuneCastDriver runeDriver = rig.AddComponent<RuneCastDriver>();
             runeDriver.Input = input;
+            NavDetourDriver detourDriver = rig.AddComponent<NavDetourDriver>();
+            detourDriver.Input = input;
             rig.AddComponent<AllocationProbeEnd>();
+
+            HeroLocomotion locomotion = hero.GetComponent<HeroLocomotion>();
+            Assert.IsNotNull(locomotion, "英雄身上沒有 HeroLocomotion");
 
             // 暖機：跑完至少兩刀、一次滑步，讓靜態表、JIT、首次進入各狀態的一次性初始化都發生在量測之前
             float deadline = Time.time + 12f;
@@ -229,18 +259,60 @@ namespace Vow.Tests.PlayMode
             // 重新 Initialize：重置冷卻與名冊狀態，確保量測窗口內的施放不會被暖機那一次的冷卻擋下
             caster.Initialize(input, input, hero.transform, Camera.main, new RuneTuning(), runeWalls, hero.HeroFaction);
 
+            // r1 對抗審查 M2：「GRID 疊圖重填也不配置」原本只是讀碼的宣稱。把疊圖打開，讓量測窗口內
+            // 至少發生兩次重填（立牆 → Blocked 格變多、牆到期 → 變少）。先在窗口外暖機一次，
+            // 把 Mesh 原生緩衝第一次配置的成本排除在外。
+            NavGridDebugView gridDebug = UnityEngine.Object.FindObjectOfType<NavGridDebugView>();
+            Assert.IsNotNull(gridDebug, "場景缺少 NavGridDebugView");
+            gridDebug.Visible = true;
+            yield return null;
+            yield return null;
+            Assert.GreaterOrEqual(gridDebug.RebuildCount, 1, "疊圖打開後應該至少重填過一次（暖機）");
+            int rebuildsBefore = gridDebug.RebuildCount;
+
             int hitsBefore = hits, dashesBefore = dashes;
             AllocationProbe.Measuring = true;
-            runeDriver.Trigger = true; // 下一次 RuneCastDriver.Update()（落在探針夾區內）才真的送出施放
-            bool sawRuneWallAlive = false;
+
+            // 量測窗口第 1 段（仍在夾區內）：先把戰鬥活性跑滿。批 2 的繞牆指令會中斷攻擊，
+            // 所以命中與滑步必須在下移動指令之前收集完，否則兩件事互相排擠。
             deadline = Time.time + 20f;
-            while (AllocationProbe.Frames < 240 || hits - hitsBefore < 2 || dashes - dashesBefore < 1
-                   || runeDriver.Casts < 1 || AnyRuneWallAlive(runeWalls))
+            while (hits - hitsBefore < 2 || dashes - dashesBefore < 1)
             {
-                if (AnyRuneWallAlive(runeWalls)) sawRuneWallAlive = true;
                 if (Time.time > deadline) break;
                 yield return null;
             }
+
+            // 量測窗口第 2 段：符印施放 → 立牆擋住去路 → 對牆後方下移動指令（Build＋Follow 轉向）→ 牆到期撤銷
+            runeDriver.Trigger = true; // 下一次 RuneCastDriver.Update()（落在探針夾區內）才真的送出施放
+            bool sawRuneWallAlive = false;
+            int followFrames = 0;
+            deadline = Time.time + 20f;
+            while (AllocationProbe.Frames < 240 || runeDriver.Casts < 1 || detourDriver.Orders < 1
+                   || followFrames < 10 || !sawRuneWallAlive || AnyRuneWallAlive(runeWalls))
+            {
+                if (AnyRuneWallAlive(runeWalls))
+                {
+                    sawRuneWallAlive = true;
+
+                    // 批 2 V4-i：牆一立起來就對牆的另一側下移動指令（由夾區內的 Update 送出），
+                    // 逼出「視線被擋 → FlowField.Build → Follow 轉向」；牆到期時的撤銷仍落在同一個量測窗口內。
+                    if (detourDriver.Orders == 0 && !detourDriver.Trigger)
+                    {
+                        RuneWall alive = FirstAliveRuneWall(runeWalls);
+                        Vector3 behind = alive.transform.position + alive.transform.forward * 4f;
+                        behind.y = 0f;
+                        detourDriver.Destination = behind;
+                        detourDriver.Trigger = true;
+                    }
+                }
+                if (locomotion.LastSteerMode == SteerMode.Follow
+                    && hero.StateMachine.CurrentState == PlayerState.Moving) followFrames++;
+                if (Time.time > deadline) break;
+                yield return null;
+            }
+            // 再放一幀：石牆是在 Update 裡到期的，它造成的格點撤銷與 GRID 疊圖重填發生在同一幀的
+            // LateUpdate——比測試協程晚。不多等這一幀，「牆到期」那一段就落在量測窗口之外。
+            yield return null;
             AllocationProbe.Measuring = false;
             UnityEngine.Object.Destroy(rig);
 
@@ -251,6 +323,13 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(1, runeDriver.Casts, "量測窗口內應該恰好送出一次符印施放（在探針夾區內的 Update() 裡）");
             Assert.IsTrue(sawRuneWallAlive, "量測期間從未觀察到石牆存活：符印施放這條路徑沒有被量到");
             Assert.IsFalse(AnyRuneWallAlive(runeWalls), "量測窗口內石牆應已到期（否則量測時間不夠長，這不構成證據）");
+            Assert.AreEqual(1, detourDriver.Orders, "量測窗口內應該恰好送出一次繞牆移動指令（在探針夾區內的 Update() 裡）");
+            Assert.GreaterOrEqual(followFrames, 10,
+                "量測期間從未進入 Follow 轉向：整合場重建與繞牆轉向這條路徑沒有被量到（實測 " + followFrames + " 幀）");
+            Assert.IsTrue(gridDebug.Visible, "量測期間 GRID 疊圖應保持開啟");
+            Assert.GreaterOrEqual(gridDebug.RebuildCount - rebuildsBefore, 2,
+                "量測期間 GRID 疊圖沒有重填過兩次（立牆＋到期）：M2 那條零配置沒有被量到（實測 "
+                + (gridDebug.RebuildCount - rebuildsBefore) + " 次）");
 
             Assert.AreEqual(0L, AllocationProbe.UpdateBytes,
                 "Update 夾區在 " + AllocationProbe.Frames + " 幀內配置了 " + AllocationProbe.UpdateBytes + " bytes");

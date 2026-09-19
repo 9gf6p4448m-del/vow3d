@@ -63,6 +63,10 @@ namespace Vow.Combat
 
             _collider.enabled = true;
             if (_renderer != null) _renderer.enabled = true;
+
+            // 登記格點：推出被壓住的英雄由 CombatTargetBehaviour.Stamp 統一通知（§6 R4），
+            // 這裡不再另開一條只有符印牆走得到的事件。
+            RegisterNavBlocker(_collider);
         }
 
         private void Update()
@@ -72,11 +76,15 @@ namespace Vow.Combat
             if (!_logic.IsAlive) ForceKill(); // 壽命到：與被打碎／被穿透打死走同一條收斂路徑
         }
 
+        // 五條離場路徑（壽命到期、被打爆、穿透耗盡、名冊擠掉、Initialize 重入）在 RuneWall 內部全部收斂到
+        // ForceKill → ReceiveDamage → 這裡，所以撤銷格點只需要寫在這一個地方；
+        // 第六條「物件停用／銷毀」由 CombatTargetBehaviour.OnDisable 負責。
         protected override void HandleDeath()
         {
             _logic.Kill();
             _collider.enabled = false;
             if (_renderer != null) _renderer.enabled = false;
+            UnregisterNavBlocker();
             _caster?.ReleaseSlot(_slotIndex);
         }
 
