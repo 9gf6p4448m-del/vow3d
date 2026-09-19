@@ -249,6 +249,11 @@ namespace Vow.Tests
         }
 
         [Test]
+#if UNITY_5_3_OR_NEWER
+        // Unity 的 Mono 上 GC.GetAllocatedBytesForCurrentThread() 恆回 0：零配置斷言會空轉成綠、正向對照必紅。
+        // 這組量測只在 dotnet（verify.sh）下有鑑別力；Unity 下的零配置由 PlayMode 的 Profiler 探針負責（ZeroAllocationTests，V4-i）。
+        [Ignore("dotnet only: GC.GetAllocatedBytesForCurrentThread is always 0 on Unity Mono; Unity-side coverage is the PlayMode profiler probe")]
+#endif
         public void SteadyState_ResolveGoalAndSteer_AllocateZeroBytes_AfterWarmup()
         {
             // o. 零配置（GridNavigator 部分）：暖機後 ResolveGoal＋Steer 各跑 100 次，差值必須是 0。
@@ -274,6 +279,11 @@ namespace Vow.Tests
         }
 
         [Test]
+#if UNITY_5_3_OR_NEWER
+        // Unity 的 Mono 上 GC.GetAllocatedBytesForCurrentThread() 恆回 0：零配置斷言會空轉成綠、正向對照必紅。
+        // 這組量測只在 dotnet（verify.sh）下有鑑別力；Unity 下的零配置由 PlayMode 的 Profiler 探針負責（ZeroAllocationTests，V4-i）。
+        [Ignore("dotnet only: GC.GetAllocatedBytesForCurrentThread is always 0 on Unity Mono; Unity-side coverage is the PlayMode profiler probe")]
+#endif
         public void SteadyState_BuildAndStampBox_AllocateZeroBytes_AfterWarmup()
         {
             // o. 零配置（FlowField.Build／BlockGrid.StampBox 部分）。
@@ -298,6 +308,11 @@ namespace Vow.Tests
         }
 
         [Test]
+#if UNITY_5_3_OR_NEWER
+        // Unity 的 Mono 上 GC.GetAllocatedBytesForCurrentThread() 恆回 0：零配置斷言會空轉成綠、正向對照必紅。
+        // 這組量測只在 dotnet（verify.sh）下有鑑別力；Unity 下的零配置由 PlayMode 的 Profiler 探針負責（ZeroAllocationTests，V4-i）。
+        [Ignore("dotnet only: GC.GetAllocatedBytesForCurrentThread is always 0 on Unity Mono; Unity-side coverage is the PlayMode profiler probe")]
+#endif
         public void AllocationMeasurement_PositiveControl_DetectsARealAllocation()
         {
             // o. 正向對照：證明量測手法真的抓得到配置，不是量測方式本身失靈而一直讀到 0。
