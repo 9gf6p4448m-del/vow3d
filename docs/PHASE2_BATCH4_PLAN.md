@@ -517,3 +517,33 @@ CRITICAL／HIGH 全修或經使用者簽准；修完送**三態覆審**（「反
 **實作者自行加嚴（不需同意，記錄）**：V2-t／V2-u／V2-v／V2-ab 的期望值由讀 tuning 欄位改成寫死 0.65／0.5（原寫法讓 E3、E5 MISSED）；V2-n 兩個水域的生成順序對調（原順序讓 E30 MISSED）。
 
 **留給步驟 B 的介面事實**（`vow-toolchain/p2b4-readback.md` 疑義）：`ReactionOutcome` 不含新區域的 id／座標；§4-9 的「刷新燃燒區」在純邏輯層以 Terminate＋原圓心重 Spawn 實作（id 會換）；蒸氣區 `FactionId`＝`ElementReactionLogic.NeutralFactionId = 2`（對應 `Faction.Neutral`）。§4-9 的兩個分支（火落在燃燒區／蒸氣內）目前沒有任何測試守，步驟 B 要各補一條 PlayMode 或 EditMode 測試。
+
+## 9. r1 對抗審查後的修訂（2026-09-20；報告 `vow-toolchain/REVIEW-p2b4-r1.md`，標的 `5ce8d3a`：CRITICAL 0／HIGH 3／MEDIUM 7／LOW 4）
+
+審查員自己重跑：`verify.sh` ALL PASS、EditMode 190／0 紅／4 略過、PlayMode 85／85；點名 ③④⑤⑥⑦⑪⑬⑭ 查過無問題（數值 20／20 相同、無任何容差比條文寬、既有測試零刪除行）。
+
+**§8 補記**：V2-a 的取點在 `5ce8d3a` 第二次修正——`f5210bb` 的 (2.3,−1.7)＋(1.8,2.4)、r=3 在 .NET 8 綠、Unity Mono 紅（先加再減後分量已非 1.8／2.4；`vow-toolchain/p2b4-edit-base.xml`），改成全為二進位有限小數的 (2.25,−1.75)＋(1.5,2.0)、r=2.5。E24 在新取點上 CAUGHT（主對話與審查員各實跑一次）。教訓：Checkpoint A 只跑了 `verify.sh`＋突變、沒跑 Unity EditMode——**之後每個 Checkpoint 都要含 Unity EditMode**。
+
+### 待使用者裁定（未動）
+
+- **HIGH-1** 原地連按 `WATER`→`ENEMY WALL`，英雄恰在流沙邊界（`CastDistanceMeters 4 == QuickCastDistance 4 == ReactionRadius 4`），縛足生不生效由浮點決定。修法動到裁定數值 → 問使用者。
+- **HIGH-3** 砲台開著（0.25s／發）時霧內木樁永久顯影 → 蒸氣遮蔽對木樁失效。是否屬於 `GDD.md:126`「受到傷害立即顯形」的原意（任何來源的傷害都顯影）→ 問使用者簽准或修。
+
+### 本輪修（凍結條件；括號＝壞實作會紅）
+
+- **R1（HIGH-2）** 新增 PlayMode 測試 `R1_TheFourElementButtons_AreReachedThroughTheRealTouchRouting`（比照批 3 `R5m2_…` `ShieldAndProjectilePlayTests.cs:772-800`）：用 `DebugHudLayout.Compute(Screen.width, Screen.height, Screen.dpi)` 算出四顆鈕矩形中心，經 `Phase1Bootstrap.WorldTapInput.SendScreenTap` 送真實觸控 → `WATER` 使 `ActiveZoneCount` +1、`ELEM` 使陣營標籤翻面、`FIRE` 施放（區域數或木樁血量變化）、`WIND` 使 `SectorTelegraph.ShowCount` +1；四次都**沒有**觸發 `OnMoveDestinationSelected`。（區域沒登記／id 對錯／`ToScreenRegion` 換算錯／矩形在畫面外＝按了沒反應或滲透成點地）
+- **R2（M5）** `ElementField.IsConcealedFrom` 改成「攻擊者在**任何一團含目標的霧**內就不遮蔽」。新增 PlayMode 或 EditMode 測試 `R2_AttackerSharingAnySteamWithTheTarget_IsNotConcealed`：兩團重疊霧 A、B，目標在 A∩B 且離 A 圓心較近，攻擊者只在 B 內 → `IsConcealedFrom == false`；攻擊者兩團都不在 → `true`（活性）。受試點離各邊界 ≥0.5m。（只看最近那一團）
+- **R3（M4）** `Phase1Bootstrap` 對 `CombatTargetRoster.Add` 回 false 的情形 `Debug.LogError`；測試 `R3_RosterOverflow_LogsAnError`（容量填滿後再 Add → `LogAssert.Expect(LogType.Error, …)`）。（靜默丟目標）
+- **R4（M7）** `Phase1Bootstrap` 在 `_elementField == null` 時 `Debug.LogError` 一次（比照同檔 `_elementZonePool == null`）。不另立測試（既有盤面都有 `ElementField`；用讀碼＋覆審確認）。
+
+### 記錄不修（MEDIUM／LOW，寫進驗收指南 §14 已知限制）
+
+- **M2** 兩個重疊的敵對流沙之間來回會鏈式重縛（上限＝流沙 3.5s 壽命，救援可解）。§4-4 已明文「換一個流沙會重新縛足」；「同一單位同時在兩個流沙內」留待正式技能批次。
+- **M3** 縛足開始時已在進行中的滑步會被吃掉（充能已扣、人沒動）。窗口 ≈ 一次滑步的時長；改它要動 `CadenceSim`（V6-c 零改動清單）。
+- **M1**（V4-f① 用 `ScriptedInput`）：審查判定不構成放寬；真實點擊路徑由 R1 與步驟 C 的 Playwright 補。
+- **M6** 版面臨界：`Screen.height / scale ≥ 503.2` 才放得下；WebGL 橫式需 CSS 高 ≥302px。**步驟 C 的 Playwright 必須量四顆鈕的 CSS 座標與可見性（V8），那是真正的閘**；放不下就照 §6 R1 處置。
+- **L1** 區域視覺是高 0.04m 的扁圓盤（V8 文字的「圓柱」改稱圓盤）；**L2** 縛足中仍可轉向；**L3** `IsInsideSector` 三個退化分支無測試；**L4** V4-p 期望值為手抄算式（審查員已對 `566a81f` 逐行核對相同）。
+
+### 本輪不准動的東西
+
+同 §5 V6 全部；既有 85 條 PlayMode、194 條 EditMode 一條不准改；步驟 A 七個 Logic 檔不改（R2 改的是 `Combat/ElementField.cs`）。驗收：`verify.sh` ALL PASS、Unity EditMode 0 紅、PlayMode 全綠且條數＝85＋新增、突變 110／110、`git diff --stat 5ce8d3a..` 只含 `ElementField.cs`、`Phase1Bootstrap.cs`、`ElementReactionPlayTests.cs`（或新測試檔＋.meta）。
