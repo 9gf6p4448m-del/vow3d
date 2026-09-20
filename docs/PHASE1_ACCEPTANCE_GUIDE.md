@@ -457,3 +457,37 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
   - ② **蒸氣**（`TURRET: OFF`）：出生點原地 `WATER`→`FIRE` → 白霧圓盤罩住木樁；走到霧外後點霧裡的木樁 → 英雄不動、STATE `Idle`；等霧散（3s）後點**同一個螢幕位置** → 英雄過去開打（STATE `AttackWindup`、木樁血條下降）＝正向對照（截圖 `v060-10`～`14`）。
   - ③ **火浪**：往前走一小步、`FIRE` → 橙色燃燒圓盤、木樁閃白且血條下降；**原地** `WIND` → 橙色扇形預警、燃燒區消失、木樁血條再掉一段（截圖 `v060-20`～`23`；直式版面 `v060-30`）。
 - **出生點的巧合（記錄）**：英雄出生在 (0,0,0)、木樁在 (0,0,6)，出生後不移動直接 `FIRE`，木樁恰在燃燒區圓周（距圓心 3.0＝`BurnRadius`）、`WIND` 時恰在火浪射程邊界（6.0＝`FirestormRangeMeters`）。座標全是整數所以判定穩定落在「界內」，但只要走過一步就不再是邊界情形；試玩想看火浪，先往木樁走一小步最穩。
+
+## 15. v0.6.1：元素反應的回饋——反應名稱飄字＋受困狀態顯示（2026-09-21）
+
+起因、使用者裁定與凍結驗收條件：`docs/V061_FEEDBACK_PLAN.md`（§0 起因、§1 要做的事、§2 不做什麼、§3 F1～F8）。這一版**不動任何玩法數值**，只加「畫面上告訴玩家剛才發生了哪個反應、現在是不是被困住」。
+
+### 這一版在解決什麼
+
+使用者手機試玩 v0.6.0 回報「流沙困住你」「爆沸」感覺不出效果——三個反應其實都有發生（線上 Playwright 四組重現過），但除了黃褐色圈本身，畫面上沒有任何東西標出「剛才是哪個反應」。舊版 STATE 列在縛足時顯示的是狀態機名稱（例如 `Moving`——玩家點地之後狀態機接受了指令，只是位移被縛足擋掉），完全看不出「被困住」這件事。
+
+### 新增的兩件回饋
+
+- **反應飄字**：五個反應（流沙／蒸氣／火浪／爆沸／救援）成立的那一幀，在**被消耗那個區域的圓心**跳一個大字（`characterSize 0.14`，比傷害飄字大一倍以上）、離地 2.6m、各反應不同色、停留 1.2s 後上飄消失。標籤：`QUICKSAND`／`STEAM`／`FIRESTORM`／`BOIL 80`／`RESCUE`。空地火與單放水**不跳字**（GDD 沒把這兩個算進「反應」）。
+- **縛足開始的英雄頭上飄字**：縛足由 false→true 的那一幀，在**英雄本體**（不是左上角面板）跳一次 `ROOTED`——玩家的眼睛在角色身上，不在 HUD。同一個流沙重入不再縛足，所以也不再跳。
+- **STATE 列**：縛足中顯示常數字串 `ROOTED`；縛足結束但仍在減速中顯示 `SLOWED`；其餘時候照舊顯示狀態機名稱（`Idle`／`Moving`／…）。`InfoRows` 沒有變、沒有加新的一列。
+
+### 規格解讀與自決（可推翻）
+
+- 六個標籤（含 `ROOTED`）預先建好一次的表，索引對齊 `Core/Logic/ElementCalloutLogic.LabelIndexFor`／`RootedLabelIndex`；`BOIL` 的傷害數字讀 `ElementTuning.BoilDamage`，不是寫死的 `"80"`——tuning 改了字面值會跟著換。
+- 六種訊息各固定一顆專屬 TextMesh（共 6 顆），字串只在 `Initialize` 設一次、執行期不改字；同一種訊息重複觸發＝刷新該顆的位置與計時，不是新增一顆（因此沒有「淘汰最舊」邏輯）。
+- 反應飄字位置一律讀 `TakeSnapshot()` 拍下的區域圓心（該區域這時多半已經被 `Resolve` 消耗掉了）——跟爆沸 AOE 圓心是同一份資料，不是重新算一次。
+- `HeroController.OnRootedStarted` 只在 false→true 的邊緣觸發一次；`Phase1Bootstrap` 接到後才知道英雄在哪，飄字位置＝觸發當幀的英雄座標。
+- `DebugHud` 的 STATE 值改成一個唯讀屬性（`StateLabel`），每次讀取都重新判斷（縛足／減速是每幀變動的狀態，不能只在狀態機事件時更新一次）；`Phase1Bootstrap.HudStateLabel` 轉交同一個值給 PlayMode 測試（測試 asmdef 看不到 `Vow.UI`，比照批 3／批 4 的 `IDebugHudPanel` 做法，但這裡直接開屬性、沒有動任何既有介面）。
+
+### 已知限制
+
+- 只加了「跳字」與「STATE 列改字」，沒有加音效、粒子、螢幕震動——這些不在使用者這次的裁定範圍內。
+- `WaterPool` 這個 `ElementReaction` 列舉值目前沒有任何生產路徑會回傳它（`ElementReactionLogic.Resolve` 從不產生），`LabelIndexFor` 仍把它一併算進「不跳字」，純粹是收斂 switch 的預設分支，沒有新增行為。
+- 「符印牆血條蓋住木樁血條」（v0.6.0 就有的既有問題）本輪沒有處理——不在計畫 §1 範圍內。
+
+### 驗證紀錄
+
+- `verify.sh` ALL PASS（純邏輯 193＋2＝195 通過＋1 略過、紅線 8 條期望數不變）；Unity EditMode 0 紅；PlayMode 既有 89 條全在全綠＋新增 10 條（F2-a～f、F3-a／b、F4、F5）全綠；突變 110＋4＝114／114 CAUGHT。
+- F6 鑑別力：把 `ReactionCalloutDisplay.Show()` 的 `LastLabel = _labels[labelIndex];` 改成讀 `TextMesh.text` getter（該 getter 每次讀都配置字串，這正是開發中踩到的真因）→ 完整 PlayMode 99 條中 `Combat_UpdateAndLateUpdate_AllocateNothing` 紅（`Update 夾區在 1519 幀內配置了 178 bytes`）；還原後 99／99 全綠。注意：用 `-testFilter` 單獨跑該測試在基準版（v0.6.0）就會紅 96 bytes，單跑不是有效訊號，一律以完整套件為準。
+- **線上實機**：待主對話部署後以 Playwright 實測填入（F8，本輪由主對話補）。

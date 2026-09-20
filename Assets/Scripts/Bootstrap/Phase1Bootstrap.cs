@@ -49,6 +49,9 @@ namespace Vow.Bootstrap
         [SerializeField] private SectorTelegraph _sectorTelegraph;
         [SerializeField] private Transform _elementZonePool;
 
+        // ── v0.6.1：反應飄字／受困狀態回饋（V061_FEEDBACK_PLAN.md §1）──
+        private ReactionCalloutDisplay _callouts;
+
         private readonly ColliderTargetRegistry _targets = new ColliderTargetRegistry();
         private readonly ProjectileTuning _projectileTuning = new ProjectileTuning();
 
@@ -96,6 +99,10 @@ namespace Vow.Bootstrap
         public string ElementWindButtonLabel => _hud != null ? _hud.WindButtonLabel : null;
         public string ElementFactionButtonLabel => _hud != null ? _hud.ElementFactionButtonLabel : null;
         public int ElementLabelRecomputeCount => _hud != null ? _hud.ElementLabelRecomputeCount : 0;
+
+        // ── v0.6.1 的驗收面：PlayMode 測試 asmdef 看不到 Vow.UI，STATE 列的顯示值改由這裡轉交 ──
+        public ReactionCalloutDisplay Callouts => _callouts;
+        public string HudStateLabel => _hud != null ? _hud.StateLabel : null;
 
         private void Awake()
         {
@@ -200,6 +207,7 @@ namespace Vow.Bootstrap
         private void OnDestroy()
         {
             if (_hero != null && _feedback != null) _hero.StateMachine.OnStateChanged -= HandleHeroStateChanged;
+            if (_hero != null) _hero.OnRootedStarted -= HandleHeroRooted;
         }
 
         // ───────────────────── Phase 2 批 2：阻擋格點的組裝 ─────────────────────
@@ -355,13 +363,27 @@ namespace Vow.Bootstrap
             }
 
             ElementZoneView[] views = CollectElementZoneViews();
-            _elementField.Initialize(_elementTuning, _elementRoster, _feedback, _sectorTelegraph, views);
+
+            // v0.6.1：反應飄字元件（V061_FEEDBACK_PLAN.md §1）。作法比照 TargetOverheadDisplay，
+            // 執行期 AddComponent 一次即可（不是每幀），標籤表要等 tuning 注入後才建得出來。
+            _callouts = gameObject.AddComponent<ReactionCalloutDisplay>();
+            _callouts.Initialize(_elementTuning);
+
+            _elementField.Initialize(_elementTuning, _elementRoster, _feedback, _sectorTelegraph, views, _callouts);
 
             // 岩＝既有石牆（使用者裁定 1）：符印牆與除錯鈕生的敵方牆都走 RuneWall.Activate。
             for (int i = 0; i < targets.Length; i++)
                 if (targets[i] is RuneWall runeWall) runeWall.SetElementField(_elementField);
 
             _hero.SetElementField(_elementField, _elementTuning);
+            _hero.OnRootedStarted += HandleHeroRooted;
+        }
+
+        // 縛足開始的那一幀在英雄頭上跳一次 ROOTED（V061_FEEDBACK_PLAN.md §1）——玩家看的是
+        // 英雄本體，不是左上角的 STATE 列（主對話自決，回報時載明）。
+        private void HandleHeroRooted()
+        {
+            if (_callouts != null) _callouts.Show(_hero.transform.position, ElementCalloutLogic.RootedLabelIndex);
         }
 
         // 區域視覺池由 SceneBuilder 預建（執行期禁止 CreatePrimitive）。引用掉了就明說——

@@ -26,6 +26,7 @@ namespace Vow.Combat
         private ICombatFeedbackService _feedback;
         private SectorTelegraph _telegraph;
         private ElementZoneView[] _views = System.Array.Empty<ElementZoneView>();
+        private ReactionCalloutDisplay _callouts;
 
         // Resolve 之前的全場快照：`ReactionOutcome` 不回傳被消耗區域的座標（§8 的介面事實），
         // 爆沸的 AOE 圓心／半徑只能從這裡反查。固定容量、零配置。
@@ -61,8 +62,11 @@ namespace Vow.Combat
         }
 
         // 由 Phase1Bootstrap 注入。views 為 SceneBuilder 預建的池（執行期禁止 CreatePrimitive）。
+        // callouts 為選用（V061_FEEDBACK_PLAN.md §1）：既有 5 參數呼叫（EditMode／PlayMode 既有測試）
+        // 不必跟著改，null 時完全跳過飄字、行為與 v0.6.0 逐行相同。
         public void Initialize(ElementTuning tuning, CombatTargetRoster roster, ICombatFeedbackService feedback,
-                               SectorTelegraph telegraph, ElementZoneView[] views)
+                               SectorTelegraph telegraph, ElementZoneView[] views,
+                               ReactionCalloutDisplay callouts = null)
         {
             _tuning = tuning ?? new ElementTuning();
             _field = new ElementZoneField(_tuning);
@@ -70,6 +74,7 @@ namespace Vow.Combat
             _feedback = feedback;
             _telegraph = telegraph;
             _views = views ?? System.Array.Empty<ElementZoneView>();
+            _callouts = callouts;
 
             int capacity = _field.Capacity;
             _snapshotIds = new int[capacity];
@@ -217,6 +222,7 @@ namespace Vow.Combat
             ReactionOutcome outcome = ElementReactionLogic.Resolve(cast, factionId, x, z, dirX, dirZ, _field, _tuning);
             ResolveDamage(outcome, x, z, dirX, dirZ);
             CountReaction(outcome.Reaction);
+            ShowReactionCallout(outcome);
 
             // Combo 反饋只掛流沙成形、蒸氣成形、火浪三個（§4-8，GDD.md:132）——救援與爆沸是流沙的破除鏈，
             // 不是新的 Combo。純邏輯層已經把這條規則放進 `IsCombo`，這裡只忠實轉達。
@@ -240,6 +246,18 @@ namespace Vow.Combat
                 case ElementReaction.Rescue: RescueCount++; break;
                 case ElementReaction.PlainFire: PlainFireCount++; break;
             }
+        }
+
+        // V061_FEEDBACK_PLAN.md §1：反應成立時跳一次飄字，位置＝被消耗那個區域的圓心（TakeSnapshot 拍下
+        // 的快照——Resolve 這時多半已經把該區域 Terminate 掉了）。PlainFire／None 沒有對應飄字
+        //（ElementCalloutLogic.LabelIndexFor 回 -1），_callouts 為 null（沒接飄字元件）時完全跳過。
+        private void ShowReactionCallout(ReactionOutcome outcome)
+        {
+            if (_callouts == null) return;
+            int labelIndex = ElementCalloutLogic.LabelIndexFor(outcome.Reaction);
+            if (labelIndex < 0) return;
+            if (!TryGetSnapshot(outcome.ConsumedZoneId, out float cx, out float cz, out float _)) return;
+            _callouts.Show(new Vector3(cx, 0f, cz), labelIndex);
         }
 
         private void TakeSnapshot()

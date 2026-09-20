@@ -433,6 +433,22 @@ MUTATIONS = [
     ("E36", "冷卻中按下也重置計時", LOGIC + "ElementCastCooldowns.cs",
      "if (nowSeconds < _readyAtSeconds[slot]) return false;", "if (nowSeconds < _readyAtSeconds[slot]) { _readyAtSeconds[slot] = nowSeconds + _tuning.SkillCooldownSeconds; return false; }",
      "Cast_IsRejectedDuringTheFiveSecondCooldown_AndAcceptedAtFiveSeconds"),
+
+    # ── v0.6.1：反應飄字／受困狀態回饋（V061_FEEDBACK_PLAN.md §3 F1-c） ──
+    ("C1", "爆沸／救援的飄字索引對調", LOGIC + "ElementCalloutLogic.cs",
+     "                case ElementReaction.Boil: return BoilLabelIndex;\n                case ElementReaction.Rescue: return RescueLabelIndex;",
+     "                case ElementReaction.Boil: return RescueLabelIndex;\n                case ElementReaction.Rescue: return BoilLabelIndex;",
+     "LabelIndexFor_MapsTheFiveReactions_AndReturnsMinusOneForTheRest"),
+    ("C2", "空地火也跳字（回 0，與流沙同一個索引）", LOGIC + "ElementCalloutLogic.cs",
+     "case ElementReaction.PlainFire: return NoCalloutIndex;", "case ElementReaction.PlainFire: return QuicksandLabelIndex;",
+     "LabelIndexFor_MapsTheFiveReactions_AndReturnsMinusOneForTheRest"),
+    ("C3", "拿掉縛足優先分支（永遠回 0，ROOTED 再也不會顯示）", LOGIC + "ElementCalloutLogic.cs",
+     "            if (isRooted) return RootedStatus;\n            if (speedMultiplier < 1f) return SlowedStatus;\n            return NormalStatus;",
+     "            if (speedMultiplier < 1f) return SlowedStatus;\n            return NormalStatus;",
+     "HeroStatusIndex_RootedWins_ThenSlowed_ThenNone"),
+    ("C4", "減速判準含滿速（<1f 改 <=1f，滿速時誤判成 SLOWED）", LOGIC + "ElementCalloutLogic.cs",
+     "if (speedMultiplier < 1f) return SlowedStatus;", "if (speedMultiplier <= 1f) return SlowedStatus;",
+     "HeroStatusIndex_RootedWins_ThenSlowed_ThenNone"),
 ]
 
 
