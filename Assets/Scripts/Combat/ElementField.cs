@@ -337,16 +337,29 @@ namespace Vow.Combat
 
         // ───────────────────────── IElementFieldQuery ─────────────────────────
 
+        // r1 對抗審查 M5（§9 R2）：**任何一團**同時含目標與攻擊者的霧都算「同霧」，不是只看離目標最近的那一團。
+        // 舊實作取 FindNearestContaining 再問攻擊者在不在那一團裡：目標同時在 A（較近）與 B 內、
+        // 攻擊者只在 B 內時會被誤判成遮蔽，違反 GDD 規則②「同一團霧裡的攻擊者打得到」。
+        // 逐圈掃是零配置的（固定容量、struct out），找到共享的一團就收工。
         public bool IsConcealedFrom(Vector3 targetPosition, bool targetRevealed, Vector3 attackerPosition)
         {
             if (_field == null) return false;
 
-            int steamId = _field.FindNearestContaining(targetPosition.x, targetPosition.z, ElementZoneKind.Steam);
-            bool targetInsideSteam = steamId >= 0;
+            bool targetInsideSteam = false;
             bool attackerInsideSameSteam = false;
-            if (targetInsideSteam && _field.TryGetById(steamId, out ElementZone steam))
-                attackerInsideSameSteam = ElementGeometry.IsInsideCircle(attackerPosition.x, attackerPosition.z,
-                                                                        steam.X, steam.Z, steam.Radius);
+            for (int slot = 0; slot < _field.Capacity; slot++)
+            {
+                if (!_field.TryGetBySlot(slot, out ElementZone zone)) continue;
+                if (zone.Kind != ElementZoneKind.Steam) continue;
+                if (!ElementGeometry.IsInsideCircle(targetPosition.x, targetPosition.z, zone.X, zone.Z, zone.Radius))
+                    continue;
+
+                targetInsideSteam = true;
+                if (!ElementGeometry.IsInsideCircle(attackerPosition.x, attackerPosition.z,
+                                                    zone.X, zone.Z, zone.Radius)) continue;
+                attackerInsideSameSteam = true;
+                break;
+            }
 
             return SteamConcealmentLogic.IsConcealed(targetInsideSteam, attackerInsideSameSteam, targetRevealed);
         }

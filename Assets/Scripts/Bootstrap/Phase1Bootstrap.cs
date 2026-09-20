@@ -129,7 +129,7 @@ namespace Vow.Bootstrap
             for (int i = 0; i < targets.Length; i++)
             {
                 _targets.Register(targets[i]);
-                _elementRoster.Add(targets[i]);
+                RegisterElementTarget(targets[i]);
             }
 
             BuildNavGrid(targets);
@@ -327,10 +327,32 @@ namespace Vow.Bootstrap
 
         // ───────────────────── Phase 2 批 4：元素場／名冊／四顆鈕的組裝 ─────────────────────
 
+        // r1 對抗審查 M4（§9 R3）：`CombatTargetRoster.Add` 的回傳值不得丟掉——名冊滿了還硬塞的話，
+        // 那個目標就再也吃不到任何元素 AOE／DoT，而所有測試照樣綠（roster 自己的註解寫明「呼叫端要看得到」）。
+        // 重複登記同樣回 false，但那不是「丟目標」，所以用 Count/Capacity 把兩種情形分開。
+        public void RegisterElementTarget(CombatTargetBehaviour target)
+        {
+            if (_elementRoster == null || target == null) return;
+            if (_elementRoster.Add(target)) return;
+            if (_elementRoster.Count < _elementRoster.Capacity) return; // 已經在名冊裡（去重），不是丟掉
+
+            Debug.LogError("[VOW] 元素目標名冊已滿（容量 " + _elementRoster.Capacity + "）：" + target.name
+                           + " 沒有登記進去，它不會吃到任何元素 AOE 或燃燒區 DoT。"
+                           + "請調大 ElementTuning.TargetRosterCapacity。", this);
+        }
+
         private void InitializeBatch4(CombatTargetBehaviour[] targets)
         {
             _elementCooldowns = new ElementCastCooldowns(_elementTuning);
-            if (_elementField == null) return;
+            // r1 對抗審查 M7（§9 R4）：引用掉了就明說（比照同方法對 ElementZonePool 的處理）。
+            // 無聲 return 的話 WATER／FIRE／WIND／ELEM 四顆鈕整組連畫都不畫，三個元素反應完全不會發生。
+            if (_elementField == null)
+            {
+                Debug.LogError("[VOW] 場景缺少 ElementField 引用：WATER／FIRE／WIND／ELEM 四顆除錯鈕整組不會出現，"
+                               + "三個元素反應在遊戲內完全不會發生。"
+                               + "請執行 VOW/Phase 1/Build Greybox Scene 重建場景。", this);
+                return;
+            }
 
             ElementZoneView[] views = CollectElementZoneViews();
             _elementField.Initialize(_elementTuning, _elementRoster, _feedback, _sectorTelegraph, views);

@@ -912,5 +912,167 @@ namespace Vow.Tests.PlayMode
                 "被牆壓住的縛足英雄沒有被推出去：防線寫得太上游，他會永久卡在牆體內");
             yield return null;
         }
+
+        // ═════════════════ r1 對抗審查後的修訂（計畫 §9 本輪修）═════════════════
+
+        // R1（HIGH-2）：四顆新鈕必須走**真實**的觸控分流（InputRoutingManager 的區域判定），
+        // 不是直接呼叫 Phase1Bootstrap.PressElementXxxButton()。比照批 3 的
+        // ShieldAndProjectilePlayTests.R5m2_TheHudButtons_AreReachedThroughTheRealTouchRouting。
+        //
+        // 這一條會紅的四種壞實作：區域沒登記（RegisterUiRegion 漏掉）、region id 對錯
+        //（HandleRegionTapped 分派到別顆鈕）、ToScreenRegion 換算錯、矩形跑到畫面外
+        //——四種都會讓玩家按了沒反應，而 V4-o 的幾何不相交測試照樣全綠。
+        [UnityTest]
+        public IEnumerator R1_TheFourElementButtons_AreReachedThroughTheRealTouchRouting()
+        {
+            yield return Setup();
+
+            bool moved = false;
+            ICombatTarget picked = null;
+            _bootstrap.InputService.OnMoveDestinationSelected += _ => moved = true;
+            _bootstrap.InputService.OnCombatTargetSelected += target => picked = target;
+
+            // 版面用的是 DebugHud 在同一組 Screen.* 下算出來的那一份（DebugHudLayout 是兩邊唯一的來源）。
+            // 三個 bool ＝ 灰盒場景實際的組態（延遲模擬、GRID 疊圖、敵方牆／砲台那一列都在）。
+            DebugHudLayout layout = DebugHudLayout.Compute(Screen.width, Screen.height, Screen.dpi, true, true, true);
+
+            // ① ELEM：陣營標籤翻面
+            string factionLabelBefore = _bootstrap.ElementFactionButtonLabel;
+            Faction factionBefore = _bootstrap.ElementCastFaction;
+            yield return TapHudRect(layout, layout.Elem, "ELEM");
+            Assert.AreNotEqual(factionBefore, _bootstrap.ElementCastFaction,
+                "對 ELEM 鈕的矩形送真實觸控沒有切換陣營");
+            Assert.AreNotEqual(factionLabelBefore, _bootstrap.ElementFactionButtonLabel,
+                "ELEM 的標籤沒有跟著翻面");
+
+            // ② WATER：場上多一個區域
+            int zonesBefore = _field.ActiveZoneCount;
+            yield return TapHudRect(layout, layout.Water, "WATER");
+            Assert.AreEqual(zonesBefore + 1, _field.ActiveZoneCount,
+                "對 WATER 鈕的矩形送真實觸控沒有生出水域");
+
+            // ③ FIRE：先轉身，讓落點是空地而不是剛剛那個水域（落進水域會變成蒸氣＝區域數不變，量不到）
+            _hero.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            yield return null;
+            zonesBefore = _field.ActiveZoneCount;
+            int plainFiresBefore = _field.PlainFireCount;
+            yield return TapHudRect(layout, layout.Fire, "FIRE");
+            Assert.AreEqual(plainFiresBefore + 1, _field.PlainFireCount,
+                "對 FIRE 鈕的矩形送真實觸控沒有施放");
+            Assert.AreEqual(zonesBefore + 1, _field.ActiveZoneCount, "空地火沒有留下燃燒區");
+
+            // ④ WIND：扇形預警顯示過一次
+            int telegraphsBefore = _bootstrap.SectorTelegraph.ShowCount;
+            yield return TapHudRect(layout, layout.Wind, "WIND");
+            Assert.AreEqual(telegraphsBefore + 1, _bootstrap.SectorTelegraph.ShowCount,
+                "對 WIND 鈕的矩形送真實觸控沒有放出扇形預警");
+
+            // 四次都不得滲透成世界輸入
+            Assert.IsFalse(moved, "點 HUD 元素鈕不得滲透成移動指令");
+            Assert.IsNull(picked, "點 HUD 元素鈕不得滲透成鎖定目標");
+        }
+
+        // GUI 座標（原點左上、未乘 scale）→ 螢幕座標（原點左下、像素），用的是 DebugHud.ToScreenRegion
+        // 的同一個換算；再對矩形中心送一次真實觸控。
+        private IEnumerator TapHudRect(DebugHudLayout layout, HudRect guiRect, string who)
+        {
+            float scale = layout.Scale;
+            float screenXMin = guiRect.XMin * scale;
+            float screenXMax = guiRect.XMax * scale;
+            float screenYMin = Screen.height - guiRect.YMax * scale;
+            float screenYMax = Screen.height - guiRect.YMin * scale;
+
+            float centreX = (screenXMin + screenXMax) * 0.5f;
+            float centreY = (screenYMin + screenYMax) * 0.5f;
+            Assert.IsTrue(centreX >= 0f && centreX <= Screen.width && centreY >= 0f && centreY <= Screen.height,
+                who + " 鈕的中心點落在畫面外（" + centreX + ", " + centreY + "），實機上按不到");
+
+            _bootstrap.WorldTapInput.SendScreenTap(centreX, centreY);
+            yield return null;
+        }
+
+        // R2（M5）：多團霧重疊時，攻擊者只要與目標共享**任何一團**霧就不遮蔽。
+        // 舊實作只取「離目標最近的那一團」再問攻擊者在不在那一團裡 → 目標同時在 A（較近）與 B 內、
+        // 攻擊者只在 B 內時會被誤判成遮蔽，違反 GDD 規則②「同一團霧裡的攻擊者打得到」。
+        //
+        // 取點刻意避開軸對齊，受試三點離**每一團**霧的邊界都 ≥0.5m（AssertClearOfZoneBoundaries 逐圈驗）。
+        [UnityTest]
+        public IEnumerator R2_AttackerSharingAnySteamWithTheTarget_IsNotConcealed()
+        {
+            yield return Setup();
+
+            Vector3 steamA = new Vector3(-1.0f, 0f, 2.0f);
+            Vector3 steamB = new Vector3(4.0f, 0f, 5.0f);   // 圓心距 5.831m < 2×4 ⇒ 兩圈重疊
+
+            _field.CastWater(steamA, (int)Faction.BlueTeam);
+            _field.CastFire(steamA, (int)Faction.BlueTeam);
+            _field.CastWater(steamB, (int)Faction.BlueTeam);
+            _field.CastFire(steamB, (int)Faction.BlueTeam);
+            Assert.AreEqual(2, _field.CountZonesOfKind(ElementZoneKind.Steam), "兩團霧沒有同時存在");
+
+            // 目標在 A∩B，且離 A 圓心較近（2.594m vs 3.245m）——舊實作會挑中 A
+            Vector3 target = new Vector3(1.3f, 0f, 3.2f);
+            // 攻擊者只在 B 內（離 B 2.5m、離 A 8.32m）
+            Vector3 attackerInB = new Vector3(6.0f, 0f, 6.5f);
+            // 兩團都不在（活性對照）
+            Vector3 attackerOutside = new Vector3(-8.0f, 0f, -6.0f);
+
+            AssertClearOfZoneBoundaries(target, "目標");
+            AssertClearOfZoneBoundaries(attackerInB, "只在 B 內的攻擊者");
+            AssertClearOfZoneBoundaries(attackerOutside, "兩團都不在的攻擊者");
+
+            float distanceToA = PlanarDistance(target, steamA);
+            float distanceToB = PlanarDistance(target, steamB);
+            Assert.Less(distanceToA, distanceToB,
+                "前提：目標必須離 A 圓心較近，否則舊實作剛好挑中 B、這條測試就沒有鑑別力了");
+
+            Assert.IsFalse(_field.IsConcealedFrom(target, false, attackerInB),
+                "攻擊者與目標共享霧 B，卻被判成遮蔽（只看了離目標最近的那一團霧 A）");
+
+            // 活性：同一組盤面下，真的不共享任何一團霧時必須是遮蔽的
+            Assert.IsTrue(_field.IsConcealedFrom(target, false, attackerOutside),
+                "兩團霧都不在的攻擊者竟然打得到：遮蔽整個失效了");
+
+            // 顯影旗標仍然優先（三個 bool 的真值表不變）
+            Assert.IsFalse(_field.IsConcealedFrom(target, true, attackerOutside),
+                "目標已顯影時不得再遮蔽");
+        }
+
+        // R3（M4）：名冊塞爆時不得靜默丟掉目標——被丟掉的那個再也吃不到任何元素 AOE／DoT，
+        // 而全套測試照樣綠。同一個檔案對「池 ≤ 上限」「場景引用掉了」都有 LogError，這裡也要有。
+        [UnityTest]
+        public IEnumerator R3_RosterOverflow_LogsAnError()
+        {
+            yield return Setup();
+
+            CombatTargetRoster roster = _bootstrap.ElementRoster;
+            Assert.IsNotNull(roster, "Phase1Bootstrap 沒有建立元素名冊");
+            Assert.Less(roster.Count, roster.Capacity, "前提：開場時名冊還有空位");
+
+            // 去重那一條不得誤報：已經在名冊裡的目標再登記一次，Add 同樣回 false，但不是「丟掉」。
+            _bootstrap.RegisterElementTarget(_dummy);
+
+            // 填到容量上限（停用的空殼：Awake 不跑、IsAlive 為 false，不會干擾任何結算）
+            int fillerCount = roster.Capacity - roster.Count;
+            GameObject[] fillers = new GameObject[fillerCount + 1];
+            for (int i = 0; i < fillers.Length; i++)
+            {
+                GameObject filler = new GameObject("RosterFiller_" + i);
+                filler.SetActive(false);
+                filler.transform.position = new Vector3(100f, 0f, 100f);
+                fillers[i] = filler;
+                TestWallTarget target = filler.AddComponent<TestWallTarget>();
+                if (i < fillerCount) _bootstrap.RegisterElementTarget(target);
+            }
+            Assert.AreEqual(roster.Capacity, roster.Count, "名冊沒有被填滿，後面那一次 Add 不會溢位");
+
+            // 第 33 個：名冊已滿 → 必須留下 LogError
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("元素目標名冊已滿"));
+            _bootstrap.RegisterElementTarget(fillers[fillerCount].GetComponent<TestWallTarget>());
+            Assert.AreEqual(roster.Capacity, roster.Count, "溢位之後名冊長度不得改變");
+
+            for (int i = 0; i < fillers.Length; i++) Object.Destroy(fillers[i]);
+            yield return null;
+        }
     }
 }
