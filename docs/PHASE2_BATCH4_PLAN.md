@@ -272,7 +272,7 @@ public bool CanEngage(ICombatTarget target)   // HeroController 內唯一的「�
 
 **10. 「掃到」的定義定死＝燃燒區的圓心落在扇形內**（`IsInsideSector`，不是「扇形與燃燒圓有任何交疊」）；火浪的傷害對象＝落在扇形內的目標。**風沒掃到燃燒區**：只顯示扇形預警與輕推視覺，**不造成任何傷害、不生任何區域**（裁定沒說要傷害；正式技能設計留英雄批次）。【待試玩推翻】
 
-**11. 施放點**：水／火＝英雄前方 4m 的地面點（沿 `transform.forward`，y 取英雄腳下高度，比照 `RuneCaster` 的 `QuickCastDistance` 用法）；風＝**以英雄本體為扇形頂點**、朝 `transform.forward`。石牆的落點沿用 `RuneWall.Activate` 的 `position`。
+**11. 施放點**：水／火＝英雄前方 4m【r1 HIGH-1 使用者裁定後改為 **3m**，見 §9】的地面點（沿 `transform.forward`，y 取英雄腳下高度，比照 `RuneCaster` 的 `QuickCastDistance` 用法）；風＝**以英雄本體為扇形頂點**、朝 `transform.forward`。石牆的落點沿用 `RuneWall.Activate` 的 `position`。
 
 **12. 冷卻與陣營切換**：三顆技能鈕各自獨立 5s 冷卻；冷卻中按下＝**沒有任何事發生**（不重置冷卻、不扣任何東西）。`ELEM` 鈕無冷卻，切換只影響**之後**施放的技能，已成形的區域陣營不變。
 
@@ -392,14 +392,14 @@ Simplicity 例外：
 
 ### V4 Unity batchmode（EditMode 全綠；PlayMode **既有 66 條全部原封不動全綠**，另加下列且全綠）
 
-- **V4-a 流沙縛足（正例，真實路徑）**：`ELEM: RED` → `WATER` 在英雄前方 4m 生紅水域 → 用符印牆／`ENEMY WALL` 把牆立在水域內 → 流沙成形且英雄在區內。斷言：成形當幀起 1.2s 內，① 送 `OnMoveDestinationSelected` 到 6m 外，英雄位置位移 **< 0.10m**；② `hero.TryBeginCadenceDash(1,0) == false` 且充能格數不變；③ `locomotion.IsMovementLocked == true`。1.21s 後再送同一個移動指令 → 英雄開始移動；**穩態速度比**：起步 0.3s 後開始量的 0.5s 窗口內走過的距離 ÷ 同一個測試先前在**無流沙**下、同一條路徑同一個窗口量到的距離 ＝ **0.65 ± 0.035**（容差來由：0.5s 窗口裡差一個 60fps tick ＝ 1/30）。量測窗口內**每一幀**都要斷言英雄仍在流沙內且路徑不被石牆擋住（否則量到的是繞牆或已離開）。**盤面約束（V4 全體適用）**：除了刻意的邊界反例，受試者與任何區域邊界的距離 ≥0.5m——注意 `WATER` 與 `ENEMY WALL` 同樣生在前方 4m，原地連按會讓英雄恰好站在流沙邊界（距圓心 4.0m＝`ReactionRadius`），浮點數決定紅綠；測試與試玩流程都要先往前走約 2m 再立牆。（縛足沒擋住走路／滑步；縛足結束後速度沒降；把減速做成停止）
+- **V4-a 流沙縛足（正例，真實路徑）**：`ELEM: RED` → `WATER` 在英雄前方 4m【裁定後為 3m，§9】生紅水域 → 用符印牆／`ENEMY WALL` 把牆立在水域內 → 流沙成形且英雄在區內。斷言：成形當幀起 1.2s 內，① 送 `OnMoveDestinationSelected` 到 6m 外，英雄位置位移 **< 0.10m**；② `hero.TryBeginCadenceDash(1,0) == false` 且充能格數不變；③ `locomotion.IsMovementLocked == true`。1.21s 後再送同一個移動指令 → 英雄開始移動；**穩態速度比**：起步 0.3s 後開始量的 0.5s 窗口內走過的距離 ÷ 同一個測試先前在**無流沙**下、同一條路徑同一個窗口量到的距離 ＝ **0.65 ± 0.035**（容差來由：0.5s 窗口裡差一個 60fps tick ＝ 1/30）。量測窗口內**每一幀**都要斷言英雄仍在流沙內且路徑不被石牆擋住（否則量到的是繞牆或已離開）。**盤面約束（V4 全體適用）**：除了刻意的邊界反例，受試者與任何區域邊界的距離 ≥0.5m——注意 `WATER` 與 `ENEMY WALL` 同樣生在前方 4m，原地連按會讓英雄恰好站在流沙邊界（距圓心 4.0m＝`ReactionRadius`），浮點數決定紅綠；測試與試玩流程都要先往前走約 2m 再立牆。【**這一句已作廢**：r1 HIGH-1 裁定把施放距離改成 3m 後，原地連按即穩定成立，由 §9 R5 的 `R5_WaterThenEnemyWall_WithoutMoving_RootsTheHero` 守；「離邊界 ≥0.5m」的盤面約束本身仍有效。】（縛足沒擋住走路／滑步；縛足結束後速度沒降；把減速做成停止）
 - **V4-b 流沙縛足（最接近的反例）**：把牆立在距水域圓心 `WaterRadius + 0.10m` 處 → **不生流沙**（`ElementField.ActiveZoneCount` 只多了水域那一個、`IsMovementLocked == false`、英雄照常全速走到 6m 外）。（反應半徑用錯；把「牆碰到水域」寫成「牆的碰撞體碰到水域」）
 - **V4-c 流沙陣營方向（不生效）**：`ELEM: BLUE` → 藍水 ＋ 藍牆 → 藍流沙；英雄（`BlueTeam`）站在區內 → `IsMovementLocked == false`、`SpeedMultiplier == 1f`、移動距離與無流沙時逐值相同（容差 0.10m）。（陣營比較恆真＝自家流沙困死自己）
 - **V4-d 爆沸（陣營方向 B）**：藍水＋藍牆罩住木樁（`RedTeam`，血 600）→ `ELEM: BLUE` → `FIRE` 打在流沙上 → 木樁 `Health` 恰少 **80**（容差 0.01）、流沙 `Active == false`、**沒有**新的燃燒區。（救援／爆沸寫反；爆沸不終止流沙）
 - **V4-e 救援（陣營方向 A）**：同上盤面，改 `ELEM: RED` → `FIRE` → 木樁 `Health` **不變**、流沙 `Active == false`。搭配英雄版：紅水＋紅牆困住英雄，縛足中按 `ELEM: BLUE` ＋ `FIRE` → **當幀** `IsMovementLocked == false`、下一個移動指令立刻生效。（救援不解控；救援也扣血）
 - **V4-f 蒸氣遮蔽（正例＋反例，兩個判定點都驗）**：`WATER` → `FIRE` 在水域上 → 蒸氣罩住木樁，英雄站在霧外。① **點擊當下**：對木樁的螢幕座標呼叫 `PlayerInputService.OnWorldTap` → **未**送出 `OnCombatTargetSelected`（或送出但 `HandleTargetSelected` 不下令，`brain.CurrentTarget == null`）；② **已鎖定後持續驗證**：英雄從 ≥8m 外在起霧**前**鎖定木樁並開始追擊，**在第一刀命中之前**起霧（命中會讓木樁顯影 1.5s，那是 ③），起霧後 1 幀內 `hero.CanEngage(dummy) == false` 且大腦停止攻擊（`IsTargetValid` 回 false 的效果）。③ **打中過就看得到**：英雄已在霧外對木樁連續普攻時起霧 → 每刀刷新顯影，`CanEngage` 持續為 true、攻擊不中斷（`GDD.md:126` 受擊顯影）；下 `OnMoveDestinationSelected` 停手並走到霧外、距最後一刀 1.51s 後 → `CanEngage == false`。反例：把英雄走進同一團霧 → `CanEngage(dummy) == true`、點擊送得出 `OnCombatTargetSelected`。（只守點擊當下＝鎖定後站在霧外照樣偷打；`CanEngage` 沒有真的被兩個點共用）
 - **V4-g 受擊顯影（1.49／1.51 兩側）**：對霧內木樁呼叫**一次** `dummy.ReceiveDamage(1f, DamageType.Elemental, null)`（走真實的 `CombatTargetBehaviour.ReceiveDamage`→`NotifyDamaged` 路徑；不用砲台——它每 0.25s 一發會一直刷新，量不到過期）→ 受擊後 1.49s `CanEngage == true`；1.51s 後 `CanEngage == false`（時間以 `Time.captureDeltaTime = 1/60f` 計，容差 0.034s）。（顯影沒接上 `ReceiveDamage`；顯影永不過期）
-- **V4-h 火浪（正例）**：`FIRE` 落空地生燃燒區於英雄前方 4m → 木樁站在燃燒區內 → 立即記下 `Health`，按 `WIND` → 木樁再減少的量落在 **[59.99, 60.68]**（60＝火浪；上界多出的 0.667＝記錄與結算之間最多兩個 tick 的燃燒 DoT `20×2/60`；倍率寫死 1.0 會得到 40，仍在界外）、燃燒區 `Active == false`、`feedback.HitstopCount` 增量 ≥1。（風不消耗燃燒區＝可以連吹；倍率沒套到最終傷害）
+- **V4-h 火浪（正例）**：`FIRE` 落空地生燃燒區於英雄前方 4m【裁定後為 3m，§9】→ 木樁站在燃燒區內 → 立即記下 `Health`，按 `WIND` → 木樁再減少的量落在 **[59.99, 60.68]**（60＝火浪；上界多出的 0.667＝記錄與結算之間最多兩個 tick 的燃燒 DoT `20×2/60`；倍率寫死 1.0 會得到 40，仍在界外）、燃燒區 `Active == false`、`feedback.HitstopCount` 增量 ≥1。（風不消耗燃燒區＝可以連吹；倍率沒套到最終傷害）
 - **V4-i 火浪（最接近的反例，含活性）**：先重跑一次 V4-h 的正例確認扇形真的量得到（**活性**），再把燃燒區移到扇形角外 1°（用 `ELEM`／走位擺好，取向 37° 避開軸對齊）→ 按 `WIND` → 木樁 `Health` 不變、燃燒區仍 `Active`、`HitstopCount` 不變。（扇形忽略角度；風無條件給傷害）
 - **V4-j 空地火與燃燒區 DoT**：`FIRE` 落在木樁腳下（空地）→ 當幀木樁少 **40**，之後 4.0s 內再少 **80**（容差 0.5），4.5s 時總減少量仍是 120（容差 0.5）。（直傷與 DoT 只有一個；DoT 到期不停）
 - **V4-k Combo 反饋**：流沙成形、蒸氣成形、火浪三個時刻各自 `feedback.HitstopCount` 增量 **恰為 1** 且 `IsHitstopActive == true`；救援與爆沸時 `HitstopCount` **不變**。（把 Combo 掛在每個反應上＝頓挫濫發；沒接反饋）
@@ -550,7 +550,7 @@ CRITICAL／HIGH 全修或經使用者簽准；修完送**三態覆審**（「反
 
 ### 使用者裁定（2026-09-20，r1 後；AskUserQuestion 兩題皆選建議項）
 
-- **HIGH-1 → 施放距離 4m→3m**：`ElementTuning.CastDistanceMeters = 3f`（`WATER`／`FIRE` 的落點；`WIND` 以英雄為頂點，不受影響）。這是動凍結數值（§2 表與 V6-d 的第 19 項），依 `02 §2.1`：**原標準錯在哪**＝4m 同時等於 `RuneTuning.QuickCastDistance`（敵方牆／極速石牆落點）與 `ReactionRadius`，原地連按時英雄恰在流沙邊界上；**為什麼現在才知道**＝對齊時只訂了各自的數值、沒有把三個 4 放在一起推導，主對話審稿時看出來了卻只用「先走 2m」繞開，r1 審查指出這等於把唯一會出事的盤面排除在驗收外。使用者已針對這一條明確同意。§2 表、§0 裁定 2、V6-d 的 `CastDistanceMeters 4` 自此讀作 **3**；§5 V8 ① 的「往前走約 2m」刪除（原地連按即可）。
+- **HIGH-1 → 施放距離 4m→3m**：`ElementTuning.CastDistanceMeters = 3f`（`WATER`／`FIRE` 的落點；`WIND` 以英雄為頂點，不受影響）。這是動凍結數值（§2 表與 V6-d 的第 19 項），依 `02 §2.1`：**原標準錯在哪**＝4m 同時等於 `RuneTuning.QuickCastDistance`（敵方牆／極速石牆落點）與 `ReactionRadius`，原地連按時英雄恰在流沙邊界上；**為什麼現在才知道**＝對齊時只訂了各自的數值、沒有把三個 4 放在一起推導，主對話審稿時看出來了卻只用「先走 2m」繞開，r1 審查指出這等於把唯一會出事的盤面排除在驗收外。使用者已針對這一條明確同意。§2 表、§0 裁定 2、§4-11、§5 V4-a／V4-h、V6-d 的 `CastDistanceMeters 4`／「前方 4m」自此讀作 **3**（第 3 輪 read-back 找到 §4-11、V4-a、V4-h 三處殘留，已就地加註）；§5 V8 ① 的「往前走約 2m」刪除（原地連按即可）。
 - **HIGH-3 → 視為設計、不修（使用者簽准）**：任何來源的傷害都讓霧內目標顯影 1.5s（`GDD.md:126` 字面），砲台開著時霧裡的木樁因此一直點得到。寫進驗收指南 §14「已知行為」；試玩清單與步驟 C 的 Playwright 腳本註明「看遮蔽效果要先關 `TURRET`；開著則是受擊顯影的示範」。
 
 ### R5（HIGH-1 的修復，凍結）
@@ -570,3 +570,7 @@ CRITICAL／HIGH 全修或經使用者簽准；修完送**三態覆審**（「反
 - **M3（記錄，寫進驗收指南 §14）** HUD 版面的懸崖在 `DPR < 5/3`（`dpi < 160` 時 `scale` 夾回 1）：DPR 1.5＋CSS 高 320 差 4.8px、DPR 1＋CSS 高 390 差 97px，`ELEM` 整列在畫面外。DPR 2／3 × CSS 高 320／360／390 六組都放得下（`ELEM` 下方餘裕 27.7／67.7／97.7 CSS px）。**步驟 C 的 Playwright 要顯式 `deviceScaleFactor: 2`**；期望 CSS 座標 WATER x9.6–53.2／FIRE x58.0–101.6／WIND x106.4–150.0（y 245.3–266.4）、ELEM x9.6–150.0（y 271.2–292.3）。
 - **原地連按 × 離邊界距離**：吃判定的兩條邊界（流沙縛足 r4、蒸氣遮蔽 r4）餘裕都是 1.00m。3m 新產生三個 0.00m 重合（`CastDistanceMeters 3 == WaterRadius 3 == BurnRadius 3`，英雄恰在水域／燃燒區圓周）——全是啞的：英雄不在 `CombatTargetRoster`、沒有任何判定問「英雄在不在水域／燃燒區內」。日後英雄有血量、會吃 DoT 時這三個重合會變活，**屆時要重查**。
 - **LOW（記錄）** 反序 `ENEMY WALL`→`WATER` 不會有反應（寫進 §14）；`AssertClearOfZoneBoundaries(英雄)` 不能在水域／燃燒區活著時呼叫；名冊滿＋重複登記會誤報 `LogError`、`RegisterElementTarget` 在初始化之後登記拿不到 `ConfigureConcealment`（目前無此呼叫路徑）；兩處註解過時。
+
+## 11. 第 3 輪：文件 read-back（2026-09-20；fresh `sonnet`、唯讀、標的 `0564d16`）
+
+HIGH 0／MEDIUM 3／LOW 0。驗收指南 §14 逐句對照程式（20 個數值、操作→結果、陣營方向、冷卻標籤、縛足期間普攻／滑步／充能、蒸氣遮蔽兩個例外、HUD 臨界值 503.2、出生點巧合的整數座標推導）全部一致，沒有「照做卻沒反應」的步驟。3 條 MEDIUM 都是本檔殘留的「前方 4m／先走 2m」舊敘述（§4-11、V4-a、V4-h），已就地加註作廢。出生點巧合那一條：讀碼確認零旋轉＋整數座標下判定是精確值；「`Start()` 時 NavMeshAgent 會不會微調朝向」無法由讀碼排除，未實測。三輪上限用完，無未解 CRITICAL／HIGH。
