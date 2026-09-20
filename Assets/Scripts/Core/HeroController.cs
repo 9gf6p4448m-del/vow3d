@@ -25,6 +25,13 @@ namespace Vow.Core
         private Transform _cameraTransform;
         private bool _watchdogReported;
 
+        // ── Phase 2 批 4：元素場 ──
+        // 英雄只認得 Vow.Core 的查詢介面（Vow.Core 不得反向依賴 Vow.Combat）。
+        // 兩者為 null 時本類別的行為與 v0.5.0 逐行相同（V4-l）。
+        private IElementFieldQuery _elementField;
+        private ElementTuning _elementTuning = new ElementTuning();
+        private QuicksandStatusLogic _quicksand;
+
         private static readonly Color KillFlashColor = new Color(1f, 1f, 1f, 0.3f);
 
         public IPlayerStateMachine StateMachine => _stateMachine;
@@ -55,7 +62,35 @@ namespace Vow.Core
             _brain.OnAttackHitResolved += HandleHitResolved;
             _brain.OnWindupWatchdogFired += HandleWatchdogFired;
             _mover.OnDashExecuted += HandleDashExecuted;
+
+            _quicksand = new QuicksandStatusLogic(_elementTuning);
         }
+
+        // 由 Phase1Bootstrap 注入（批 4）。tuning 傳全場共用的那一份，數值只有一個來源。
+        public void SetElementField(IElementFieldQuery field, ElementTuning tuning)
+        {
+            _elementField = field;
+            if (tuning != null)
+            {
+                _elementTuning = tuning;
+                _quicksand = new QuicksandStatusLogic(_elementTuning);
+            }
+            if (field != null) return;
+
+            // 拔掉元素場：縛足／減速不得留在身上（V7 點名 ②——IsMovementLocked 卡在 true＝玩家永久卡死）。
+            if (_quicksand != null) _quicksand.Reset();
+            if (_locomotion == null) return;
+            _locomotion.SetMovementLocked(false);
+            _locomotion.SetSpeedMultiplier(1f);
+        }
+
+        // 這個英雄此刻在哪個敵對流沙裡（測試用；-1 ＝不在任何敵對流沙內）。
+        public int HostileQuicksandZoneId => _elementField != null
+            ? _elementField.FindHostileQuicksandId(transform.position, (int)_faction)
+            : -1;
+
+        public bool IsRooted => _quicksand != null && _quicksand.IsRooted;
+        public float QuicksandSpeedMultiplier => _quicksand != null ? _quicksand.SpeedMultiplier : 1f;
 
         // 由 Phase1Bootstrap 注入依賴（不在這裡 Find，任何一項都可以換成測試替身）。
         public void Initialize(IPlayerInputService input, ICombatFeedbackService feedback, Camera viewCamera,
@@ -90,9 +125,37 @@ namespace Vow.Core
         private void Update()
         {
             float dt = Time.deltaTime;
+            TickQuicksand(dt);
             _locomotion.Step(dt);
             _mover.Step(dt);
             _brain.Tick(dt);
+        }
+
+        // 泥濘流沙（GDD 圍欄九）：進入（或成形時已在內）起算 1.2s 禁位移，之後只要還在區內就是 ×0.65。
+        // 每幀無條件重算並推給 locomotion —— 流沙終止、被池擠掉、被救援／爆沸、英雄走出去，
+        // 四種情形都會讓 `FindHostileQuicksandId` 回 -1，QuicksandStatusLogic 當幀就把縛足與減速清乾淨。
+        // 沒有元素場時 zoneId 恆為 -1、倍率恆為 1f、鎖恆為 false（V4-l 的「逐值不變」靠這一條）。
+        private void TickQuicksand(float dt)
+        {
+            int zoneId = _elementField != null
+                ? _elementField.FindHostileQuicksandId(transform.position, (int)_faction)
+                : -1;
+
+            _quicksand.Tick(dt, zoneId);
+            _locomotion.SetMovementLocked(_quicksand.IsRooted);
+            _locomotion.SetSpeedMultiplier(_quicksand.SpeedMultiplier);
+        }
+
+        // 全英雄唯一的「這個目標打不打得到」（§2「鎖定判準的收斂」）：陣營校驗 ＋ 蒸氣遮蔽。
+        // 生產呼叫點 N＝2（點擊當下的 HandleTargetSelected、持續驗證的 IsTargetValid），兩個都走這裡，
+        // 涵蓋 2/2。`ICombatTarget.CanBeTargetedBy(Faction)` 的簽章一字不動——它拿不到攻擊者座標，
+        // 而蒸氣規則②（同一團霧裡的攻擊者照樣打得到）需要。
+        public bool CanEngage(ICombatTarget target)
+        {
+            if (target == null || !target.CanBeTargetedBy(_faction)) return false;
+            if (_elementField == null || target.TargetTransform == null) return true;
+            bool revealed = target is IConcealable concealable && concealable.IsRevealed;
+            return !_elementField.IsConcealedFrom(target.TargetTransform.position, revealed, transform.position);
         }
 
         // ───────────────────────── 輸入 → 指令 ─────────────────────────
@@ -104,7 +167,7 @@ namespace Vow.Core
 
         private void HandleTargetSelected(ICombatTarget target)
         {
-            if (target == null || !target.CanBeTargetedBy(_faction)) return;
+            if (!CanEngage(target)) return;   // 批 4：收斂成單一判準（陣營＋蒸氣遮蔽）
             _brain.CommandAttack(target);
         }
 
@@ -143,7 +206,7 @@ namespace Vow.Core
         public bool IsTargetValid(ICombatTarget target)
         {
             return target != null && target.IsAlive && target.TargetTransform != null
-                   && target.CanBeTargetedBy(_faction);
+                   && CanEngage(target);   // 批 4：與點擊當下同一個判準
         }
 
         public bool IsTargetInAttackRange(ICombatTarget target)
@@ -207,6 +270,8 @@ namespace Vow.Core
 
         public bool TryBeginCadenceDash(float worldDirX, float worldDirZ)
         {
+            // 縛足期間不得滑步，而且**不消耗充能**（附加規則，不是位移防線本體——防線在 ApplyDisplacement）。
+            if (_quicksand != null && _quicksand.IsRooted) return false;
             return _mover.TryExecuteCadenceDash(new Vector3(worldDirX, 0f, worldDirZ));
         }
 

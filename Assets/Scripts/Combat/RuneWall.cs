@@ -17,6 +17,15 @@ namespace Vow.Combat
         private RuneCaster _caster;
         private int _slotIndex = -1;
 
+        // Phase 2 批 4：岩＝既有石牆（使用者裁定 1）。落點在水域內時凝結成泥濘流沙。
+        // null 時 Activate 完全跳過這段，行為與 v0.5.0 逐行相同（既有石牆測試的盤面沒有 ElementField）。
+        private ElementField _elementField;
+
+        public void SetElementField(ElementField field)
+        {
+            _elementField = field;
+        }
+
         public float RemainingLifespan => _logic != null ? _logic.RemainingLifespan : 0f;
         public int MaxPenetrationCount => _logic != null ? _logic.MaxPenetrations : 0;
         public int CurrentPenetrationCount => _logic != null ? _logic.PenetrationCount : 0;
@@ -70,6 +79,9 @@ namespace Vow.Combat
             // 登記格點：推出被壓住的英雄由 CombatTargetBehaviour.Stamp 統一通知（§6 R4），
             // 這裡不再另開一條只有符印牆走得到的事件。
             RegisterNavBlocker(_collider);
+
+            // 批 4：立牆之後才通知元素場——流沙成形要用的是「牆已經站定」的那個落點。
+            if (_elementField != null) _elementField.NotifyWallActivated(position, owner);
         }
 
         private void Update()

@@ -294,6 +294,114 @@ namespace Vow.Tests.PlayMode
         }
     }
 
+    // Phase 2 批 4 V5：三個元素反應、縛足／減速、蒸氣遮蔽與受擊顯影、區域視覺池借還（含一次池滿擠掉）、
+    // 四顆 HUD 鈕的標籤重算——全部必須發生在**探針夾區內的 Update()**，寫在測試協程本體會落在夾區之外
+    //（同 H2），對這幾條路徑毫無鑑別力。
+    //
+    // 幾何刻意不依賴英雄當下在哪：流沙直接生在英雄腳下（水域圓心＝英雄位置 → 岩落同一點 → 流沙罩住他），
+    // 蒸氣罩的是靜止不動的 TestWall_A（英雄離它 7m 以上，遮蔽判定才有兩側）。
+    public sealed class Batch4Driver : MonoBehaviour
+    {
+        internal Phase1Bootstrap Bootstrap;
+        internal ElementField Field;
+        internal HeroController Hero;
+        internal HeroLocomotion Locomotion;
+        internal CombatTargetBehaviour ConcealTarget;
+        internal ElementTuning Tuning;
+
+        public bool Trigger;
+        public int Stage;
+        public int ButtonPresses;
+        public int PoolFillCasts;
+        public int RootedFrames;
+        public int SlowedFrames;
+        public int ConcealedFrames;
+        public int RevealRefreshes;
+
+        private Vector3 _steamCentre;
+
+        private void Update()
+        {
+            if (!Trigger || Field == null) return;
+
+            // 活性（每幀量，不分階段）：縛足與 0.65 減速是兩個獨立狀態，分開記。
+            if (Locomotion.IsMovementLocked) RootedFrames++;
+            else if (Locomotion.SpeedMultiplier != 1f) SlowedFrames++;
+
+            switch (Stage)
+            {
+                case 0:   // 四顆鈕走真實委派（冷卻閘 ＋ 零配置標籤字串表）
+                    Bootstrap.PressElementFactionButton();
+                    Bootstrap.PressElementWaterButton();
+                    ButtonPresses++;
+                    Stage = 1;
+                    return;
+
+                case 1:   // 火落在剛剛那個水域上 → 蒸氣成形
+                    Bootstrap.PressElementFireButton();
+                    ButtonPresses++;
+                    Stage = 2;
+                    return;
+
+                case 2:
+                    Bootstrap.PressElementWindButton();
+                    ButtonPresses++;
+                    Stage = 3;
+                    return;
+
+                case 3:   // 火浪：燃燒區與扇形在**同一幀**內用同一組 origin/forward 算，不受轉身影響
+                    Vector3 origin = Hero.transform.position;
+                    Vector3 forward = Hero.transform.forward;
+                    forward.y = 0f;
+                    if (forward.sqrMagnitude < 1e-6f) forward = Vector3.forward;
+                    forward.Normalize();
+                    Field.CastFire(origin + forward * 3f, (int)Faction.BlueTeam);
+                    Field.CastWind(origin, forward, (int)Faction.BlueTeam);
+                    Stage = 4;
+                    return;
+
+                case 4:   // 區域視覺池：補到超過同時存活上限，逼出「擠掉 → 還一個 → 借一個」
+                    Field.CastWater(new Vector3(-18f + PoolFillCasts * 5f, 0f, -18f), (int)Faction.BlueTeam);
+                    PoolFillCasts++;
+                    if (PoolFillCasts < Tuning.MaxLiveZones + 2) return;
+                    Stage = 5;
+                    return;
+
+                case 5:   // 敵對流沙罩住英雄（水域圓心＝英雄腳下 ⇒ 反應區圓心也在他腳下）
+                    Vector3 here = Hero.transform.position;
+                    Field.CastWater(here, (int)Faction.RedTeam);
+                    Field.NotifyWallActivated(here, Faction.RedTeam);
+                    Stage = 6;
+                    return;
+
+                case 6:   // 等縛足與減速兩種幀都量到
+                    if (RootedFrames < 1 || SlowedFrames < 1) return;
+                    Stage = 7;
+                    return;
+
+                case 7:   // 蒸氣罩住 TestWall_A
+                    _steamCentre = ConcealTarget.TargetTransform.position;
+                    _steamCentre.y = 0f;
+                    Field.CastWater(_steamCentre, (int)Faction.BlueTeam);
+                    Field.CastFire(_steamCentre, (int)Faction.BlueTeam);
+                    Stage = 8;
+                    return;
+
+                case 8:   // 遮蔽生效的幀（只在英雄確實在霧外時才算）＋ 受擊顯影刷新
+                    if (!ElementGeometry.IsInsideCircle(Hero.transform.position.x, Hero.transform.position.z,
+                            _steamCentre.x, _steamCentre.z, Tuning.ReactionRadius)
+                        && !Hero.CanEngage(ConcealTarget))
+                        ConcealedFrames++;
+                    if (ConcealedFrames < 1) return;
+
+                    ConcealTarget.ReceiveDamage(1f, DamageType.Elemental, null);
+                    RevealRefreshes++;
+                    Stage = 9;
+                    return;
+            }
+        }
+    }
+
     public sealed class ZeroAllocationTests
     {
         private const string SceneName = "VOW_Phase1_Greybox";
@@ -385,6 +493,7 @@ namespace Vow.Tests.PlayMode
             detourDriver.Input = input;
             GoalBlockedDriver goalBlockedDriver = rig.AddComponent<GoalBlockedDriver>();
             Batch3Driver batch3Driver = rig.AddComponent<Batch3Driver>();
+            Batch4Driver batch4Driver = rig.AddComponent<Batch4Driver>();
             rig.AddComponent<AllocationProbeEnd>();
 
             HeroLocomotion locomotion = hero.GetComponent<HeroLocomotion>();
@@ -529,6 +638,33 @@ namespace Vow.Tests.PlayMode
             batch3Driver.PenetrationsBase = penetrationsBefore;
             batch3Driver.BlocksBase = blocksBefore;
             bool sawShieldBarVisible = false;
+
+            // ── 批 4 V5 的接線與基準（全部在量測窗口外做完，窗口內只剩 Driver 的 Update）──
+            ElementField elementField = bootstrap.ElementField;
+            Assert.IsNotNull(elementField, "場景缺少 ElementField");
+            GameObject testWallObject = GameObject.Find("TestWall_A");
+            Assert.IsNotNull(testWallObject, "場景缺少 TestWall_A");
+            CombatTargetBehaviour concealTarget = testWallObject.GetComponent<CombatTargetBehaviour>();
+            Assert.IsNotNull(concealTarget, "TestWall_A 沒有 CombatTargetBehaviour");
+            Assert.Greater(bootstrap.ElementZoneViewPoolSize, bootstrap.ElementTuning.MaxLiveZones,
+                "區域視覺池必須比同時存活上限多（池 " + bootstrap.ElementZoneViewPoolSize
+                + "、上限 " + bootstrap.ElementTuning.MaxLiveZones + "）");
+
+            batch4Driver.Bootstrap = bootstrap;
+            batch4Driver.Field = elementField;
+            batch4Driver.Hero = hero;
+            batch4Driver.Locomotion = locomotion;
+            batch4Driver.ConcealTarget = concealTarget;
+            batch4Driver.Tuning = bootstrap.ElementTuning;
+
+            int quicksandsBefore = elementField.QuicksandFormedCount;
+            int steamsBefore = elementField.SteamFormedCount;
+            int firestormsBefore = elementField.FirestormCount;
+            int viewBorrowsBefore = elementField.ViewBorrowCount;
+            int viewReturnsBefore = elementField.ViewReturnCount;
+            int hudLabelsBefore = bootstrap.ElementLabelRecomputeCount;
+            int revealRefreshBefore = concealTarget.RevealRefreshCount;
+
             AllocationProbe.Measuring = true;
 
             // 量測窗口第 1 段（仍在夾區內）：先把戰鬥活性跑滿。批 2 的繞牆指令會中斷攻擊，
@@ -602,6 +738,22 @@ namespace Vow.Tests.PlayMode
             // 再放一幀：石牆是在 Update 裡到期的，它造成的格點撤銷與 GRID 疊圖重填發生在同一幀的
             // LateUpdate——比測試協程晚。不多等這一幀，「牆到期」那一段就落在量測窗口之外。
             yield return null;
+
+            // 量測窗口第 4 段（批 4 V5）：三個反應、縛足／減速、蒸氣遮蔽與顯影、區域池借還、HUD 標籤重算，
+            // 全部由夾區內的 Batch4Driver.Update() 送出。放在最後一段是因為它會把英雄縛在原地，
+            // 與前三段的移動／繞牆／砸牆互相排擠。
+            batch4Driver.Trigger = true;
+            float batch4Deadline = Time.time + 30f;
+            while (batch4Driver.Stage < 9
+                   || elementField.ViewBorrowCount - viewBorrowsBefore < 2
+                   || elementField.ViewReturnCount - viewReturnsBefore < 2
+                   || bootstrap.ElementLabelRecomputeCount - hudLabelsBefore < 5)
+            {
+                if (Time.time > batch4Deadline) break;
+                yield return null;
+            }
+            batch4Driver.Trigger = false;
+
             AllocationProbe.Measuring = false;
             UnityEngine.Object.Destroy(rig);
             UnityEngine.Object.Destroy(chaseProbe);
@@ -644,6 +796,34 @@ namespace Vow.Tests.PlayMode
             Assert.GreaterOrEqual(gridDebug.RebuildCount - rebuildsBefore, 2,
                 "量測期間 GRID 疊圖沒有重填過兩次（立牆＋到期）：M2 那條零配置沒有被量到（實測 "
                 + (gridDebug.RebuildCount - rebuildsBefore) + " 次）");
+
+            // 批 4 V5：五件新行為也必須真的在夾區內跑過，否則 0 bytes 只代表「這幾條沒跑」
+            Assert.AreEqual(9, batch4Driver.Stage,
+                "量測窗口內沒有走完批 4 的驅動流程（Stage=" + batch4Driver.Stage
+                + " presses=" + batch4Driver.ButtonPresses + " poolCasts=" + batch4Driver.PoolFillCasts + "）");
+            Assert.GreaterOrEqual(elementField.QuicksandFormedCount - quicksandsBefore, 1,
+                "量測期間沒有任何流沙成形（V5-a）");
+            Assert.GreaterOrEqual(elementField.SteamFormedCount - steamsBefore, 1,
+                "量測期間沒有任何蒸氣成形（V5-a）");
+            Assert.GreaterOrEqual(elementField.FirestormCount - firestormsBefore, 1,
+                "量測期間沒有任何火浪（V5-a）");
+            Assert.GreaterOrEqual(batch4Driver.RootedFrames, 1,
+                "量測期間英雄從未處於縛足中（V5-b）：縛足這條路徑沒有被量到");
+            Assert.GreaterOrEqual(batch4Driver.SlowedFrames, 1,
+                "量測期間英雄從未處於 0.65 減速中（V5-b）：減速這條路徑沒有被量到");
+            Assert.GreaterOrEqual(batch4Driver.ConcealedFrames, 1,
+                "量測期間蒸氣遮蔽從未生效（V5-c）：CanEngage 的元素分支沒有被量到");
+            Assert.GreaterOrEqual(concealTarget.RevealRefreshCount - revealRefreshBefore, 1,
+                "量測期間受擊顯影從未被刷新（V5-c）");
+            Assert.GreaterOrEqual(elementField.ViewBorrowCount - viewBorrowsBefore, 2,
+                "量測期間區域視覺借出不足 2 次（V5-d，實測 "
+                + (elementField.ViewBorrowCount - viewBorrowsBefore) + "）");
+            Assert.GreaterOrEqual(elementField.ViewReturnCount - viewReturnsBefore, 2,
+                "量測期間區域視覺歸還不足 2 次（V5-d：池滿擠掉那一次沒有被量到？實測 "
+                + (elementField.ViewReturnCount - viewReturnsBefore) + "）");
+            Assert.GreaterOrEqual(bootstrap.ElementLabelRecomputeCount - hudLabelsBefore, 5,
+                "量測期間 HUD 四顆鈕的標籤重算不足 5 次（V5-e：零配置字串表沒有被反覆量到？實測 "
+                + (bootstrap.ElementLabelRecomputeCount - hudLabelsBefore) + "）");
 
             Assert.AreEqual(0L, AllocationProbe.UpdateBytes,
                 "Update 夾區在 " + AllocationProbe.Frames + " 幀內配置了 " + AllocationProbe.UpdateBytes + " bytes");

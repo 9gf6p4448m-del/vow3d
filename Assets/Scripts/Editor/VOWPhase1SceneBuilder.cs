@@ -57,10 +57,11 @@ namespace Vow.EditorTools
             TestTurret turret = CreateTurretAndBullets(materials.Turret, materials.Bullet);
             RuneGhostPreview runeGhost = CreateRuneGhostPreview(tuning.Rune, materials.RuneGhost);
             NavGridDebugView navGridDebug = CreateNavGridDebugView(materials.NavGrid);
+            Transform elementZonePool = CreateElementZonePool(materials);
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
             CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform,
-                          runeWallPool, enemyWallPool, turret);
+                          runeWallPool, enemyWallPool, turret, elementZonePool);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -76,6 +77,7 @@ namespace Vow.EditorTools
         {
             public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines, RuneWall, RuneGhost, NavGrid;
             public Material EnemyWall, Turret, Bullet;
+            public Material ZoneWater, ZoneBurning, ZoneQuicksand, ZoneSteam;
         }
 
         private static Materials CreateMaterials()
@@ -99,7 +101,12 @@ namespace Vow.EditorTools
                 // 批 3：敵方牆是紅的（一眼分得出哪面砸得到）、砲台與子彈用高對比色
                 EnemyWall = GreyboxAssetFactory.EnsureLitMaterial("VOW_EnemyWall", new Color(0.72f, 0.18f, 0.16f)),
                 Turret = GreyboxAssetFactory.EnsureLitMaterial("VOW_Turret", new Color(0.3f, 0.65f, 0.9f)),
-                Bullet = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_Bullet", new Color(1f, 0.92f, 0.45f), false, false)
+                Bullet = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_Bullet", new Color(1f, 0.92f, 0.45f), false, false),
+                // 批 4：四種元素區域的灰盒色（冷庫協議：不做粒子／著色器，只有半透明扁圓柱）
+                ZoneWater = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneWater", new Color(0.24f, 0.55f, 0.95f, 0.38f), true, true),
+                ZoneBurning = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneBurning", new Color(1f, 0.45f, 0.12f, 0.45f), true, true),
+                ZoneQuicksand = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneQuicksand", new Color(0.72f, 0.56f, 0.24f, 0.5f), true, true),
+                ZoneSteam = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneSteam", new Color(0.95f, 0.95f, 0.98f, 0.5f), true, true)
             };
         }
 
@@ -401,6 +408,68 @@ namespace Vow.EditorTools
             return view.AddComponent<NavGridDebugView>();
         }
 
+        // 批 4：元素區域視覺池。**池 8 個 > 同時存活上限 6**（`ElementTuning.MaxLiveZones`）——
+        // 池等於上限時「擠掉剩餘時間最短那個」永遠走不到，第 7 次施放在玩家眼裡就是按鈕沒反應
+        //（批 3 r1 CRITICAL-1 同型；ElementField.Initialize 另有 LogError 守它）。
+        // 扁圓柱**沒有 Collider**：不擋路、不吃點擊、不進 NavGrid（V4-q）。執行期禁 CreatePrimitive，故預建於此。
+        private const int ElementZonePoolSize = 8;
+
+        private static Transform CreateElementZonePool(Materials materials)
+        {
+            // 索引對齊 ElementZoneKind：0=None（不用）、1=Water、2=Burning、3=Quicksand、4=Steam
+            Material[] kindMaterials =
+            {
+                null, materials.ZoneWater, materials.ZoneBurning, materials.ZoneQuicksand, materials.ZoneSteam
+            };
+
+            GameObject root = new GameObject("ElementZonePool");
+            for (int i = 0; i < ElementZonePoolSize; i++)
+            {
+                GameObject zone = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                zone.name = "ElementZone_" + i;
+                Object.DestroyImmediate(zone.GetComponent<Collider>()); // 區域不擋路、不吃射線
+                zone.transform.SetParent(root.transform, false);
+                zone.transform.localScale = new Vector3(1f, 0.02f, 1f);
+                zone.layer = IgnoreRaycastLayer;
+
+                Renderer zoneRenderer = zone.GetComponent<Renderer>();
+                zoneRenderer.sharedMaterial = materials.ZoneWater;
+                zoneRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                zoneRenderer.receiveShadows = false;
+                zoneRenderer.enabled = false;
+
+                ElementZoneView view = zone.AddComponent<ElementZoneView>();
+                SetReference(view, "_visual", zoneRenderer);
+                SetObjectArray(view, "_kindMaterials", kindMaterials);
+            }
+            return root.transform;
+        }
+
+        // 批 4：擴散火浪的扇形預警載體（§4-6，不經 ISkillTelegraphService）。自有一條 LineRenderer。
+        private static SectorTelegraph CreateSectorTelegraph(Material lineMaterial)
+        {
+            GameObject go = new GameObject("SectorTelegraph");
+            go.layer = IgnoreRaycastLayer;
+
+            LineRenderer line = go.AddComponent<LineRenderer>();
+            line.useWorldSpace = true;
+            line.loop = false;
+            line.alignment = LineAlignment.TransformZ;
+            line.numCapVertices = 0;
+            line.widthMultiplier = 0.18f;
+            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            line.receiveShadows = false;
+            if (lineMaterial != null) line.sharedMaterial = lineMaterial;
+            line.startColor = new Color(1f, 0.6f, 0.15f, 0.95f);
+            line.endColor = new Color(1f, 0.6f, 0.15f, 0.95f);
+            line.enabled = false;
+            go.transform.rotation = Quaternion.Euler(90f, 0f, 0f); // 線寬攤平在地面上（同 SkillTelegraphService）
+
+            SectorTelegraph telegraph = go.AddComponent<SectorTelegraph>();
+            SetReference(telegraph, "_line", line);
+            return telegraph;
+        }
+
         private static Camera CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot)
         {
             GameObject rigObject = new GameObject("CameraRig");
@@ -428,7 +497,8 @@ namespace Vow.EditorTools
 
         private static void CreateSystems(HeroController hero, Camera camera, FollowCameraRig rig, Transform shakePivot,
             Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug,
-            Transform arenaBoundary, Transform runeWallPool, Transform enemyWallPool, TestTurret turret)
+            Transform arenaBoundary, Transform runeWallPool, Transform enemyWallPool, TestTurret turret,
+            Transform elementZonePool)
         {
             GameObject systems = new GameObject("VOW_Systems");
 
@@ -457,6 +527,8 @@ namespace Vow.EditorTools
             RuneCaster runeCaster = systems.AddComponent<RuneCaster>();
             RuneButtonView runeButton = systems.AddComponent<RuneButtonView>();
             EnemyWallSpawner enemyWalls = systems.AddComponent<EnemyWallSpawner>();
+            ElementField elementField = systems.AddComponent<ElementField>();
+            SectorTelegraph sectorTelegraph = CreateSectorTelegraph(materials.Telegraph);
 
             Phase1Bootstrap bootstrap = systems.AddComponent<Phase1Bootstrap>();
             SetReference(bootstrap, "_hero", hero);
@@ -482,6 +554,9 @@ namespace Vow.EditorTools
             SetReference(bootstrap, "_enemyWalls", enemyWalls);
             SetReference(bootstrap, "_shield", hero.GetComponent<RockShieldBehaviour>());
             SetReference(bootstrap, "_shieldBar", hero.GetComponent<HeroShieldBar>());
+            SetReference(bootstrap, "_elementField", elementField);
+            SetReference(bootstrap, "_sectorTelegraph", sectorTelegraph);
+            SetReference(bootstrap, "_elementZonePool", elementZonePool);
         }
 
         // ───────────────────────── 專案設定 ─────────────────────────
