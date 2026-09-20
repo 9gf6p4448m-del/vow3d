@@ -125,6 +125,14 @@ namespace Vow.Tests.PlayMode
             }
         }
 
+        // 施放點＝英雄前方 CastDistanceMeters。盤面一律反推「要讓落點剛好落在 castCentre，英雄該站哪」，
+        // 這樣 tuning 改了（r1 HIGH-1：4m→3m）盤面自己跟著走，區域相對於其他東西的幾何完全不變，
+        // 斷言、容差、等待秒數一個字都不用動。
+        private Vector3 HeroStandFor(Vector3 castCentre, Vector3 facing)
+        {
+            return castCentre - Flat(facing).normalized * _tuning.CastDistanceMeters;
+        }
+
         private RuneWall ActivateWall(RuneWall wall, Vector3 groundPoint, Vector3 facing, Faction owner)
         {
             Vector3 position = new Vector3(groundPoint.x, _rune.WallHeight * 0.5f, groundPoint.z);
@@ -142,7 +150,8 @@ namespace Vow.Tests.PlayMode
         // 回傳流沙的 id。
         private IEnumerator BuildHostileQuicksand()
         {
-            PlaceHero(new Vector3(0f, 0f, 6f), 0f);   // 面向 +Z，前方 4m ＝ (0,0,10)
+            // 面向 +Z 站在「落點恰為 (0,0,10)」的位置（施放距離改了，站位跟著改，水域圓心不動）
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 10f), Vector3.forward), 0f);
             PressElemFaction();                        // BLUE → RED
             Assert.AreEqual(Faction.RedTeam, _bootstrap.ElementCastFaction, "ELEM 鈕沒有切到 RED");
             PressWater();
@@ -234,7 +243,7 @@ namespace Vow.Tests.PlayMode
         {
             yield return Setup();
 
-            PlaceHero(new Vector3(0f, 0f, 6f), 0f);
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 10f), Vector3.forward), 0f);
             PressElemFaction();
             PressWater();
             yield return null;
@@ -280,7 +289,7 @@ namespace Vow.Tests.PlayMode
             float baseline = PlanarDistance(baseFrom, _hero.transform.position);
 
             // 藍水＋藍牆（ELEM 預設 BLUE，英雄也是 BlueTeam）
-            PlaceHero(new Vector3(0f, 0f, 6f), 0f);
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 10f), Vector3.forward), 0f);
             Assert.AreEqual(Faction.BlueTeam, _bootstrap.ElementCastFaction, "ELEM 預設應為 BLUE");
             PressWater();
             yield return null;
@@ -313,7 +322,7 @@ namespace Vow.Tests.PlayMode
         private IEnumerator BuildQuicksandOverTheDummy(Faction wallOwner)
         {
             _dummy.transform.position = new Vector3(0f, 1f, 6f);
-            PlaceHero(new Vector3(0f, 0f, 2f), 0f);       // 前方 4m ＝ 木樁腳下 (0,0,6)
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 6f), Vector3.forward), 0f);   // 落點＝木樁腳下
             PressWater();
             yield return null;
             Assert.AreEqual(1, _field.CountZonesOfKind(ElementZoneKind.Water));
@@ -323,7 +332,8 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(1, _field.CountZonesOfKind(ElementZoneKind.Quicksand), "流沙沒有罩住木樁");
             AssertClearOfZoneBoundaries(_dummy.transform.position, "木樁");
 
-            PlaceHero(Vector3.zero, 0f);                   // 退到流沙外，前方 4m ＝ (0,0,4) 仍在流沙內
+            // 退到流沙外，但落點（前方 CastDistanceMeters）仍在流沙內
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 4f), Vector3.forward), 0f);
             yield return null;
         }
 
@@ -543,7 +553,8 @@ namespace Vow.Tests.PlayMode
             yield return Setup();
             _dummy.transform.position = new Vector3(0f, 1f, 6f);
 
-            PlaceHero(new Vector3(0f, 0f, 3f), 0f);   // 前方 4m ＝ (0,0,7)，木樁落在 3m 燃燒圈內
+            // 落點固定在 (0,0,7)：木樁 (0,1,6) 落在 3m 燃燒圈內，離圈邊還有 2m
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 7f), Vector3.forward), 0f);
             yield return null;
             PressFire();
             yield return null;
@@ -628,7 +639,7 @@ namespace Vow.Tests.PlayMode
             yield return Setup();
             _dummy.transform.position = new Vector3(0f, 1f, 6f);
 
-            PlaceHero(new Vector3(0f, 0f, 2f), 0f);   // 前方 4m ＝ 木樁腳下
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 6f), Vector3.forward), 0f);   // 落點＝木樁腳下
             yield return null;
             AssertClearOfZoneBoundaries(_dummy.transform.position, "木樁");
 
@@ -655,7 +666,7 @@ namespace Vow.Tests.PlayMode
             _dummy.Configure(_dummy.MaxHealth, Faction.BlueTeam);
             yield return null;
             float blueBefore = _dummy.Health;
-            PlaceHero(new Vector3(0f, 0f, 2f), 0f);
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 6f), Vector3.forward), 0f);
             yield return Seconds(_tuning.SkillCooldownSeconds + 0.1f);   // FIRE 冷卻
             PressFire();
             Assert.AreEqual(blueBefore, _dummy.Health, DamageTolerance, "藍火打到了藍隊木樁");
@@ -874,7 +885,9 @@ namespace Vow.Tests.PlayMode
                     views[i].name + " 帶著 Collider：英雄會繞路、點擊會被擋");
 
             int blockedBefore = _bootstrap.NavGrid.BlockedCount;
-            PlaceHero(new Vector3(0f, 0f, -6f), 0f);
+            // 落點固定在 (0,0,-3)：蒸氣圓心不隨施放距離漂，下面「站進圈內」才有固定的幾何
+            Vector3 steamCentre = new Vector3(0f, 0f, -3f);
+            PlaceHero(HeroStandFor(steamCentre, Vector3.forward), 0f);
             yield return null;
 
             PressWater();
@@ -884,8 +897,8 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(blockedBefore, _bootstrap.NavGrid.BlockedCount,
                 "元素區域改動了阻擋格點");
 
-            // 英雄站在區域上不會被推開（站進圈內 1m 處，不站邊界）
-            PlaceHero(new Vector3(0f, 0f, -3f), 0f);
+            // 英雄站在區域上不會被推開（站進圈心，離邊界 4m）
+            PlaceHero(steamCentre, 0f);
             yield return null;
             AssertClearOfZoneBoundaries(_hero.transform.position, "英雄");
             Vector3 standing = _hero.transform.position;
@@ -1073,6 +1086,65 @@ namespace Vow.Tests.PlayMode
 
             for (int i = 0; i < fillers.Length; i++) Object.Destroy(fillers[i]);
             yield return null;
+        }
+
+        // R5（HIGH-1，使用者裁定施放距離 4m→3m）：最自然的操作序列——**原地**連按
+        // ELEM: RED → WATER → ENEMY WALL——必須穩定地把英雄困住。
+        //
+        // 4m 之下三個數字剛好疊在一起（CastDistanceMeters 4 ＝ RuneTuning.QuickCastDistance 4
+        // ＝ ReactionRadius 4）：水域圓心與敵方牆落點重合在英雄前方 4m，流沙圓心也在那裡、半徑 4，
+        // 英雄就恰好站在流沙邊界上，困不困得住由浮點捨入決定。3m 之後英雄離邊界 1m，穩定成立。
+        [UnityTest]
+        public IEnumerator R5_WaterThenEnemyWall_WithoutMoving_RootsTheHero()
+        {
+            yield return Setup();
+
+            // 遠離木樁與兩面測試牆的空地；取向 37° 避開軸對齊（批 2 R9 教訓）。全程不再移動英雄。
+            PlaceHero(new Vector3(-6f, 0f, -12f), 37f);
+            yield return null;
+            Vector3 standing = _hero.transform.position;
+
+            PressElemFaction();   // BLUE → RED：紅流沙才與藍英雄敵對
+            Assert.AreEqual(Faction.RedTeam, _bootstrap.ElementCastFaction, "ELEM 鈕沒有切到 RED");
+            PressWater();
+            yield return null;
+            Assert.AreEqual(1, _field.CountZonesOfKind(ElementZoneKind.Water), "WATER 鈕沒有生出水域");
+
+            // ENEMY WALL 走真實的 HUD 鈕入口（與批 3 同一顆），落點是英雄前方 QuickCastDistance
+            _bootstrap.HudPanel.PressEnemyWallButton();
+            yield return null;
+
+            // ① 流沙成形
+            Assert.AreEqual(0, _field.CountZonesOfKind(ElementZoneKind.Water), "水域沒有被岩消耗");
+            Assert.AreEqual(1, _field.CountZonesOfKind(ElementZoneKind.Quicksand),
+                "原地連按 WATER → ENEMY WALL 沒有生出流沙（牆沒落在水域內？）");
+            Assert.AreEqual(1, _field.ActiveZoneCount, "場上應該只剩流沙那一個區域");
+
+            int quicksandId = _field.FindZoneIdContaining(standing, ElementZoneKind.Quicksand);
+            Assert.GreaterOrEqual(quicksandId, 0, "英雄不在流沙內");
+            Assert.IsTrue(_field.TryGetZoneById(quicksandId, out ElementZone quicksand));
+
+            // ② 英雄到流沙圓心的距離 ＝ 施放距離（±0.10m）。流沙圓心＝被消耗水域的圓心（§4-2），
+            //    水域圓心＝英雄前方 CastDistanceMeters，所以這個距離就是施放距離本身。
+            float toCentre = PlanarDistance(standing, new Vector3(quicksand.X, 0f, quicksand.Z));
+            Assert.AreEqual(_tuning.CastDistanceMeters, toCentre, PositionTolerance,
+                "流沙圓心不在英雄前方 CastDistanceMeters 處（實測 " + toCentre + "m）");
+
+            // ③ 英雄離流沙邊界 ≥0.5m——**施放距離留在 4m 時這一條必紅**（4.0 − 4.0 ＝ 0）
+            AssertClearOfZoneBoundaries(standing, "原地連按的英雄");
+
+            // ④ 成形當幀起就縛足，移動指令 0.5s 內走不動
+            Assert.IsTrue(_locomotion.IsMovementLocked, "流沙成形當幀英雄就該被縛足");
+            Vector3 forward = Flat(_hero.transform.forward).normalized;
+            _input.TapGround(standing + forward * 6f);
+            yield return Seconds(0.5f);
+            Assert.Less(PlanarDistance(standing, _hero.transform.position), PositionTolerance,
+                "縛足期間英雄仍然走動了");
+            Assert.IsTrue(_locomotion.IsMovementLocked);
+
+            // 使用者裁定的施放距離本身（放最後：4m 之下 ③ 會先紅，紅燈證據才落在 ③）
+            Assert.AreEqual(3f, _tuning.CastDistanceMeters, 1e-4f,
+                "r1 HIGH-1 的使用者裁定：施放距離 3m");
         }
     }
 }

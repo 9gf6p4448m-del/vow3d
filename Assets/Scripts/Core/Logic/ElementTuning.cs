@@ -26,7 +26,7 @@ namespace Vow.Core.Logic
         // 爆沸
         public float BoilDamage = 80f;
         // 施放
-        public float SkillCooldownSeconds = 5f;     public float CastDistanceMeters = 4f;
+        public float SkillCooldownSeconds = 5f;     public float CastDistanceMeters = 3f;
         // Combo 反饋（GDD 明文 45ms，非暫定）
         public float ComboHitstopMs = 45f;          public float ComboTrauma = 0.5f;
         // 容量

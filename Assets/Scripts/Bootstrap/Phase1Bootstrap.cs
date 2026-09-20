@@ -375,7 +375,8 @@ namespace Vow.Bootstrap
             return new ElementZoneView[0];
         }
 
-        // 水／火＝英雄前方 CastDistanceMeters（4m）的地面點；風＝以英雄本體為扇形頂點朝面向（§4-11）。
+        // 水／火＝英雄前方 CastDistanceMeters（r1 HIGH-1 使用者裁定後為 3m）的地面點；
+        // 風＝以英雄本體為扇形頂點朝面向（§4-11）。
         private Vector3 ElementCastPoint()
         {
             Vector3 origin = _hero.transform.position;
