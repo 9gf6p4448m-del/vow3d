@@ -547,3 +547,15 @@ CRITICAL／HIGH 全修或經使用者簽准；修完送**三態覆審**（「反
 ### 本輪不准動的東西
 
 同 §5 V6 全部；既有 85 條 PlayMode、194 條 EditMode 一條不准改；步驟 A 七個 Logic 檔不改（R2 改的是 `Combat/ElementField.cs`）。驗收：`verify.sh` ALL PASS、Unity EditMode 0 紅、PlayMode 全綠且條數＝85＋新增、突變 110／110、`git diff --stat 5ce8d3a..` 只含 `ElementField.cs`、`Phase1Bootstrap.cs`、`ElementReactionPlayTests.cs`（或新測試檔＋.meta）。
+
+### 使用者裁定（2026-09-20，r1 後；AskUserQuestion 兩題皆選建議項）
+
+- **HIGH-1 → 施放距離 4m→3m**：`ElementTuning.CastDistanceMeters = 3f`（`WATER`／`FIRE` 的落點；`WIND` 以英雄為頂點，不受影響）。這是動凍結數值（§2 表與 V6-d 的第 19 項），依 `02 §2.1`：**原標準錯在哪**＝4m 同時等於 `RuneTuning.QuickCastDistance`（敵方牆／極速石牆落點）與 `ReactionRadius`，原地連按時英雄恰在流沙邊界上；**為什麼現在才知道**＝對齊時只訂了各自的數值、沒有把三個 4 放在一起推導，主對話審稿時看出來了卻只用「先走 2m」繞開，r1 審查指出這等於把唯一會出事的盤面排除在驗收外。使用者已針對這一條明確同意。§2 表、§0 裁定 2、V6-d 的 `CastDistanceMeters 4` 自此讀作 **3**；§5 V8 ① 的「往前走約 2m」刪除（原地連按即可）。
+- **HIGH-3 → 視為設計、不修（使用者簽准）**：任何來源的傷害都讓霧內目標顯影 1.5s（`GDD.md:126` 字面），砲台開著時霧裡的木樁因此一直點得到。寫進驗收指南 §14「已知行為」；試玩清單與步驟 C 的 Playwright 腳本註明「看遮蔽效果要先關 `TURRET`；開著則是受擊顯影的示範」。
+
+### R5（HIGH-1 的修復，凍結）
+
+- `ElementTuning.CastDistanceMeters` 4f→3f；其餘 19 個裁定數值一個不動。
+- 新增 PlayMode 測試 `R5_WaterThenEnemyWall_WithoutMoving_RootsTheHero`：英雄**全程不移動**（站在遠離其他區域的空地、取向 37°）→ 經鈕路徑 `ELEM: RED`→`WATER`→`ENEMY WALL` → 斷言①流沙成形（`ActiveZoneCount`、種類＝Quicksand）②英雄到流沙圓心的距離＝3.0±0.10m ③英雄離流沙邊界 ≥0.5m（`AssertClearOfZoneBoundaries` 同一把尺）④成形當幀起 `IsMovementLocked == true`、送移動指令 0.5s 內位移 <0.10m。（`CastDistanceMeters` 留在 4＝③必紅；牆沒落在水域內＝①紅；縛足沒接上＝④紅）
+- 鑑別力證據（必附）：同一條測試在 `CastDistanceMeters = 4f` 下跑一次的紅燈輸出（紅在③），還原用改壞前的備份副本。
+- 步驟 B 自己新寫的 PlayMode 測試若把「4m」寫死在**盤面座標**裡而因此變紅：只准改盤面座標讓它跟著 tuning 走（優先改成讀 `tuning.CastDistanceMeters`），**斷言、容差、等待秒數一個不准動**；逐行列出改了哪些行、各自為什麼不會提高通過機率。v0.5.0 既有的 66 條 PlayMode 與所有 EditMode 測試仍然一條不准動。
