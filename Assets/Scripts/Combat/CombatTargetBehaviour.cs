@@ -9,7 +9,7 @@ namespace Vow.Combat
     //
     // Phase 2 批 2 另外提供「0.5m 阻擋格點的登記／撤銷」給石牆用（RuneWall 與 TestWallTarget 都繼承本類別）。
     // 刻意做成呼叫端自己開口的 opt-in：木樁（DummyTarget）不進格點（計畫書 §3）。
-    public abstract class CombatTargetBehaviour : MonoBehaviour, ICombatTarget, IFactionOwned
+    public abstract class CombatTargetBehaviour : MonoBehaviour, ICombatTarget, IFactionOwned, IConcealable
     {
         [SerializeField] private float _maxHealth = 600f;
         [SerializeField] private Faction _faction = Faction.RedTeam;
@@ -88,9 +88,36 @@ namespace Vow.Combat
             if (!IsAlive || amount <= 0f) return;
 
             float applied = ConsumeDamage(amount);
+            // Phase 2 批 4（GDD 圍欄九）：霧內目標「受傷後顯影 1.5s」。掛在這個唯一的受擊入口上，
+            // 不掛在近戰／子彈／元素各自的呼叫端——三條路徑全部收斂在這裡（分母歸一）。
+            _concealment.NotifyDamaged();
+            RevealRefreshCount++;
             OnDamaged?.Invoke(applied);
 
             if (ReadHealth() <= 0f) NotifyDeath();
+        }
+
+        // ───────────────────── Phase 2 批 4：受擊顯影（IConcealable）─────────────────────
+        // 倒數由 ElementField 每幀統一推進（它本來就要走一遍名冊）：這個類別的三個子類別各自有
+        // private void Update()，在基底再加一個同名方法會被子類別隱藏、Unity 只叫得到子類別那個。
+
+        private SteamConcealmentLogic _concealment = new SteamConcealmentLogic(new ElementTuning());
+
+        public bool IsRevealed => _concealment.IsRevealed;
+        public float RevealRemainingSeconds => _concealment.RevealRemainingSeconds;
+
+        // 受擊顯影被刷新過幾次（零配置量測的活性斷言用）。
+        public int RevealRefreshCount { get; private set; }
+
+        // 由 ElementField.Initialize 注入全場共用的那一份 tuning，免得每個目標各拿一份預設值。
+        public void ConfigureConcealment(ElementTuning tuning)
+        {
+            if (tuning != null) _concealment = new SteamConcealmentLogic(tuning);
+        }
+
+        public void TickConcealment(float deltaSeconds)
+        {
+            _concealment.Tick(deltaSeconds);
         }
 
         protected void Revive()

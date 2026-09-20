@@ -44,8 +44,18 @@ namespace Vow.Bootstrap
         [SerializeField] private RockShieldBehaviour _shield;
         [SerializeField] private HeroShieldBar _shieldBar;
 
+        // ── Phase 2 批 4：三大元素反應 ──
+        [SerializeField] private ElementField _elementField;
+        [SerializeField] private SectorTelegraph _sectorTelegraph;
+        [SerializeField] private Transform _elementZonePool;
+
         private readonly ColliderTargetRegistry _targets = new ColliderTargetRegistry();
         private readonly ProjectileTuning _projectileTuning = new ProjectileTuning();
+
+        private readonly ElementTuning _elementTuning = new ElementTuning();
+        private CombatTargetRoster _elementRoster;
+        private ElementCastCooldowns _elementCooldowns;
+        private Faction _elementFaction = Faction.BlueTeam;   // ELEM 鈕：下一發技能的陣營
 
         // ── Phase 2 批 2：0.5m 阻擋格點。全場唯一一份，牆登記進來、英雄從這裡拿繞牆方向 ──
         private readonly NavGridTuning _navTuning = new NavGridTuning();
@@ -67,6 +77,25 @@ namespace Vow.Bootstrap
         public IRockShield Shield => _shield;
         // 驗收替一面牆加上第二個 Collider 之後要重新登記查表（r1 對抗審查 HIGH-3 的量法）。
         public ColliderTargetRegistry TargetRegistry => _targets;
+
+        // ── 批 4 的驗收面：四顆鈕走的是與真實觸控同一個入口（DebugHud 的 PressXxxButton）──
+        public ElementField ElementField => _elementField;
+        public ElementTuning ElementTuning => _elementTuning;
+        public CombatTargetRoster ElementRoster => _elementRoster;
+        public SectorTelegraph SectorTelegraph => _sectorTelegraph;
+        public Faction ElementCastFaction => _elementFaction;
+        public int ElementZoneViewPoolSize => _elementField != null ? _elementField.ViewPoolSize : 0;
+
+        public void PressElementWaterButton() { if (_hud != null) _hud.PressWaterButton(); }
+        public void PressElementFireButton() { if (_hud != null) _hud.PressFireButton(); }
+        public void PressElementWindButton() { if (_hud != null) _hud.PressWindButton(); }
+        public void PressElementFactionButton() { if (_hud != null) _hud.PressElementFactionButton(); }
+
+        public string ElementWaterButtonLabel => _hud != null ? _hud.WaterButtonLabel : null;
+        public string ElementFireButtonLabel => _hud != null ? _hud.FireButtonLabel : null;
+        public string ElementWindButtonLabel => _hud != null ? _hud.WindButtonLabel : null;
+        public string ElementFactionButtonLabel => _hud != null ? _hud.ElementFactionButtonLabel : null;
+        public int ElementLabelRecomputeCount => _hud != null ? _hud.ElementLabelRecomputeCount : 0;
 
         private void Awake()
         {
@@ -94,7 +123,14 @@ namespace Vow.Bootstrap
             }
 
             CombatTargetBehaviour[] targets = FindObjectsOfType<CombatTargetBehaviour>();
-            for (int i = 0; i < targets.Length; i++) _targets.Register(targets[i]);
+            // 批 4 §4-5：元素 AOE 需要一份**可列舉且去重**的名冊（ColliderTargetRegistry 的鍵是 collider，
+            // 一個目標多個 Collider 會重複結算）。兩者在這裡**成對**登記，分母歸一。
+            _elementRoster = new CombatTargetRoster(_elementTuning.TargetRosterCapacity);
+            for (int i = 0; i < targets.Length; i++)
+            {
+                _targets.Register(targets[i]);
+                _elementRoster.Add(targets[i]);
+            }
 
             BuildNavGrid(targets);
 
@@ -125,6 +161,7 @@ namespace Vow.Bootstrap
             }
 
             InitializeBatch3(targets);
+            InitializeBatch4(targets);
             // 「此刻放手會不會取消」是本機回饋，讀未經延遲的 _input，lambda 只在這裡建一次。
             if (_runeGhost != null && _tuningAsset != null)
                 _runeGhost.Initialize(_input, _input, _hero.transform, _camera, _tuningAsset.Rune, () => _input.IsRuneCancelArmed);
@@ -148,8 +185,14 @@ namespace Vow.Bootstrap
                 Action spawnEnemyWall = _enemyWalls != null ? (Action)SpawnEnemyWall : null;
                 Action toggleTurret = _turret != null ? (Action)ToggleTurret : null;
                 Func<bool> turretFiring = _turret != null ? (Func<bool>)IsTurretFiring : null;
+                Action castWater = _elementField != null ? (Action)CastElementWater : null;
+                Action castFire = _elementField != null ? (Action)CastElementFire : null;
+                Action castWind = _elementField != null ? (Action)CastElementWind : null;
+                Action toggleElement = _elementField != null ? (Action)ToggleElementFaction : null;
+                Func<bool> elementBlue = _elementField != null ? (Func<bool>)IsElementFactionBlue : null;
                 _hud.Initialize(_hero, _input, _hitboxes, _latency, gridVisible, toggleGrid,
-                                spawnEnemyWall, toggleTurret, turretFiring, _shield);
+                                spawnEnemyWall, toggleTurret, turretFiring, _shield,
+                                castWater, castFire, castWind, toggleElement, elementBlue, _elementCooldowns);
             }
             if (_aimPreview != null) _aimPreview.Initialize(_hero, _input, _telegraph, _camera);
         }
@@ -282,6 +325,79 @@ namespace Vow.Bootstrap
             _turret.Initialize(_projectileTuning, _targets, _hero.HeroFaction, aimTarget);
         }
 
+        // ───────────────────── Phase 2 批 4：元素場／名冊／四顆鈕的組裝 ─────────────────────
+
+        private void InitializeBatch4(CombatTargetBehaviour[] targets)
+        {
+            _elementCooldowns = new ElementCastCooldowns(_elementTuning);
+            if (_elementField == null) return;
+
+            ElementZoneView[] views = CollectElementZoneViews();
+            _elementField.Initialize(_elementTuning, _elementRoster, _feedback, _sectorTelegraph, views);
+
+            // 岩＝既有石牆（使用者裁定 1）：符印牆與除錯鈕生的敵方牆都走 RuneWall.Activate。
+            for (int i = 0; i < targets.Length; i++)
+                if (targets[i] is RuneWall runeWall) runeWall.SetElementField(_elementField);
+
+            _hero.SetElementField(_elementField, _elementTuning);
+        }
+
+        // 區域視覺池由 SceneBuilder 預建（執行期禁止 CreatePrimitive）。引用掉了就明說——
+        // 無聲退回空池會讓三個反應在畫面上完全看不見，而所有數值斷言照樣綠。
+        private ElementZoneView[] CollectElementZoneViews()
+        {
+            if (_elementZonePool != null) return _elementZonePool.GetComponentsInChildren<ElementZoneView>(true);
+
+            Debug.LogError("[VOW] 場景缺少 ElementZonePool 引用：元素區域不會有任何視覺，" +
+                           "請執行 VOW/Phase 1/Build Greybox Scene 重建場景。", this);
+            return new ElementZoneView[0];
+        }
+
+        // 水／火＝英雄前方 CastDistanceMeters（4m）的地面點；風＝以英雄本體為扇形頂點朝面向（§4-11）。
+        private Vector3 ElementCastPoint()
+        {
+            Vector3 origin = _hero.transform.position;
+            Vector3 forward = _hero.transform.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-6f) forward = Vector3.forward;
+            forward.Normalize();
+
+            Vector3 point = origin + forward * _elementTuning.CastDistanceMeters;
+            point.y = origin.y;
+            return point;
+        }
+
+        // 冷卻閘寫在按鈕委派這一層（不在 ElementField）：冷卻中按下＝**沒有任何事發生**，
+        // 不重置冷卻、不扣任何東西（§4-12）。
+        private void CastElementWater()
+        {
+            if (!_elementCooldowns.TryBeginCast(ElementCast.Water, Time.time)) return;
+            _elementField.CastWater(ElementCastPoint(), (int)_elementFaction);
+        }
+
+        private void CastElementFire()
+        {
+            if (!_elementCooldowns.TryBeginCast(ElementCast.Fire, Time.time)) return;
+            _elementField.CastFire(ElementCastPoint(), (int)_elementFaction);
+        }
+
+        private void CastElementWind()
+        {
+            if (!_elementCooldowns.TryBeginCast(ElementCast.Wind, Time.time)) return;
+            _elementField.CastWind(_hero.transform.position, _hero.transform.forward, (int)_elementFaction);
+        }
+
+        // ELEM 鈕無冷卻；切換只影響**之後**施放的技能，已成形的區域陣營不變（§4-12）。
+        private void ToggleElementFaction()
+        {
+            _elementFaction = _elementFaction == Faction.BlueTeam ? Faction.RedTeam : Faction.BlueTeam;
+        }
+
+        private bool IsElementFactionBlue()
+        {
+            return _elementFaction == Faction.BlueTeam;
+        }
+
         // 從指定的父物件底下收石牆。引用掉了就明說——無聲退回 FindObjectsOfType 會把兩個池又混回一起。
         private RuneWall[] CollectWalls(Transform poolRoot, string expectedName)
         {
@@ -345,6 +461,13 @@ namespace Vow.Bootstrap
             if (_enemyWalls == null) _enemyWalls = FindObjectOfType<EnemyWallSpawner>();
             if (_shield == null) _shield = FindObjectOfType<RockShieldBehaviour>();
             if (_shieldBar == null) _shieldBar = FindObjectOfType<HeroShieldBar>();
+            if (_elementField == null) _elementField = FindObjectOfType<ElementField>();
+            if (_sectorTelegraph == null) _sectorTelegraph = FindObjectOfType<SectorTelegraph>();
+            if (_elementZonePool == null)
+            {
+                GameObject pool = GameObject.Find("ElementZonePool");
+                if (pool != null) _elementZonePool = pool.transform;
+            }
             if (_arenaBoundary == null)
             {
                 GameObject boundary = GameObject.Find("ArenaBoundary");

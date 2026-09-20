@@ -54,6 +54,8 @@ namespace Vow.Combat.Feedback
         private int _nextDecal;
 
         public bool IsHitstopActive => _hitstopActive;
+        // 批 4 V4-k／V5：元素 Combo 的頓挫必須「真的被觸發過」才構成證據，比照既有的 ScreenFlashCount。
+        public int HitstopCount { get; private set; }
         public int ScreenFlashCount { get; private set; }
         public int DecalSpawnCount { get; private set; }
         public float CurrentTrauma => _shake.Trauma;
@@ -85,6 +87,7 @@ namespace Vow.Combat.Feedback
         public void TriggerHitstop(float durationMs)
         {
             float clamped = Mathf.Clamp(durationMs, MinHitstopMs, MaxHitstopMs);
+            HitstopCount++;
             _hitstopRemaining = Mathf.Max(_hitstopRemaining, clamped * 0.001f);
             if (_hitstopActive) return;
 

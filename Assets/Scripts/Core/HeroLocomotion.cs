@@ -58,6 +58,31 @@ namespace Vow.Core
         private float _cachedGoalX;
         private float _cachedGoalZ;
 
+        // ── Phase 2 批 4：泥濘流沙的縛足與減速 ──
+        // 移速倍率與禁位移在 v0.5.0 **沒有任何既有入口**（`Configure` 只在 `HeroController.Awake` 設一次
+        // `_agent.speed`，之後不再讀寫），所以新開這四個公開成員。每幀重呼叫 `Configure` 的替代方案被否決：
+        // 那會連帶重設 `acceleration`／`angularSpeed`／`radius`，行為面比新增入口大。
+        // 初值 1f／false ⇒ 沒有元素區域時 `_agent.speed` 與 v0.5.0 逐值相同（V4-l）。
+        private float _baseMoveSpeed;
+        private float _speedMultiplier = 1f;
+        private bool _movementLocked;
+
+        public float SpeedMultiplier => _speedMultiplier;
+        public bool IsMovementLocked => _movementLocked;
+
+        // 倍率是**指派**不是累乘：多個流沙重疊時不得變成 0.65²（V7 點名 ③）。
+        public void SetSpeedMultiplier(float multiplier)
+        {
+            if (multiplier == _speedMultiplier) return;
+            _speedMultiplier = multiplier;
+            if (_agent != null) _agent.speed = _baseMoveSpeed * _speedMultiplier;
+        }
+
+        public void SetMovementLocked(bool locked)
+        {
+            _movementLocked = locked;
+        }
+
         // 供測試觀察「這一幀到底走的是哪條路」：Direct＝沿用 Phase 1 的 NavMesh 速度，Follow＝格點向量場。
         public SteerMode LastSteerMode => _lastSteerMode;
 
@@ -123,7 +148,8 @@ namespace Vow.Core
         public void Configure(float moveSpeed, float turnSpeedDegreesPerSecond, float bodyRadius)
         {
             EnsureInitialized();
-            _agent.speed = moveSpeed;
+            _baseMoveSpeed = moveSpeed;            // 批 4：減速倍率的基準；_speedMultiplier 初值 1f
+            _agent.speed = moveSpeed * _speedMultiplier;
             _agent.acceleration = 1000f;   // 純點擊手感：起步與急停不拖泥帶水
             _agent.angularSpeed = 0f;
             _agent.radius = bodyRadius;
@@ -383,6 +409,11 @@ namespace Vow.Core
         // 施加一段水平位移；遇到實體 Collider 時裁切並沿牆面滑動一次。回傳實際走出的位移。
         public Vector3 ApplyDisplacement(Vector3 delta)
         {
+            // 批 4 的位移防線（§2「位移防線的收斂」）：會真的移動英雄的入口有三個——走路（Step 內）、
+            // 滑步（MicroCadenceMover）、被牆壓住時的推出（EjectFromBox）。前兩者都經過這裡，涵蓋 2/3。
+            // **第 3 個 EjectFromBox 刻意不涵蓋**（V4-r）：擋掉它，在流沙裡被牆壓到的英雄會永久卡在牆體內。
+            if (_movementLocked) return Vector3.zero;
+
             delta.y = 0f;
             Vector3 start = _self.position;
             Vector3 remaining = delta;

@@ -29,6 +29,9 @@ namespace Vow.UI
         private static readonly Color WindowColor = new Color(1f, 0.85f, 0.2f);
         private static readonly Color ButtonColor = new Color(0.25f, 0.45f, 0.9f, 0.85f);
         private static readonly Color ButtonOnColor = new Color(0.2f, 0.75f, 0.35f, 0.9f);
+        private static readonly Color ButtonCooldownColor = new Color(0.32f, 0.32f, 0.36f, 0.85f);
+        private static readonly Color ElemBlueColor = new Color(0.22f, 0.5f, 0.95f, 0.9f);
+        private static readonly Color ElemRedColor = new Color(0.8f, 0.24f, 0.2f, 0.9f);
 
         private HeroController _hero;
         private PlayerInputService _input;
@@ -38,6 +41,7 @@ namespace Vow.UI
         private GUIStyle _label;
         private GUIStyle _buttonLabel;
         private float _scale = 1f;
+        private float _panelHeight;
         private int _lastScreenWidth;
         private int _lastScreenHeight;
 
@@ -53,6 +57,54 @@ namespace Vow.UI
         private Rect _gridRect;
         private Rect _enemyWallRect;
         private Rect _turretRect;
+
+        // ── Phase 2 批 4：WATER／FIRE／WIND／ELEM 四顆除錯鈕 ──
+        private int _waterRegion = -1;
+        private int _fireRegion = -1;
+        private int _windRegion = -1;
+        private int _elemRegion = -1;
+        private Rect _waterRect;
+        private Rect _fireRect;
+        private Rect _windRect;
+        private Rect _elemRect;
+
+        private Action _castWater;
+        private Action _castFire;
+        private Action _castWind;
+        private Action _toggleElementFaction;
+        private Func<bool> _elementFactionIsBlue;
+        private ElementCastCooldowns _elementCooldowns;
+
+        // 零配置字串表：冷卻標籤一律查表，**不得字串串接**。索引＝ElementCastCooldowns.RemainingLabelIndex
+        //（0 ＝可用；1..5 ＝向上取整的剩餘秒），所以**索引就是剩餘秒數**：表要遞增排。
+        // 反過來排的話按下當下（index 5）會顯示「WATER 1」，4 秒後（index 1）顯示「WATER 5」——V4-n 守這條。
+        private static readonly string[] WaterLabels = { "WATER", "WATER 1", "WATER 2", "WATER 3", "WATER 4", "WATER 5" };
+        private static readonly string[] FireLabels = { "FIRE", "FIRE 1", "FIRE 2", "FIRE 3", "FIRE 4", "FIRE 5" };
+        private static readonly string[] WindLabels = { "WIND", "WIND 1", "WIND 2", "WIND 3", "WIND 4", "WIND 5" };
+        private const string ElemBlueLabel = "ELEM: BLUE";
+        private const string ElemRedLabel = "ELEM: RED";
+
+        private int _waterIndexShown = -1;
+        private int _fireIndexShown = -1;
+        private int _windIndexShown = -1;
+        private int _elemBlueShown = -1;
+        private string _waterLabel = WaterLabels[0];
+        private string _fireLabel = FireLabels[0];
+        private string _windLabel = WindLabels[0];
+        private string _elemLabel = ElemBlueLabel;
+
+        // 標籤被重算過幾次（V5-e 的活性：證明零配置字串表真的走到）。
+        public int ElementLabelRecomputeCount { get; private set; }
+
+        public string WaterButtonLabel => _waterLabel;
+        public string FireButtonLabel => _fireLabel;
+        public string WindButtonLabel => _windLabel;
+        public string ElementFactionButtonLabel => _elemLabel;
+
+        public void PressWaterButton() { if (_castWater != null) _castWater(); }
+        public void PressFireButton() { if (_castFire != null) _castFire(); }
+        public void PressWindButton() { if (_castWind != null) _castWind(); }
+        public void PressElementFactionButton() { if (_toggleElementFaction != null) _toggleElementFaction(); }
 
         // Phase 2 批 2 的 GRID 除錯疊圖開關。疊圖本體在 Vow.Bootstrap（UI 不得反向依賴 Bootstrap），
         // 所以這裡只收兩個委派，由 Phase1Bootstrap 在組裝時各建一次。
@@ -80,8 +132,17 @@ namespace Vow.UI
         public void Initialize(HeroController hero, PlayerInputService input, HitboxVisualizer hitboxes,
             NetworkLatencySimulator latency = null, Func<bool> gridVisible = null, Action toggleGrid = null,
             Action spawnEnemyWall = null, Action toggleTurret = null, Func<bool> turretFiring = null,
-            IRockShield shield = null)
+            IRockShield shield = null,
+            Action castWater = null, Action castFire = null, Action castWind = null,
+            Action toggleElementFaction = null, Func<bool> elementFactionIsBlue = null,
+            ElementCastCooldowns elementCooldowns = null)
         {
+            _castWater = castWater;
+            _castFire = castFire;
+            _castWind = castWind;
+            _toggleElementFaction = toggleElementFaction;
+            _elementFactionIsBlue = elementFactionIsBlue;
+            _elementCooldowns = elementCooldowns;
             _hero = hero;
             _input = input;
             _hitboxes = hitboxes;
@@ -112,6 +173,10 @@ namespace Vow.UI
                 if (_gridVisible != null) _gridRegion = _input.Routing.RegisterUiRegion(default);
                 if (_spawnEnemyWall != null) _enemyWallRegion = _input.Routing.RegisterUiRegion(default);
                 if (_toggleTurret != null) _turretRegion = _input.Routing.RegisterUiRegion(default);
+                if (_castWater != null) _waterRegion = _input.Routing.RegisterUiRegion(default);
+                if (_castFire != null) _fireRegion = _input.Routing.RegisterUiRegion(default);
+                if (_castWind != null) _windRegion = _input.Routing.RegisterUiRegion(default);
+                if (_toggleElementFaction != null) _elemRegion = _input.Routing.RegisterUiRegion(default);
             }
             RecalculateLayout();
         }
@@ -183,11 +248,53 @@ namespace Vow.UI
 
             if (Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight) RecalculateLayout();
 
+            RefreshElementLabels();
+
             // 護盾數值：只在整數變動時查表，不是每幀組字串（IntStringCache 已預先快取，零配置）。
             int shieldNow = _shield != null ? Mathf.RoundToInt(_shield.Amount) : 0;
             if (shieldNow == _shieldShown) return;
             _shieldShown = shieldNow;
             _shieldLabel = IntStringCache.Get(shieldNow);
+        }
+
+        // 四顆元素鈕的標籤：只在索引真的變了才換掉快取的字串，而且一律查預建表——**不得字串串接**
+        // （OnGUI 每幀都會拿它去畫，串接就是每幀配置）。V5-e 的活性計數在這裡累加。
+        private void RefreshElementLabels()
+        {
+            if (_elementCooldowns != null)
+            {
+                float now = Time.time;
+                int water = _elementCooldowns.RemainingLabelIndex(ElementCast.Water, now);
+                if (water != _waterIndexShown)
+                {
+                    _waterIndexShown = water;
+                    _waterLabel = WaterLabels[water < WaterLabels.Length ? water : WaterLabels.Length - 1];
+                    ElementLabelRecomputeCount++;
+                }
+
+                int fire = _elementCooldowns.RemainingLabelIndex(ElementCast.Fire, now);
+                if (fire != _fireIndexShown)
+                {
+                    _fireIndexShown = fire;
+                    _fireLabel = FireLabels[fire < FireLabels.Length ? fire : FireLabels.Length - 1];
+                    ElementLabelRecomputeCount++;
+                }
+
+                int wind = _elementCooldowns.RemainingLabelIndex(ElementCast.Wind, now);
+                if (wind != _windIndexShown)
+                {
+                    _windIndexShown = wind;
+                    _windLabel = WindLabels[wind < WindLabels.Length ? wind : WindLabels.Length - 1];
+                    ElementLabelRecomputeCount++;
+                }
+            }
+
+            if (_elementFactionIsBlue == null) return;
+            int blue = _elementFactionIsBlue() ? 1 : 0;
+            if (blue == _elemBlueShown) return;
+            _elemBlueShown = blue;
+            _elemLabel = blue == 1 ? ElemBlueLabel : ElemRedLabel;
+            ElementLabelRecomputeCount++;
         }
 
         private void HandleStateChanged(PlayerState oldState, PlayerState newState)
@@ -223,6 +330,22 @@ namespace Vow.UI
             {
                 PressTurretButton();
             }
+            else if (regionId == _waterRegion)
+            {
+                PressWaterButton();
+            }
+            else if (regionId == _fireRegion)
+            {
+                PressFireButton();
+            }
+            else if (regionId == _windRegion)
+            {
+                PressWindButton();
+            }
+            else if (regionId == _elemRegion)
+            {
+                PressElementFactionButton();
+            }
         }
 
         private void RecalculateLayout()
@@ -231,23 +354,27 @@ namespace Vow.UI
             _lastScreenHeight = Screen.height;
 
             float dpi = Screen.dpi;
-            _scale = dpi > 0f ? Mathf.Max(1f, dpi / ReferenceDpi) : 1f;
 
             // 所有手勢門檻與符印按鈕都以毫米定義、靠 Screen.dpi 換算；dpi 回 0（WebGL 常見）時退回 160，實體尺寸就會失真。
             // 把量到的值秀出來，試玩回報「按鈕太小／太難按」時才分得出是設計值還是換算的問題。只在版面重算時組字串，不是每幀。
             _screenLabel = Mathf.RoundToInt(dpi) + " dpi  " + Screen.width + "x" + Screen.height;
 
-            float y = Pad + Row * InfoRows + Pad;
-            float buttonWidth = (PanelWidth - Pad * 3f) * 0.5f;
-            _modeRect = new Rect(Pad * 2f, y, buttonWidth, Row * 1.6f);
-            _hitboxRect = new Rect(Pad * 3f + buttonWidth, y, buttonWidth, Row * 1.6f);
-            y += Row * 1.6f + Pad;
-            _latencyRect = new Rect(Pad * 2f, y, PanelWidth - Pad * 2f, Row * 1.6f);
-            if (_latency != null) y += Row * 1.6f + Pad; // 沒有延遲模擬時，GRID 鈕頂上來佔那一列
-            _gridRect = new Rect(Pad * 2f, y, PanelWidth - Pad * 2f, Row * 1.6f);
-            if (_gridVisible != null) y += Row * 1.6f + Pad;
-            _enemyWallRect = new Rect(Pad * 2f, y, buttonWidth, Row * 1.6f);
-            _turretRect = new Rect(Pad * 3f + buttonWidth, y, buttonWidth, Row * 1.6f);
+            // 批 4 V4-o：版面計算搬到 Core/Logic 的可注入入口（batchmode 改不了 Screen.*），
+            // 既有六個 rect 的算式逐字搬移，這裡只負責把結果抄回 UnityEngine.Rect。
+            DebugHudLayout layout = DebugHudLayout.Compute(Screen.width, Screen.height, dpi,
+                _latency != null, _gridVisible != null, _toggleTurret != null || _spawnEnemyWall != null);
+            _scale = layout.Scale;
+            _modeRect = ToRect(layout.Mode);
+            _hitboxRect = ToRect(layout.Hitbox);
+            _latencyRect = ToRect(layout.Latency);
+            _gridRect = ToRect(layout.Grid);
+            _enemyWallRect = ToRect(layout.EnemyWall);
+            _turretRect = ToRect(layout.Turret);
+            _waterRect = ToRect(layout.Water);
+            _fireRect = ToRect(layout.Fire);
+            _windRect = ToRect(layout.Wind);
+            _elemRect = ToRect(layout.Elem);
+            _panelHeight = layout.PanelHeight;
 
             if (_input == null) return;
             _input.Routing.UpdateUiRegion(_modeRegion, ToScreenRegion(_modeRect));
@@ -256,6 +383,15 @@ namespace Vow.UI
             _input.Routing.UpdateUiRegion(_gridRegion, ToScreenRegion(_gridRect));
             _input.Routing.UpdateUiRegion(_enemyWallRegion, ToScreenRegion(_enemyWallRect));
             _input.Routing.UpdateUiRegion(_turretRegion, ToScreenRegion(_turretRect));
+            _input.Routing.UpdateUiRegion(_waterRegion, ToScreenRegion(_waterRect));
+            _input.Routing.UpdateUiRegion(_fireRegion, ToScreenRegion(_fireRect));
+            _input.Routing.UpdateUiRegion(_windRegion, ToScreenRegion(_windRect));
+            _input.Routing.UpdateUiRegion(_elemRegion, ToScreenRegion(_elemRect));
+        }
+
+        private static Rect ToRect(HudRect rect)
+        {
+            return new Rect(rect.X, rect.Y, rect.Width, rect.Height);
         }
 
         // IMGUI 座標（原點左上、已縮放）→ 螢幕座標（原點左下、像素）
@@ -276,11 +412,8 @@ namespace Vow.UI
             Matrix4x4 previous = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(_scale, _scale, 1f));
 
-            float panelHeight = Pad + Row * InfoRows + Pad + Row * 1.6f + Pad
-                                + (_latency != null ? Row * 1.6f + Pad : 0f)
-                                + (_gridVisible != null ? Row * 1.6f + Pad : 0f)
-                                + (_toggleTurret != null || _spawnEnemyWall != null ? Row * 1.6f + Pad : 0f);
-            Fill(new Rect(Pad, Pad, PanelWidth, panelHeight), PanelColor);
+            // 批 4：面板高度與版面同源（DebugHudLayout.PanelHeight，已含新加的兩列）。
+            Fill(new Rect(Pad, Pad, PanelWidth, _panelHeight), PanelColor);
 
             float x = Pad * 2f;
             float valueX = x + 84f;
@@ -363,6 +496,28 @@ namespace Vow.UI
                 bool turretOn = _turretFiring != null && _turretFiring();
                 Fill(_turretRect, turretOn ? ButtonOnColor : ButtonColor);
                 GUI.Label(_turretRect, TurretButtonLabel, _buttonLabel);
+            }
+
+            // ── 批 4：四顆元素除錯鈕。標籤一律查預建字串表（見 Update 的 RefreshElementLabels）──
+            if (_castWater != null)
+            {
+                Fill(_waterRect, _waterIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
+                GUI.Label(_waterRect, _waterLabel, _buttonLabel);
+            }
+            if (_castFire != null)
+            {
+                Fill(_fireRect, _fireIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
+                GUI.Label(_fireRect, _fireLabel, _buttonLabel);
+            }
+            if (_castWind != null)
+            {
+                Fill(_windRect, _windIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
+                GUI.Label(_windRect, _windLabel, _buttonLabel);
+            }
+            if (_toggleElementFaction != null)
+            {
+                Fill(_elemRect, _elemBlueShown == 1 ? ElemBlueColor : ElemRedColor);
+                GUI.Label(_elemRect, _elemLabel, _buttonLabel);
             }
 
             GUI.matrix = previous;
