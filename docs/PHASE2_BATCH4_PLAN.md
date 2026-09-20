@@ -504,3 +504,16 @@ CRITICAL／HIGH 全修或經使用者簽准；修完送**三態覆審**（「反
 6. V4-h 的 60 加上最多兩個 tick 的 DoT 上界。
 7. V4-o 改用可注入的版面計算入口與線上實測過的三組裝置像素＋dpi=0 退路一組。
 8. V7 追加點名 ⑨⑩⑪。
+
+## 8. Checkpoint A 驗收紀錄（2026-09-20；標的 `f5210bb`）
+
+主對話親自重跑：`verify.sh`＝187 通過＋1 略過、`RESULT: ALL PASS`、紅線 8 條期望數不變；`mutation_check.py`＝110／110（輸出 `vow-toolchain/p2b4-stepA-mutation-main.txt`）；`git diff --stat 6ed7285..f5210bb`＝29 檔（7 Logic＋6 測試＋13 .meta＋`mutation_check.py` 純新增 111 行、刪除 0 行）。
+
+**兩條凍結條文的輸入被實作者調整（依 `02 §2.1` 例外自行修正、已回報使用者）**——兩處都是「原條文對正確實作也過不了」，不是實作過不了才改：
+
+- **V2-a**：原文「方位角 23.5°、距圓心 3.000 → true」。float32 構造不出恰在半徑上的 23.5° 點（最後一位捨入決定內外），改用 3-4-5 分量 `(1.8, 2.4)`（1.8²＋2.4²＝9.0，約 53°，仍避開軸對齊與 45°）。鑑別力證據：E24（`<=`→`<`）在改後的測試上 CAUGHT。
+- **V2-s**：原文「4.0s 之後不再累加」在第 240 個 `1/60f` tick 斷言到期；`RemainingSeconds` 浮點累減留約 3e-6s 殘差，正確實作此刻尚未 `<=0`。改為第 241 個 tick 斷言到期（放寬 1 tick＝16.7ms）；總傷害 80±0.5 不動。鑑別力證據：E10（4s→8s）CAUGHT。
+
+**實作者自行加嚴（不需同意，記錄）**：V2-t／V2-u／V2-v／V2-ab 的期望值由讀 tuning 欄位改成寫死 0.65／0.5（原寫法讓 E3、E5 MISSED）；V2-n 兩個水域的生成順序對調（原順序讓 E30 MISSED）。
+
+**留給步驟 B 的介面事實**（`vow-toolchain/p2b4-readback.md` 疑義）：`ReactionOutcome` 不含新區域的 id／座標；§4-9 的「刷新燃燒區」在純邏輯層以 Terminate＋原圓心重 Spawn 實作（id 會換）；蒸氣區 `FactionId`＝`ElementReactionLogic.NeutralFactionId = 2`（對應 `Faction.Neutral`）。§4-9 的兩個分支（火落在燃燒區／蒸氣內）目前沒有任何測試守，步驟 B 要各補一條 PlayMode 或 EditMode 測試。
