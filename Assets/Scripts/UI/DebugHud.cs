@@ -23,6 +23,10 @@ namespace Vow.UI
 
         private static readonly string[] StateNames = Enum.GetNames(typeof(PlayerState));
 
+        // v0.6.1（V061_FEEDBACK_PLAN.md §1）：縛足／減速時 STATE 列改顯示這兩個常數字串。
+        private const string RootedStateLabel = "ROOTED";
+        private const string SlowedStateLabel = "SLOWED";
+
         private static readonly Color PanelColor = new Color(0f, 0f, 0f, 0.55f);
         private static readonly Color PipOn = new Color(0.2f, 0.95f, 1f);
         private static readonly Color PipOff = new Color(1f, 1f, 1f, 0.18f);
@@ -95,6 +99,20 @@ namespace Vow.UI
 
         // 標籤被重算過幾次（V5-e 的活性：證明零配置字串表真的走到）。
         public int ElementLabelRecomputeCount { get; private set; }
+
+        // v0.6.1：STATE 列此刻該顯示什麼（縛足／減速優先，其餘照舊顯示狀態機名稱）。
+        // Phase1Bootstrap 對外多開 HudStateLabel 轉交這個值——PlayMode 測試 asmdef 看不到 Vow.UI。
+        public string StateLabel
+        {
+            get
+            {
+                if (_hero == null) return _stateName;
+                int status = ElementCalloutLogic.HeroStatusIndex(_hero.IsRooted, _hero.QuicksandSpeedMultiplier);
+                if (status == ElementCalloutLogic.RootedStatus) return RootedStateLabel;
+                if (status == ElementCalloutLogic.SlowedStatus) return SlowedStateLabel;
+                return _stateName;
+            }
+        }
 
         public string WaterButtonLabel => _waterLabel;
         public string FireButtonLabel => _fireLabel;
@@ -431,7 +449,7 @@ namespace Vow.UI
             y += Row;
 
             GUI.Label(new Rect(x, y, 84f, Row), "STATE", _label);
-            GUI.Label(new Rect(valueX, y, 170f, Row), _stateName, _label);
+            GUI.Label(new Rect(valueX, y, 170f, Row), StateLabel, _label);
             y += Row;
 
             GUI.Label(new Rect(x, y, 84f, Row), "PIPS", _label);

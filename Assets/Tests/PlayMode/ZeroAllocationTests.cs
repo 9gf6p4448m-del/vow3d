@@ -318,11 +318,23 @@ namespace Vow.Tests.PlayMode
         public int ConcealedFrames;
         public int RevealRefreshes;
 
+        // v0.6.1（V061_FEEDBACK_PLAN.md §3 F6）：STATE 列在夾區內的 Update() 裡有沒有顯示過這兩個字。
+        public bool SawRootedLabel;
+        public bool SawSlowedLabel;
+
         private Vector3 _steamCentre;
 
         private void Update()
         {
             if (!Trigger || Field == null) return;
+
+            // v0.6.1 F6：與下面「活性（每幀量）」同一精神——STATE 列的顯示也要在夾區內的 Update() 量到。
+            if (Bootstrap != null)
+            {
+                string hudStateLabel = Bootstrap.HudStateLabel;
+                if (hudStateLabel == "ROOTED") SawRootedLabel = true;
+                else if (hudStateLabel == "SLOWED") SawSlowedLabel = true;
+            }
 
             // 活性（每幀量，不分階段）：縛足與 0.65 減速是兩個獨立狀態，分開記。
             if (Locomotion.IsMovementLocked) RootedFrames++;
@@ -665,6 +677,18 @@ namespace Vow.Tests.PlayMode
             int hudLabelsBefore = bootstrap.ElementLabelRecomputeCount;
             int revealRefreshBefore = concealTarget.RevealRefreshCount;
 
+            // v0.6.1（V061_FEEDBACK_PLAN.md §3 F6）：六個標籤各自固定一顆 TextMesh、字串只在
+            // ReactionCalloutDisplay.Initialize 設一次（見該檔開頭的實測說明），Show() 之後只搬
+            // 位置／轉向／啟用狀態。這裡在窗口外各顯示一次純粹是暖機位置／轉向／SetActive 這幾個
+            // 動作（同 TargetOverheadDisplay 的既有手法），不是為了字型快取。
+            if (bootstrap.Callouts != null)
+            {
+                for (int warmLabel = 0; warmLabel <= ElementCalloutLogic.RootedLabelIndex; warmLabel++)
+                    bootstrap.Callouts.Show(new Vector3(500f, 0f, 500f), warmLabel);
+                yield return null;
+            }
+            int calloutShowsBefore = bootstrap.Callouts != null ? bootstrap.Callouts.ShowCount : 0;
+
             AllocationProbe.Measuring = true;
 
             // 量測窗口第 1 段（仍在夾區內）：先把戰鬥活性跑滿。批 2 的繞牆指令會中斷攻擊，
@@ -824,6 +848,14 @@ namespace Vow.Tests.PlayMode
             Assert.GreaterOrEqual(bootstrap.ElementLabelRecomputeCount - hudLabelsBefore, 5,
                 "量測期間 HUD 四顆鈕的標籤重算不足 5 次（V5-e：零配置字串表沒有被反覆量到？實測 "
                 + (bootstrap.ElementLabelRecomputeCount - hudLabelsBefore) + "）");
+
+            // v0.6.1（V061_FEEDBACK_PLAN.md §3 F6）：反應飄字與 STATE 列的受困狀態也必須在同一個
+            // 零配置夾區內被量到，否則下面的 0 bytes 只代表「這幾條回饋路徑沒跑」。
+            Assert.IsNotNull(bootstrap.Callouts, "場景缺少 ReactionCalloutDisplay（Phase1Bootstrap 沒有掛上飄字元件）");
+            Assert.GreaterOrEqual(bootstrap.Callouts.ShowCount - calloutShowsBefore, 3,
+                "量測期間反應飄字跳出次數不足 3 次（實測 " + (bootstrap.Callouts.ShowCount - calloutShowsBefore) + "）");
+            Assert.IsTrue(batch4Driver.SawRootedLabel, "量測期間 STATE 列從未顯示過 ROOTED");
+            Assert.IsTrue(batch4Driver.SawSlowedLabel, "量測期間 STATE 列從未顯示過 SLOWED");
 
             Assert.AreEqual(0L, AllocationProbe.UpdateBytes,
                 "Update 夾區在 " + AllocationProbe.Frames + " 幀內配置了 " + AllocationProbe.UpdateBytes + " bytes");

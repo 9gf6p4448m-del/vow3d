@@ -31,6 +31,11 @@ namespace Vow.Core
         private IElementFieldQuery _elementField;
         private ElementTuning _elementTuning = new ElementTuning();
         private QuicksandStatusLogic _quicksand;
+        private bool _wasRooted;
+
+        // V061_FEEDBACK_PLAN.md §1：縛足由 false→true 的那一幀觸發一次（同一個流沙重入不再縛足，
+        // QuicksandStatusLogic 的 RootedByZoneId 已經把這條擋掉，這裡只忠實轉達 IsRooted 的邊緣）。
+        public event Action OnRootedStarted;
 
         private static readonly Color KillFlashColor = new Color(1f, 1f, 1f, 0.3f);
 
@@ -144,6 +149,10 @@ namespace Vow.Core
             _quicksand.Tick(dt, zoneId);
             _locomotion.SetMovementLocked(_quicksand.IsRooted);
             _locomotion.SetSpeedMultiplier(_quicksand.SpeedMultiplier);
+
+            bool isRootedNow = _quicksand.IsRooted;
+            if (isRootedNow && !_wasRooted) OnRootedStarted?.Invoke();
+            _wasRooted = isRootedNow;
         }
 
         // 全英雄唯一的「這個目標打不打得到」（§2「鎖定判準的收斂」）：陣營校驗 ＋ 蒸氣遮蔽。

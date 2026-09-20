@@ -1149,5 +1149,299 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(3f, _tuning.CastDistanceMeters, 1e-4f,
                 "r1 HIGH-1 的使用者裁定：施放距離 3m");
         }
+
+        // ═════════════════ v0.6.1：反應飄字／受困狀態回饋（V061_FEEDBACK_PLAN.md §3 F2～F5） ═════════════════
+
+        // 場上是否存在一個啟用中的 TextMesh 顯示這個字面值（F2 的驗收條件④）。
+        private bool AnyActiveTextMeshShows(string label)
+        {
+            TextMesh[] meshes = _bootstrap.Callouts.GetComponentsInChildren<TextMesh>(false);
+            for (int i = 0; i < meshes.Length; i++)
+                if (meshes[i].gameObject.activeInHierarchy && meshes[i].text == label) return true;
+            return false;
+        }
+
+        // F2-a：流沙反應飄字。刻意不重用 BuildHostileQuicksand——牆一落下的當幀反應飄字就同步跳出，
+        // 但英雄的 ROOTED（見 F3）要等下一幀 HeroController.Update 才會偵測到，在這裡先驗「恰一次」，
+        // 還沒被 ROOTED 混進來（§3 F2-a 附註：作法自定，這裡用「跳字時機」把兩者錯開）。
+        [UnityTest]
+        public IEnumerator F2a_QuicksandForming_ShowsTheQuicksandCallout_Once_AtTheConsumedWaterCentre()
+        {
+            yield return Setup();
+            Assert.IsNotNull(_bootstrap.Callouts, "場景缺少 ReactionCalloutDisplay");
+
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 10f), Vector3.forward), 0f);
+            PressElemFaction();
+            PressWater();
+            yield return null;
+            Assert.AreEqual(1, _field.CountZonesOfKind(ElementZoneKind.Water), "WATER 鈕沒有生出水域");
+
+            PlaceHero(new Vector3(-3f, 0f, 10f), 90f);
+            yield return null;
+
+            int showsBefore = _bootstrap.Callouts.ShowCount;
+            ActivateWall(_enemyWalls.Pool[0], new Vector3(0f, 0f, 12f), Vector3.forward, Faction.RedTeam);
+
+            Assert.AreEqual(1, _field.CountZonesOfKind(ElementZoneKind.Quicksand), "流沙沒有成形");
+            Assert.AreEqual(showsBefore + 1, _bootstrap.Callouts.ShowCount, "流沙反應飄字沒有恰好跳一次");
+            Assert.AreEqual("QUICKSAND", _bootstrap.Callouts.LastLabel);
+            Assert.LessOrEqual(PlanarDistance(_bootstrap.Callouts.LastWorldPosition, new Vector3(0f, 0f, 10f)),
+                PositionTolerance, "流沙飄字位置不在水域圓心");
+            Assert.IsTrue(AnyActiveTextMeshShows("QUICKSAND"), "場上找不到啟用中的 QUICKSAND 飄字");
+
+            yield return null; // 讓下一幀的 ROOTED（F3）也跳出來，不影響上面已經驗過的判準
+        }
+
+        // F2-b：蒸氣反應飄字。CastWater 本身沒有反應（不跳字），只有消耗水域的那一次 CastFire 才跳。
+        [UnityTest]
+        public IEnumerator F2b_SteamForming_ShowsTheSteamCallout_Once_AtTheConsumedWaterCentre()
+        {
+            yield return Setup();
+            Assert.IsNotNull(_bootstrap.Callouts);
+
+            Vector3 centre = new Vector3(0f, 0f, 9f);
+            _field.CastWater(centre, (int)Faction.BlueTeam);
+            Assert.AreEqual(0, _bootstrap.Callouts.ShowCount, "單放 WATER 不該跳字");
+
+            int showsBefore = _bootstrap.Callouts.ShowCount;
+            _field.CastFire(centre, (int)Faction.BlueTeam);
+
+            Assert.AreEqual(1, _field.CountZonesOfKind(ElementZoneKind.Steam), "蒸氣沒有成形");
+            Assert.AreEqual(showsBefore + 1, _bootstrap.Callouts.ShowCount, "蒸氣反應飄字沒有恰好跳一次");
+            Assert.AreEqual("STEAM", _bootstrap.Callouts.LastLabel);
+            Assert.LessOrEqual(PlanarDistance(_bootstrap.Callouts.LastWorldPosition, centre), PositionTolerance,
+                "蒸氣飄字位置不在水域圓心");
+            Assert.IsTrue(AnyActiveTextMeshShows("STEAM"), "場上找不到啟用中的 STEAM 飄字");
+            yield return null;
+        }
+
+        // F2-c：擴散火浪飄字，位置＝被消耗那個燃燒區的圓心（英雄前方 CastDistanceMeters）。
+        [UnityTest]
+        public IEnumerator F2c_Firestorm_ShowsTheFirestormCallout_Once_AtTheConsumedBurningZoneCentre()
+        {
+            yield return Setup();
+            Assert.IsNotNull(_bootstrap.Callouts);
+            _dummy.transform.position = new Vector3(0f, 1f, 6f);
+
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 7f), Vector3.forward), 0f);
+            yield return null;
+            PressFire();
+            yield return null;
+            Assert.AreEqual(1, _field.CountZonesOfKind(ElementZoneKind.Burning), "空地火沒有留下燃燒區");
+
+            int showsBefore = _bootstrap.Callouts.ShowCount;
+            PressWind();
+
+            Assert.AreEqual(showsBefore + 1, _bootstrap.Callouts.ShowCount, "火浪飄字沒有恰好跳一次");
+            Assert.AreEqual("FIRESTORM", _bootstrap.Callouts.LastLabel);
+            Assert.LessOrEqual(PlanarDistance(_bootstrap.Callouts.LastWorldPosition, new Vector3(0f, 0f, 7f)),
+                PositionTolerance, "火浪飄字位置不在燃燒區圓心");
+            Assert.IsTrue(AnyActiveTextMeshShows("FIRESTORM"), "場上找不到啟用中的 FIRESTORM 飄字");
+            yield return null;
+        }
+
+        // F2-d：爆沸飄字，標籤逐字＝"BOIL 80"（測試裡寫死字面值，不讀 ReactionCalloutDisplay 的標籤表）。
+        [UnityTest]
+        public IEnumerator F2d_Boil_ShowsTheBoilEightyCallout_Once_AtTheConsumedQuicksandCentre()
+        {
+            yield return Setup();
+            Assert.IsNotNull(_bootstrap.Callouts);
+            yield return BuildQuicksandOverTheDummy(Faction.BlueTeam);
+            Vector3 centre = new Vector3(0f, 0f, 6f);
+
+            int showsBefore = _bootstrap.Callouts.ShowCount;
+            Assert.AreEqual(Faction.BlueTeam, _bootstrap.ElementCastFaction);
+            PressFire();   // 藍火打藍流沙＝爆沸
+
+            Assert.AreEqual(showsBefore + 1, _bootstrap.Callouts.ShowCount, "爆沸飄字沒有恰好跳一次");
+            Assert.AreEqual("BOIL 80", _bootstrap.Callouts.LastLabel);
+            Assert.LessOrEqual(PlanarDistance(_bootstrap.Callouts.LastWorldPosition, centre), PositionTolerance,
+                "爆沸飄字位置不在流沙圓心");
+            Assert.IsTrue(AnyActiveTextMeshShows("BOIL 80"), "場上找不到啟用中的 BOIL 80 飄字");
+            yield return null;
+        }
+
+        // F2-e：救援飄字（不造成傷害，但一樣跳字告訴玩家發生了什麼）。
+        [UnityTest]
+        public IEnumerator F2e_Rescue_ShowsTheRescueCallout_Once_AtTheConsumedQuicksandCentre()
+        {
+            yield return Setup();
+            Assert.IsNotNull(_bootstrap.Callouts);
+            yield return BuildQuicksandOverTheDummy(Faction.BlueTeam);
+            Vector3 centre = new Vector3(0f, 0f, 6f);
+
+            PressElemFaction();   // BLUE → RED
+            Assert.AreEqual(Faction.RedTeam, _bootstrap.ElementCastFaction);
+
+            int showsBefore = _bootstrap.Callouts.ShowCount;
+            PressFire();   // 紅火打藍流沙＝救援
+
+            Assert.AreEqual(showsBefore + 1, _bootstrap.Callouts.ShowCount, "救援飄字沒有恰好跳一次");
+            Assert.AreEqual("RESCUE", _bootstrap.Callouts.LastLabel);
+            Assert.LessOrEqual(PlanarDistance(_bootstrap.Callouts.LastWorldPosition, centre), PositionTolerance,
+                "救援飄字位置不在流沙圓心");
+            Assert.IsTrue(AnyActiveTextMeshShows("RESCUE"), "場上找不到啟用中的 RESCUE 飄字");
+            yield return null;
+        }
+
+        // F2-f：反例。先做一次蒸氣證明 ShowCount 真的會動（活性），再依序驗四種「什麼都不該跳字」的施放。
+        [UnityTest]
+        public IEnumerator F2f_CastsThatProduceNoReaction_NeverShowACallout()
+        {
+            yield return Setup();
+            Assert.IsNotNull(_bootstrap.Callouts);
+
+            Vector3 steamCentre = new Vector3(0f, 0f, 9f);
+            int showsBefore = _bootstrap.Callouts.ShowCount;
+            _field.CastWater(steamCentre, (int)Faction.BlueTeam);
+            _field.CastFire(steamCentre, (int)Faction.BlueTeam);
+            Assert.AreEqual(showsBefore + 1, _bootstrap.Callouts.ShowCount,
+                "活性段沒有量到跳字：這條測試沒有鑑別力");
+
+            int baseline = _bootstrap.Callouts.ShowCount;
+
+            // 單放 WATER：沒有反應
+            _field.CastWater(new Vector3(20f, 0f, 20f), (int)Faction.BlueTeam);
+            Assert.AreEqual(baseline, _bootstrap.Callouts.ShowCount, "單放 WATER 不該跳字");
+
+            // 空地 FIRE：PlainFire，不對應任何飄字
+            _field.CastFire(new Vector3(20f, 0f, -20f), (int)Faction.BlueTeam);
+            Assert.AreEqual(baseline, _bootstrap.Callouts.ShowCount, "空地 FIRE 不該跳字");
+
+            // 沒有燃燒區時 WIND：Resolve 回 None
+            PlaceHero(new Vector3(-20f, 0f, 20f), 0f);
+            yield return null;
+            _field.CastWind(_hero.transform.position, _hero.transform.forward, (int)Faction.BlueTeam);
+            Assert.AreEqual(baseline, _bootstrap.Callouts.ShowCount, "沒有燃燒區時 WIND 不該跳字");
+
+            // 牆立在水域外（水域半徑 3m，落點在 5m 外）：Rock 找不到水域，Resolve 回 None
+            _field.CastWater(new Vector3(-30f, 0f, -30f), (int)Faction.BlueTeam);
+            _field.NotifyWallActivated(new Vector3(-30f, 0f, -25f), Faction.RedTeam);
+            Assert.AreEqual(baseline, _bootstrap.Callouts.ShowCount, "牆立在水域外不該跳字");
+        }
+
+        // F3-a：紅流沙困住藍英雄——ROOTED 飄字恰一次、STATE 列跟著走、縛足結束後變 SLOWED、
+        // 走出圈外恢復狀態機名稱、重入同一個流沙不再跳 ROOTED（直接 SLOWED）。
+        [UnityTest]
+        public IEnumerator F3a_Rooting_ShowsRootedOverTheHero_Once_AndTheStateRowFollows()
+        {
+            yield return Setup();
+            Assert.IsNotNull(_bootstrap.Callouts);
+
+            string stateBefore = _bootstrap.HudStateLabel;
+            Assert.AreNotEqual("ROOTED", stateBefore);
+            Assert.AreNotEqual("SLOWED", stateBefore);
+            int showsBefore = _bootstrap.Callouts.ShowCount;
+
+            yield return BuildHostileQuicksand();   // 內含一次岩→流沙反應（跳 QUICKSAND）＋下一幀縛足（跳 ROOTED）
+
+            Assert.AreEqual(showsBefore + 2, _bootstrap.Callouts.ShowCount,
+                "流沙成形＋縛足開始應該恰好跳兩次飄字（QUICKSAND、ROOTED）");
+            Assert.AreEqual("ROOTED", _bootstrap.Callouts.LastLabel, "縛足開始沒有跳出 ROOTED");
+            Assert.LessOrEqual(PlanarDistance(_bootstrap.Callouts.LastWorldPosition, _hero.transform.position),
+                PositionTolerance, "ROOTED 飄字沒有跳在英雄頭上");
+            Assert.AreEqual("ROOTED", _bootstrap.HudStateLabel, "STATE 列沒有跟著顯示 ROOTED");
+
+            // 縛足結束（成形後 1.2s+）、仍在圈內 → SLOWED，且不得再多跳一次 ROOTED
+            yield return Seconds(_tuning.RootDurationSeconds + 0.05f);
+            Assert.IsFalse(_locomotion.IsMovementLocked, "縛足應該已經結束");
+            Assert.AreEqual("SLOWED", _bootstrap.HudStateLabel, "縛足結束後仍在圈內應顯示 SLOWED");
+            int showsAfterSlowed = _bootstrap.Callouts.ShowCount;
+            Assert.AreEqual(showsBefore + 2, showsAfterSlowed, "縛足結束單純轉成減速，不該多跳任何飄字");
+
+            // 走出圈外 → 回到狀態機名稱（不是 ROOTED／SLOWED 這兩個字）
+            PlaceHero(new Vector3(-10f, 0f, 10f), 90f);
+            yield return null;
+            string outsideLabel = _bootstrap.HudStateLabel;
+            Assert.AreNotEqual("ROOTED", outsideLabel, "走出圈外仍顯示 ROOTED");
+            Assert.AreNotEqual("SLOWED", outsideLabel, "走出圈外仍顯示 SLOWED");
+
+            // 走回同一個流沙：ROOTED 飄字不再出現，標籤直接是 SLOWED
+            int zoneId = _field.FindZoneIdContaining(new Vector3(0f, 0f, 10f), ElementZoneKind.Quicksand);
+            Assert.GreaterOrEqual(zoneId, 0, "前提：流沙應該還沒到期");
+            PlaceHero(new Vector3(-3f, 0f, 10f), 90f);
+            yield return null;
+
+            Assert.AreEqual(showsAfterSlowed, _bootstrap.Callouts.ShowCount, "重入同一個流沙不該再跳 ROOTED");
+            Assert.AreEqual("SLOWED", _bootstrap.HudStateLabel, "重入同一個流沙應該直接是 SLOWED（不再縛足）");
+        }
+
+        // F3-b：藍流沙罩藍英雄（自家流沙）——不跳 ROOTED，STATE 列維持狀態機名稱。
+        [UnityTest]
+        public IEnumerator F3b_FriendlyQuicksand_DoesNotShowRootedOrSlowed()
+        {
+            yield return Setup();
+            Assert.IsNotNull(_bootstrap.Callouts);
+
+            string stateBefore = _bootstrap.HudStateLabel;
+            Assert.AreNotEqual("ROOTED", stateBefore);
+            Assert.AreNotEqual("SLOWED", stateBefore);
+
+            PlaceHero(HeroStandFor(new Vector3(0f, 0f, 10f), Vector3.forward), 0f);
+            Assert.AreEqual(Faction.BlueTeam, _bootstrap.ElementCastFaction, "ELEM 預設應為 BLUE");
+            PressWater();
+            yield return null;
+            PlaceHero(new Vector3(-3f, 0f, 10f), 90f);
+            yield return null;
+
+            int showsBefore = _bootstrap.Callouts.ShowCount;
+            ActivateWall(_caster.Pool[0], new Vector3(0f, 0f, 12f), Vector3.forward, Faction.BlueTeam);
+            yield return null;
+
+            Assert.AreEqual(1, _field.CountZonesOfKind(ElementZoneKind.Quicksand), "藍流沙沒有成形");
+            Assert.GreaterOrEqual(_field.FindZoneIdContaining(_hero.transform.position, ElementZoneKind.Quicksand), 0,
+                "英雄不在那個流沙裡：這條測試就沒有鑑別力了");
+            Assert.IsFalse(_locomotion.IsMovementLocked, "自家流沙不得困住自己");
+
+            // 只有 QUICKSAND 反應飄字（活性對照），不該多一次 ROOTED
+            Assert.AreEqual(showsBefore + 1, _bootstrap.Callouts.ShowCount,
+                "自家流沙不該額外跳出 ROOTED（只該有 QUICKSAND 這一次）");
+            Assert.AreEqual("QUICKSAND", _bootstrap.Callouts.LastLabel);
+            Assert.AreEqual(stateBefore, _bootstrap.HudStateLabel, "藍流沙罩住藍英雄時 STATE 不該改變");
+            Assert.AreNotEqual("ROOTED", _bootstrap.HudStateLabel);
+            Assert.AreNotEqual("SLOWED", _bootstrap.HudStateLabel);
+        }
+
+        // F4：飄字顯示時長——1.15s 仍在，1.25s 已停用（CalloutSeconds = 1.2s）。
+        [UnityTest]
+        public IEnumerator F4_ACallout_StaysActiveAtOnePointOneFive_ButNotAtOnePointTwoFive()
+        {
+            yield return Setup();
+            ReactionCalloutDisplay callouts = _bootstrap.Callouts;
+            Assert.IsNotNull(callouts);
+
+            callouts.Show(_hero.transform.position, ElementCalloutLogic.RootedLabelIndex);
+            Assert.AreEqual(1, callouts.ActiveCount, "前提：剛跳出的飄字應該正在顯示");
+
+            yield return Seconds(1.15f);
+            Assert.AreEqual(1, callouts.ActiveCount, "1.15s 時飄字不該提早消失");
+
+            yield return Seconds(0.10f); // 累計 1.25s
+            Assert.AreEqual(0, callouts.ActiveCount, "1.25s 之後飄字仍未停用");
+        }
+
+        // F5：池滿（6 個）——連續 Show 7 次，池子恰好維持 6 個存活，第 7 次確實出現在場上。
+        [UnityTest]
+        public IEnumerator F5_ShowingSevenTimes_KeepsExactlySixActive_AndTheSeventhStillShowsUp()
+        {
+            yield return Setup();
+            ReactionCalloutDisplay callouts = _bootstrap.Callouts;
+            Assert.IsNotNull(callouts);
+
+            // 六個標籤各自固定一顆 TextMesh（ReactionCalloutDisplay 開頭有實測說明：同一顆物件換成
+            // 不同內容在這個 Editor 版本上量得到配置，所以改成一個標籤一顆、字串只設一次）——
+            // 先讓六個都顯示過一次，六種訊息的顯示就都用滿了。
+            for (int i = 0; i < 6; i++) callouts.Show(new Vector3(i, 0f, 0f), i);
+            Assert.AreEqual(6, callouts.ActiveCount, "前提：六個標籤各自的 TextMesh 都應該已經啟用");
+
+            // 第 7 次：只有六種可能訊息，第 7 次一定會撞到某個既有標籤——必須確實刷新，不能被靜默丟掉。
+            callouts.Show(new Vector3(99f, 0f, 0f), ElementCalloutLogic.QuicksandLabelIndex);
+            yield return null;
+
+            Assert.AreEqual(6, callouts.ActiveCount, "六種標籤都在用，數量不該變");
+            Assert.AreEqual("QUICKSAND", callouts.LastLabel);
+            Assert.IsTrue(AnyActiveTextMeshShows("QUICKSAND"), "第 7 次施放的標籤沒有出現在任何啟用中的 TextMesh 上");
+            LogAssert.NoUnexpectedReceived();
+        }
     }
 }
