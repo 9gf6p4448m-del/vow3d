@@ -444,8 +444,8 @@ CRITICAL／HIGH 全修或經使用者簽准；修完送**三態覆審**（「反
 
 - `git log origin/gh-pages -1` 顯示 v0.6.0；線上首頁版本列＝`v0.6.0 · build … · <sha>`
 - Playwright（`hasTouch` 手機模擬、CDP 觸控）開 `https://9gf6p4448m-del.github.io/vow3d/`，三個反應各一輪截圖：
-  ① `ELEM: RED` → `WATER` → **往前走約 2m（走進水域）** → `ENEMY WALL`（紅牆落在水域內）→ 截圖可見黃褐流沙圓盤，英雄走不動（STATE 不變成 Moving）約 1.2s 後開始慢慢走；再 `ELEM: BLUE` → `FIRE` 打流沙 → 截圖可見流沙消失、英雄立刻正常移動
-  ② `WATER` → `FIRE` 打水域 → 截圖可見白霧圓柱；點霧裡的木樁 → 英雄**不去打**（截圖 STATE Idle）；走進霧裡再點 → 英雄開始攻擊
+  ① （先確認 `TURRET: OFF`）`ELEM: RED` → `WATER` → **原地**按 `ENEMY WALL`（紅牆落在前方 4m＝距水域圓心 1m）→ 截圖可見黃褐流沙圓盤，英雄走不動（STATE 不變成 Moving）約 1.2s 後開始慢慢走；再 `ELEM: BLUE` → `FIRE` 打流沙 → 截圖可見流沙消失、英雄立刻正常移動
+  ② （`TURRET: OFF`）站在木樁前約 3m 面向木樁：`WATER` → 原地 `FIRE` 打水域 → 截圖可見白霧圓盤（英雄自己也在霧內 1m）；**往後退出霧圈（≥2m）**再點霧裡的木樁 → 英雄**不去打**（截圖 STATE Idle）；走進霧裡再點 → 英雄開始攻擊
   ③ `FIRE` 落空地（木樁腳下）→ 截圖可見橙色燃燒圓盤＋木樁血條下降；按 `WIND` → 截圖可見扇形預警與燃燒區消失、木樁血條再掉一段
 - **步驟 C 量測**：用 Playwright 量出四顆新鈕在**直式**（390×844）與**橫式**（844×390）下的 CSS 座標，連同「不與符印鈕／版本列／既有 HUD 列重疊」的實測結果寫進驗收指南 §14
 - console 無 error／exception；截圖存 `vow-toolchain/browser-screenshots/v060-*`
@@ -559,3 +559,14 @@ CRITICAL／HIGH 全修或經使用者簽准；修完送**三態覆審**（「反
 - 新增 PlayMode 測試 `R5_WaterThenEnemyWall_WithoutMoving_RootsTheHero`：英雄**全程不移動**（站在遠離其他區域的空地、取向 37°）→ 經鈕路徑 `ELEM: RED`→`WATER`→`ENEMY WALL` → 斷言①流沙成形（`ActiveZoneCount`、種類＝Quicksand）②英雄到流沙圓心的距離＝3.0±0.10m ③英雄離流沙邊界 ≥0.5m（`AssertClearOfZoneBoundaries` 同一把尺）④成形當幀起 `IsMovementLocked == true`、送移動指令 0.5s 內位移 <0.10m。（`CastDistanceMeters` 留在 4＝③必紅；牆沒落在水域內＝①紅；縛足沒接上＝④紅）
 - 鑑別力證據（必附）：同一條測試在 `CastDistanceMeters = 4f` 下跑一次的紅燈輸出（紅在③），還原用改壞前的備份副本。
 - 步驟 B 自己新寫的 PlayMode 測試若把「4m」寫死在**盤面座標**裡而因此變紅：只准改盤面座標讓它跟著 tuning 走（優先改成讀 `tuning.CastDistanceMeters`），**斷言、容差、等待秒數一個不准動**；逐行列出改了哪些行、各自為什麼不會提高通過機率。v0.5.0 既有的 66 條 PlayMode 與所有 EditMode 測試仍然一條不准動。
+
+## 10. r2 三態覆審結果（2026-09-20；報告 `vow-toolchain/REVIEW-p2b4-r2.md`，標的 `0d9654c`）
+
+**真的修好 5／表面修好 0／沒修到 0**（R1、R2、R5 各以定點突變實跑驗紅；R3／R4 的 `LogError` 只在 `Phase1Bootstrap.Start`，不在每幀路徑）；新 finding：CRITICAL 0／HIGH 1／MEDIUM 3／LOW 4。審查員重跑 `verify.sh` ALL PASS、EditMode 190／0 紅／4 略過、PlayMode 89／89；V6 零改動清單全空、既有測試刪除行數 0、`ElementTuning` 其餘 19／19 相同。主對話另行重跑同三項，數字相同（`vow-toolchain/p2b4-main2-*.xml`）。
+
+- **HIGH（新，已修）** 本檔 §5 V8 ① 還留著「往前走約 2m」——§9 使用者裁定已明文要刪，主對話漏改。3m 之下照做會讓牆落在距水域圓心恰 3.000m（或更遠），流沙不成形。已改成「原地按 `ENEMY WALL`」，並補「先確認 `TURRET: OFF`」、②補「退出霧圈再點」、「圓柱」改「圓盤」。
+- **M1（已修）** R1 的 WATER 斷言只數區域總數，WATER 誤接到 FIRE 也會綠（審查員實跑證明）→ 加一條 `CountZonesOfKind(Water)` +1。純加嚴。
+- **M2（記錄）** `0d9654c` 的 commit message 說盤面調整後「區域圓心世界座標完全不變」，對 V4-q 不成立（蒸氣圓心 (0,0,−2)→(0,0,−3)）；§9 R5 要求的逐行說明在實作者回報與 r2 報告的 10 列對照表裡，結論＝沒有任何一處提高通過機率（V4-q 那一處是離邊界 3m→4m，加嚴）。
+- **M3（記錄，寫進驗收指南 §14）** HUD 版面的懸崖在 `DPR < 5/3`（`dpi < 160` 時 `scale` 夾回 1）：DPR 1.5＋CSS 高 320 差 4.8px、DPR 1＋CSS 高 390 差 97px，`ELEM` 整列在畫面外。DPR 2／3 × CSS 高 320／360／390 六組都放得下（`ELEM` 下方餘裕 27.7／67.7／97.7 CSS px）。**步驟 C 的 Playwright 要顯式 `deviceScaleFactor: 2`**；期望 CSS 座標 WATER x9.6–53.2／FIRE x58.0–101.6／WIND x106.4–150.0（y 245.3–266.4）、ELEM x9.6–150.0（y 271.2–292.3）。
+- **原地連按 × 離邊界距離**：吃判定的兩條邊界（流沙縛足 r4、蒸氣遮蔽 r4）餘裕都是 1.00m。3m 新產生三個 0.00m 重合（`CastDistanceMeters 3 == WaterRadius 3 == BurnRadius 3`，英雄恰在水域／燃燒區圓周）——全是啞的：英雄不在 `CombatTargetRoster`、沒有任何判定問「英雄在不在水域／燃燒區內」。日後英雄有血量、會吃 DoT 時這三個重合會變活，**屆時要重查**。
+- **LOW（記錄）** 反序 `ENEMY WALL`→`WATER` 不會有反應（寫進 §14）；`AssertClearOfZoneBoundaries(英雄)` 不能在水域／燃燒區活著時呼叫；名冊滿＋重複登記會誤報 `LogError`、`RegisterElementTarget` 在初始化之後登記拿不到 `ConfigureConcealment`（目前無此呼叫路徑）；兩處註解過時。

@@ -958,11 +958,14 @@ namespace Vow.Tests.PlayMode
             Assert.AreNotEqual(factionLabelBefore, _bootstrap.ElementFactionButtonLabel,
                 "ELEM 的標籤沒有跟著翻面");
 
-            // ② WATER：場上多一個區域
+            // ② WATER：場上多一個「水域」——只數區域總數的話，WATER 誤接到 FIRE（空地火也會多一個區域）照樣綠（r2 M1）
             int zonesBefore = _field.ActiveZoneCount;
+            int watersBefore = _field.CountZonesOfKind(ElementZoneKind.Water);
             yield return TapHudRect(layout, layout.Water, "WATER");
             Assert.AreEqual(zonesBefore + 1, _field.ActiveZoneCount,
                 "對 WATER 鈕的矩形送真實觸控沒有生出水域");
+            Assert.AreEqual(watersBefore + 1, _field.CountZonesOfKind(ElementZoneKind.Water),
+                "WATER 鈕生出來的不是水域");
 
             // ③ FIRE：先轉身，讓落點是空地而不是剛剛那個水域（落進水域會變成蒸氣＝區域數不變，量不到）
             _hero.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
