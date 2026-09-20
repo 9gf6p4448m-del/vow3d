@@ -19,23 +19,22 @@ namespace Vow.Tests
         }
 
         // V2-a IsInsideCircle_IncludesTheBoundary_AndExcludesAPointJustOutside
-        // 用 3-4-5 直角三角形的精確浮點分量（1.8/2.4）取代三角函數算出來的落點：
-        // 三角函數＋單次四捨五入雖然數學上更準，但對「距圓心恰好等於半徑」這種吃緊的邊界比較，
-        // 反而會被最後一位有效位的捨入方向翻面（已用 float32 逐步驗證過）。1.8²+2.4²＝9.0 這組
-        // 分量在 float32 底下剛好整除、不會被捨入誤差干擾，仍然刻意避開軸對齊（角度約 53°）。
+        // 「距圓心恰好等於半徑」要在每個執行環境都恰好相等，圓心、分量、半徑就得全是二進位有限小數：
+        // 3-4-5 的一半（1.5／2.0／2.5）配圓心 (2.25, -1.75)，加、減、平方都沒有捨入，1.5²＋2.0²＝6.25＝2.5²。
+        // 前一版用 (2.3, -1.7)＋(1.8, 2.4)、半徑 3：先加再減之後分量已不是 1.8／2.4，
+        // .NET 8 判成界內、Unity Mono 判成界外（vow-toolchain/p2b4-edit-base.xml）。仍刻意避開軸對齊（約 53°）。
         [Test]
         public void IsInsideCircle_IncludesTheBoundary_AndExcludesAPointJustOutside()
         {
-            const float cx = 2.3f, cz = -1.7f, radius = 3f;
+            const float cx = 2.25f, cz = -1.75f, radius = 2.5f;
 
             Assert.IsTrue(ElementGeometry.IsInsideCircle(cx, cz, cx, cz, radius), "圓心本身必須算在內");
 
-            // 3-4-5 三角形分量：1.8² + 2.4² = 9.0，恰為半徑 3 的平方，float32 下精確整除。
-            Assert.IsTrue(ElementGeometry.IsInsideCircle(cx + 1.8f, cz + 2.4f, cx, cz, radius),
+            Assert.IsTrue(ElementGeometry.IsInsideCircle(cx + 1.5f, cz + 2.0f, cx, cz, radius),
                 "邊界語意含邊界（<=），距圓心恰為半徑的點必須算在內");
 
-            // 同方向等比例放大到 3.1（1.8×3.1/3、2.4×3.1/3 = 1.86、2.48）。
-            Assert.IsFalse(ElementGeometry.IsInsideCircle(cx + 1.86f, cz + 2.48f, cx, cz, radius),
+            // 同方向等比例放大到 2.6（1.5×2.6/2.5、2.0×2.6/2.5 = 1.56、2.08）。
+            Assert.IsFalse(ElementGeometry.IsInsideCircle(cx + 1.56f, cz + 2.08f, cx, cz, radius),
                 "距圓心 0.1m 超出半徑的點必須排除在外");
         }
 
