@@ -490,4 +490,10 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 
 - `verify.sh` ALL PASS（純邏輯 193＋2＝195 通過＋1 略過、紅線 8 條期望數不變）；Unity EditMode 0 紅；PlayMode 既有 89 條全在全綠＋新增 10 條（F2-a～f、F3-a／b、F4、F5）全綠；突變 110＋4＝114／114 CAUGHT。
 - F6 鑑別力：把 `ReactionCalloutDisplay.Show()` 的 `LastLabel = _labels[labelIndex];` 改成讀 `TextMesh.text` getter（該 getter 每次讀都配置字串，這正是開發中踩到的真因）→ 完整 PlayMode 99 條中 `Combat_UpdateAndLateUpdate_AllocateNothing` 紅（`Update 夾區在 1519 幀內配置了 178 bytes`）；還原後 99／99 全綠。注意：用 `-testFilter` 單獨跑該測試在基準版（v0.6.0）就會紅 96 bytes，單跑不是有效訊號，一律以完整套件為準。
-- **線上實機**：待主對話部署後以 Playwright 實測填入（F8，本輪由主對話補）。
+- **送達與線上實機（2026-09-21）**：`origin/gh-pages 849cc87`（2026-09-21 02:25:26 +0800，deploy: VOW v0.6.1 from 2936174）、線上首頁版本列 `v0.6.1 · build 2026-09-20 18:25 UTC · 2936174`。Playwright 手機模擬（844×390、`deviceScaleFactor: 2`、`hasTouch`、CDP 觸控），四次載入 console 皆無 error；**按完鈕後 0.3s 截圖**（截圖 `vow-toolchain/browser-screenshots/v061-*`）：
+  - **流沙**（`ELEM: RED`→`WATER`→原地 `ENEMY WALL`）：看得到 `QUICKSAND`（黃褐）、英雄頭上 `ROOTED`（黃）、HUD `STATE ROOTED`；成形後約 2.3s（人不動）HUD 變 `STATE SLOWED`，圈還在（`v061-01`／`03`）。
+  - **爆沸**（走近木樁、`WATER`、符印鈕輕點、`FIRE`，`ELEM: BLUE`）：看得到 `BOIL 80`（紅）與頭上傷害數字 `80`，同時仍看得到流沙圈成形時的 `QUICKSAND` 尾巴（`v061-10`）。
+  - **救援**（同盤面，`FIRE` 前把 `ELEM` 切成 RED）：看得到 `RESCUE`（綠）與**沒有**傷害數字（`v061-11b`；`v061-11` 是我腳本多按一次 `ELEM` 造成的爆沸，不是產品行為）。
+  - **蒸氣**（原地 `WATER`→`FIRE`）：白霧圈＋`STEAM`（`v061-12`）。**限制：`STEAM` 的字色是近白色，疊在白霧圈上對比很低，勉強讀得出來**——待試玩回饋再決定要不要改深色（只改一個顏色常數）。
+  - **火浪**（走一小步、`FIRE`、`WIND`）：橙色扇形＋`FIRESTORM`（橙）（`v061-13`）。
+- **人手時序的教訓**：v0.6.0 的實測用「機器人式連點」不會發現「沒有回饋」；v0.6.1 起線上實測固定量「按完 0.3s 的畫面看不看得出發生什麼」。
