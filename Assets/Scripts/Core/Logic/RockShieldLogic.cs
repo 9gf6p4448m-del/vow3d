@@ -27,6 +27,12 @@ namespace Vow.Core.Logic
             _remainingSeconds = _tuning.ShieldDurationSeconds;
         }
 
+        public void Clear()
+        {
+            _amount = 0f;
+            _remainingSeconds = 0f;
+        }
+
         public void Tick(float deltaSeconds)
         {
             if (_remainingSeconds <= 0f) return;

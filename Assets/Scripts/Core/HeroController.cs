@@ -24,6 +24,8 @@ namespace Vow.Core
         private IHapticService _haptics;
         private Transform _cameraTransform;
         private bool _watchdogReported;
+        private HeroVitality _vitality;
+        private IRockShield _shield;
 
         // ── Phase 2 批 4：元素場 ──
         // 英雄只認得 Vow.Core 的查詢介面（Vow.Core 不得反向依賴 Vow.Combat）。
@@ -46,6 +48,10 @@ namespace Vow.Core
         public ICombatTarget CurrentTarget => _brain != null ? _brain.CurrentTarget : null;
         public float CadenceWindowRemainingNormalized => _brain != null ? _brain.CadenceWindowRemainingNormalized : 0f;
         public float AttackRange => _tuning != null ? _tuning.AttackRange : 0f;
+        public float Health => _vitality != null ? _vitality.Health : 100f;
+        public float MaxHealth => _vitality != null ? _vitality.MaxHealth : 100f;
+        public bool IsAlive => _vitality == null || _vitality.IsAlive;
+        public event Action OnKnockedOut;
 
         public event Action OnAttackWindupStarted;
         public event Action<ICombatTarget> OnAttackHitResolved;
@@ -69,6 +75,41 @@ namespace Vow.Core
             _mover.OnDashExecuted += HandleDashExecuted;
 
             _quicksand = new QuicksandStatusLogic(_elementTuning);
+            _vitality = new HeroVitality(new DuelTuning().HeroHealth);
+        }
+
+        public void ConfigureDuel(DuelTuning tuning, IRockShield shield)
+        {
+            _vitality = new HeroVitality(tuning.HeroHealth);
+            _shield = shield;
+        }
+
+        public void TakeDuelDamage(float amount)
+        {
+            if (!IsAlive || amount <= 0f) return;
+            if (_shield != null) amount = _shield.Absorb(amount);
+            if (!_vitality.TakeDamage(amount)) return;
+            CancelCombatForDuel();
+            OnKnockedOut?.Invoke();
+        }
+
+        public void CancelCombatForDuel()
+        {
+            _brain.ResetForRound();
+            _mover.ResetForRound();
+            _locomotion.Stop();
+        }
+
+        public void ResetForDuel(Vector3 spawnPosition)
+        {
+            CancelCombatForDuel();
+            _quicksand.Reset();
+            _wasRooted = false;
+            _locomotion.SetMovementLocked(false);
+            _locomotion.SetSpeedMultiplier(1f);
+            _locomotion.WarpTo(spawnPosition);
+            _vitality.Restore();
+            if (_shield != null) _shield.Clear();
         }
 
         // 由 Phase1Bootstrap 注入（批 4）。tuning 傳全場共用的那一份，數值只有一個來源。
@@ -129,6 +170,7 @@ namespace Vow.Core
 
         private void Update()
         {
+            if (!IsAlive) return;
             float dt = Time.deltaTime;
             TickQuicksand(dt);
             _locomotion.Step(dt);

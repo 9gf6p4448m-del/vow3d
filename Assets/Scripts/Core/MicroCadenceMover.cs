@@ -32,6 +32,13 @@ namespace Vow.Core
             OnChargesChanged?.Invoke(_state.Charges);
         }
 
+        public void ResetForRound()
+        {
+            if (_tuning == null) return;
+            _state = CadenceSimState.CreateFull(_tuning);
+            OnChargesChanged?.Invoke(_state.Charges);
+        }
+
         public bool TryExecuteCadenceDash(Vector3 worldDirection)
         {
             if (_tuning == null) return false;

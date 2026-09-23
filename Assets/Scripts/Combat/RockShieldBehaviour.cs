@@ -44,6 +44,16 @@ namespace Vow.Combat
             GrantCount++;
         }
 
+        public float Absorb(float incomingDamage)
+        {
+            return _logic != null ? _logic.Absorb(incomingDamage) : incomingDamage;
+        }
+
+        public void Clear()
+        {
+            if (_logic != null) _logic.Clear();
+        }
+
         private void OnDestroy()
         {
             Unsubscribe();

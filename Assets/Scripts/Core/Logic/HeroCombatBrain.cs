@@ -90,6 +90,20 @@ namespace Vow.Core.Logic
         public event Action<TTarget> OnAttackHitResolved;
         public event Action OnWindupWatchdogFired;   // 動畫事件遺失，屬設定錯誤，外層必須大聲回報
 
+        public void ResetForRound()
+        {
+            _body.StopMoving();
+            _currentTarget = null;
+            ClearPending();
+            _hasBufferedFlick = false;
+            _bufferedDirX = 0f;
+            _bufferedDirZ = 0f;
+            _stateElapsed = 0f;
+            _nextAttackReadyTime = 0.0;
+            _windupStartTime = 0.0;
+            _stateMachine.ResetToIdle();
+        }
+
         // ───────────────────────── 指令 ─────────────────────────
 
         public void CommandMove(GroundPoint destination)

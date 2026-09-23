@@ -32,6 +32,14 @@ namespace Vow.Core.Logic
             TryChangeState(newState);
         }
 
+        // 死亡／回合重置專用；一般轉換表維持原樣。
+        public void ResetToIdle()
+        {
+            PlayerState old = CurrentState;
+            CurrentState = PlayerState.Idle;
+            if (old != PlayerState.Idle) OnStateChanged?.Invoke(old, PlayerState.Idle);
+        }
+
         public bool TryChangeState(PlayerState newState)
         {
             PlayerState old = CurrentState;

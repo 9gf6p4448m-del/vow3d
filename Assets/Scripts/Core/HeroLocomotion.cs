@@ -231,6 +231,17 @@ namespace Vow.Core
             if (_agent.enabled && _agent.isOnNavMesh) _agent.ResetPath();
         }
 
+        public void WarpTo(Vector3 position)
+        {
+            EnsureInitialized();
+            Stop();
+            _self.position = position;
+            if (_agent.enabled && _agent.isOnNavMesh) _agent.Warp(position);
+            else TryPlaceOnNavMesh();
+            InvalidateGoalCache();
+            SyncAgent();
+        }
+
         public void FaceTowards(Vector3 worldPosition)
         {
             Vector3 dir = worldPosition - _self.position;

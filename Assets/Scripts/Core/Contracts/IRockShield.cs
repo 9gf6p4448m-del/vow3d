@@ -8,5 +8,7 @@ namespace Vow.Core
         float Amount { get; }
         float RemainingSeconds { get; }
         void Grant();
+        float Absorb(float incomingDamage);
+        void Clear();
     }
 }
