@@ -26,7 +26,7 @@ namespace Vow.Combat.Feedback
         private static readonly Color[] LabelColors =
         {
             new Color(0.82f, 0.68f, 0.35f), // 流沙：黃褐
-            new Color(0.85f, 0.90f, 0.92f), // 蒸氣：白霧
+            new Color(0.18f, 0.27f, 0.34f), // 蒸氣：深藍灰，與白霧區保持對比
             new Color(1.00f, 0.45f, 0.15f), // 火浪：橙
             new Color(1.00f, 0.25f, 0.20f), // 爆沸：紅
             new Color(0.30f, 0.85f, 0.40f), // 救援：綠
