@@ -718,6 +718,44 @@ namespace Vow.Tests.PlayMode
                 "穿透一次後血條比例應為 270/300（實測 " + (fill.localScale.x / barWidth) + "）");
         }
 
+        // 英雄走到木樁前 4m 再極速立牆：兩條血條的 X/Y 投影會重疊。
+        [UnityTest]
+        public IEnumerator TheQuickCastWallBar_DoesNotCoverTheDummyBar()
+        {
+            yield return Setup(new RuneTuning());
+
+            float heroZ = _dummy.transform.position.z - _rune.QuickCastDistance;
+            Assert.IsTrue(_hero.GetComponent<NavMeshAgent>().Warp(new Vector3(0f, 0f, heroZ)));
+
+            _input.RuneQuickCast();
+            yield return null;
+            yield return null;
+
+            RuneWall wall = FirstAlive(_playerPool);
+            Assert.IsNotNull(wall, "極速施放後沒有符印牆");
+            Transform wallBar = GameObject.Find(wall.name + "_Overhead")?.transform.Find("BarBackground");
+            Transform dummyBar = GameObject.Find(_dummy.name + "_Overhead")?.transform.Find("BarBackground");
+            Assert.IsNotNull(wallBar, "符印牆沒有血條背景");
+            Assert.IsNotNull(dummyBar, "木樁沒有血條背景");
+
+            Camera camera = Camera.main;
+            Assert.IsNotNull(camera);
+            float wallLeft = camera.WorldToViewportPoint(wallBar.TransformPoint(new Vector3(-0.5f, 0f, 0f))).x;
+            float wallRight = camera.WorldToViewportPoint(wallBar.TransformPoint(new Vector3(0.5f, 0f, 0f))).x;
+            float dummyLeft = camera.WorldToViewportPoint(dummyBar.TransformPoint(new Vector3(-0.5f, 0f, 0f))).x;
+            float dummyRight = camera.WorldToViewportPoint(dummyBar.TransformPoint(new Vector3(0.5f, 0f, 0f))).x;
+            Assert.Greater(Mathf.Min(wallRight, dummyRight), Mathf.Max(wallLeft, dummyLeft),
+                "場景沒有重現兩條血條的水平重疊");
+
+            float wallBottom = camera.WorldToViewportPoint(wallBar.TransformPoint(new Vector3(0f, -0.5f, 0f))).y;
+            float wallTop = camera.WorldToViewportPoint(wallBar.TransformPoint(new Vector3(0f, 0.5f, 0f))).y;
+            float dummyBottom = camera.WorldToViewportPoint(dummyBar.TransformPoint(new Vector3(0f, -0.5f, 0f))).y;
+            float dummyTop = camera.WorldToViewportPoint(dummyBar.TransformPoint(new Vector3(0f, 0.5f, 0f))).y;
+            float gap = Mathf.Max(wallTop - wallBottom, dummyTop - dummyBottom) * 0.25f;
+            Assert.Greater(Mathf.Max(wallBottom, dummyBottom), Mathf.Min(wallTop, dummyTop) + gap,
+                "符印牆與木樁血條應分開，並保留至少四分之一條血條的間距");
+        }
+
         // r1 對抗審查 MEDIUM-7：同一面池牆歷經三種死因之後，格點的登記／撤銷必須對稱。
         [UnityTest]
         public IEnumerator R5m7_APooledWallThroughEveryDeathPath_LeavesTheNavGridSymmetric()

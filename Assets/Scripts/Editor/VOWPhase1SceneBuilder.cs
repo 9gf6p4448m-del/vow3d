@@ -329,7 +329,7 @@ namespace Vow.EditorTools
             // 與木樁、測試牆同一個既有元件，全部物件在 Awake 預熱，戰鬥中零配置。
             TargetOverheadDisplay overhead = wall.AddComponent<TargetOverheadDisplay>();
             SetReference(overhead, "_barMaterial", barMaterial);
-            SetFloat(overhead, "_height", runeTuning.WallHeight * 0.5f + 0.4f); // 自牆心起算，落在牆頂上方
+            SetFloat(overhead, "_height", runeTuning.WallHeight * 0.5f + 0.9f); // 與同深度木樁血條留出畫面間距
         }
 
         // 友軍測試砲台（§4-7）：固定在 (−8, 1.0, 6)，開火方向於 Initialize 時朝木樁 (0,1,6) 算出＝+X、距離 8m。

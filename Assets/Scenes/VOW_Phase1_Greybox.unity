@@ -794,7 +794,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _barMaterial: {fileID: 2100000, guid: b6d6303c6b680c04fbd5fb164af28200, type: 2}
-  _height: 1.4
+  _height: 1.9
   _barWidth: 1.4
   _barThickness: 0.14
 --- !u!114 &185844628
@@ -1200,7 +1200,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _barMaterial: {fileID: 2100000, guid: b6d6303c6b680c04fbd5fb164af28200, type: 2}
-  _height: 1.4
+  _height: 1.9
   _barWidth: 1.4
   _barThickness: 0.14
 --- !u!114 &418143391
@@ -3124,7 +3124,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _barMaterial: {fileID: 2100000, guid: b6d6303c6b680c04fbd5fb164af28200, type: 2}
-  _height: 1.4
+  _height: 1.9
   _barWidth: 1.4
   _barThickness: 0.14
 --- !u!114 &1108731952
@@ -3600,7 +3600,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _barMaterial: {fileID: 2100000, guid: b6d6303c6b680c04fbd5fb164af28200, type: 2}
-  _height: 1.4
+  _height: 1.9
   _barWidth: 1.4
   _barThickness: 0.14
 --- !u!114 &1450521070
@@ -3841,7 +3841,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _barMaterial: {fileID: 2100000, guid: b6d6303c6b680c04fbd5fb164af28200, type: 2}
-  _height: 1.4
+  _height: 1.9
   _barWidth: 1.4
   _barThickness: 0.14
 --- !u!114 &1460643353
@@ -4326,7 +4326,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _barMaterial: {fileID: 2100000, guid: b6d6303c6b680c04fbd5fb164af28200, type: 2}
-  _height: 1.4
+  _height: 1.9
   _barWidth: 1.4
   _barThickness: 0.14
 --- !u!114 &1796034264
