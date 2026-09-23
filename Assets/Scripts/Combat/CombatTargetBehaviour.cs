@@ -85,7 +85,7 @@ namespace Vow.Combat
 
         public void ReceiveDamage(float amount, DamageType type, GameObject instigator)
         {
-            if (!IsAlive || amount <= 0f) return;
+            if (!IsAlive || amount <= 0f || !CanReceiveDamage()) return;
 
             float applied = ConsumeDamage(amount);
             // Phase 2 批 4（GDD 圍欄九）：霧內目標「受傷後顯影 1.5s」。掛在這個唯一的受擊入口上，
@@ -96,6 +96,9 @@ namespace Vow.Combat
 
             if (ReadHealth() <= 0f) NotifyDeath();
         }
+
+        // 待機對手的無敵狀態在唯一受傷入口擋住，不觸發飄字、顯影與事件。
+        protected virtual bool CanReceiveDamage() { return true; }
 
         // ───────────────────── Phase 2 批 4：受擊顯影（IConcealable）─────────────────────
         // 倒數由 ElementField 每幀統一推進（它本來就要走一遍名冊）：這個類別的三個子類別各自有

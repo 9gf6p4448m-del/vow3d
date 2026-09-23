@@ -33,6 +33,14 @@ namespace Vow.Bootstrap
         [SerializeField] private RuneButtonView _runeButton;
         [SerializeField] private NavGridDebugView _navGridDebug;
         [SerializeField] private Transform _arenaBoundary;
+        [SerializeField] private TrainingOpponent _opponent;
+        [SerializeField] private SkillTelegraphService _opponentTelegraph;
+
+        private readonly DuelTuning _duelTuning = new DuelTuning();
+        private DuelRoundLogic _duelRound;
+        private DuelInputRouter _duelInput;
+        private Vector3 _heroSpawn;
+        private HeroLocomotion _opponentLocomotion;
 
         // ── Phase 2 批 3：陣營校驗破牆得護盾＋友軍彈道穿透 ──
         // 玩家石牆池與除錯用的敵方石牆池由**兩個父物件**分開（§4-6）：敵方牆也是 RuneWall，
@@ -69,6 +77,17 @@ namespace Vow.Bootstrap
 
         public BlockGrid NavGrid => _navGrid;
         public GridNavigator Navigator => _navigator;
+        public TrainingOpponent Opponent => _opponent;
+        public DuelRoundState DuelState => _duelRound != null ? _duelRound.State : DuelRoundState.Dormant;
+        public DuelTuning DuelTuning => _duelTuning;
+        public int DuelStartCount => _duelRound != null ? _duelRound.StartCount : 0;
+
+        public void SetDuelLatencyPreset(int milliseconds)
+        {
+            if (_latency == null) return;
+            _latency.Preset = milliseconds == 80 ? LatencyPreset.Ms80
+                            : milliseconds == 50 ? LatencyPreset.Ms50 : LatencyPreset.Off;
+        }
 
         // 批 3：PlayMode 測試 asmdef 只看得到 Vow.Core／Vow.Combat／Vow.Bootstrap（V6 不得加引用），
         // 所以輸入服務與除錯 HUD 一律以 Vow.Core 的介面型別從這裡交出去。
@@ -140,6 +159,14 @@ namespace Vow.Bootstrap
             }
 
             BuildNavGrid(targets);
+            _heroSpawn = _hero.transform.position;
+            if (_opponent != null)
+            {
+                _duelRound = new DuelRoundLogic(_duelTuning);
+                _opponentLocomotion = _opponent.GetComponent<HeroLocomotion>();
+                _opponent.Initialize(_hero, _opponentTelegraph, _duelTuning,
+                                     new GridNavigator(_navGrid, _navTuning), _navTuning.BodyRadius);
+            }
 
             _input.Initialize(_targets, _camera);
             // 批 3：「哪些石牆算自家牆」由本地陣營決定（點自家牆＝點到牆後的地板，§4-1）。
@@ -155,6 +182,13 @@ namespace Vow.Bootstrap
                 heroInput = _latency;
                 heroRuneInput = _latency;
             }
+            if (_duelRound != null)
+            {
+                _duelInput = new DuelInputRouter(heroInput, heroRuneInput, _opponent, _duelRound);
+                _duelInput.OnStartRequested += StartDuel;
+                heroInput = _duelInput;
+                heroRuneInput = _duelInput;
+            }
             _hero.Initialize(heroInput, _feedback, _camera, _haptics);
 
             // 符印石牆：極速施放／鬆手成牆走延遲注入層（heroInput／heroRuneInput，同英雄本體）；
@@ -169,6 +203,12 @@ namespace Vow.Bootstrap
 
             InitializeBatch3(targets);
             InitializeBatch4(targets);
+            if (_duelRound != null)
+            {
+                _hero.ConfigureDuel(_duelTuning, _shield);
+                _hero.OnKnockedOut += HandleDuelKnockout;
+                _opponent.OnDied += HandleDuelKnockout;
+            }
             // 「此刻放手會不會取消」是本機回饋，讀未經延遲的 _input，lambda 只在這裡建一次。
             if (_runeGhost != null && _tuningAsset != null)
                 _runeGhost.Initialize(_input, _input, _hero.transform, _camera, _tuningAsset.Rune, () => _input.IsRuneCancelArmed);
@@ -200,6 +240,7 @@ namespace Vow.Bootstrap
                 _hud.Initialize(_hero, _input, _hitboxes, _latency, gridVisible, toggleGrid,
                                 spawnEnemyWall, toggleTurret, turretFiring, _shield,
                                 castWater, castFire, castWind, toggleElement, elementBlue, _elementCooldowns);
+                if (_duelRound != null) _hud.ConfigureDuel(ReadOpponentHealth, _duelRound);
             }
             if (_aimPreview != null) _aimPreview.Initialize(_hero, _input, _telegraph, _camera);
         }
@@ -208,7 +249,50 @@ namespace Vow.Bootstrap
         {
             if (_hero != null && _feedback != null) _hero.StateMachine.OnStateChanged -= HandleHeroStateChanged;
             if (_hero != null) _hero.OnRootedStarted -= HandleHeroRooted;
+            if (_hero != null) _hero.OnKnockedOut -= HandleDuelKnockout;
+            if (_opponent != null) _opponent.OnDied -= HandleDuelKnockout;
+            if (_duelInput != null)
+            {
+                _duelInput.OnStartRequested -= StartDuel;
+                _duelInput.Dispose();
+            }
         }
+
+        private void Update()
+        {
+            if (_duelRound == null || !_duelRound.Tick(Time.deltaTime)) return;
+            _latency?.CancelPendingForRound();
+            _input?.CancelActiveGesturesForRound();
+            _hero.ResetForDuel(_heroSpawn);
+            _opponent.ResetForRound();
+            _runeCaster?.ResetForRound();
+            _elementCooldowns?.ResetForRound();
+        }
+
+        private void StartDuel()
+        {
+            if (_duelRound == null || !_duelRound.TryStart()) return;
+            _hero.CancelCombatForDuel();
+            _shield?.Clear();
+            _elementField?.ClearZonesForDuel();
+            _elementCooldowns?.ResetForRound();
+            _runeCaster?.ResetForRound();
+            _turret?.CancelProjectilesForRound();
+            _latency?.CancelPendingForRound();
+            _opponent.StartRound();
+        }
+
+        private void HandleDuelKnockout()
+        {
+            if (_duelRound == null || !_duelRound.Knockout()) return;
+            _hero.CancelCombatForDuel();
+            _opponent.StopRound();
+            _opponentTelegraph?.HideIndicator();
+            _latency?.CancelPendingForRound();
+            _input?.CancelActiveGesturesForRound();
+        }
+
+        private float ReadOpponentHealth() { return _opponent != null ? _opponent.Health : 0f; }
 
         // ───────────────────── Phase 2 批 2：阻擋格點的組裝 ─────────────────────
 
@@ -307,6 +391,8 @@ namespace Vow.Bootstrap
                                              out float halfWidth, out float halfThickness))
                 return;
             _heroLocomotion.EjectFromBox(centerX, centerZ, normalX, normalZ, halfWidth, halfThickness);
+            if (_opponentLocomotion != null && _opponent != null && _opponent.IsEngaged)
+                _opponentLocomotion.EjectFromBox(centerX, centerZ, normalX, normalZ, halfWidth, halfThickness);
         }
 
         // ───────────────────── Phase 2 批 3：護盾／砲台／敵方牆的組裝 ─────────────────────
@@ -416,18 +502,21 @@ namespace Vow.Bootstrap
         // 不重置冷卻、不扣任何東西（§4-12）。
         private void CastElementWater()
         {
+            if (DuelState != DuelRoundState.Dormant) return;
             if (!_elementCooldowns.TryBeginCast(ElementCast.Water, Time.time)) return;
             _elementField.CastWater(ElementCastPoint(), (int)_elementFaction);
         }
 
         private void CastElementFire()
         {
+            if (DuelState != DuelRoundState.Dormant) return;
             if (!_elementCooldowns.TryBeginCast(ElementCast.Fire, Time.time)) return;
             _elementField.CastFire(ElementCastPoint(), (int)_elementFaction);
         }
 
         private void CastElementWind()
         {
+            if (DuelState != DuelRoundState.Dormant) return;
             if (!_elementCooldowns.TryBeginCast(ElementCast.Wind, Time.time)) return;
             _elementField.CastWind(_hero.transform.position, _hero.transform.forward, (int)_elementFaction);
         }
@@ -435,6 +524,7 @@ namespace Vow.Bootstrap
         // ELEM 鈕無冷卻；切換只影響**之後**施放的技能，已成形的區域陣營不變（§4-12）。
         private void ToggleElementFaction()
         {
+            if (DuelState != DuelRoundState.Dormant) return;
             _elementFaction = _elementFaction == Faction.BlueTeam ? Faction.RedTeam : Faction.BlueTeam;
         }
 
@@ -455,11 +545,13 @@ namespace Vow.Bootstrap
 
         private void SpawnEnemyWall()
         {
+            if (DuelState != DuelRoundState.Dormant) return;
             if (_enemyWalls != null) _enemyWalls.Spawn();
         }
 
         private void ToggleTurret()
         {
+            if (DuelState != DuelRoundState.Dormant) return;
             if (_turret != null) _turret.SetFiring(!_turret.IsFiring);
         }
 
@@ -518,6 +610,7 @@ namespace Vow.Bootstrap
                 GameObject boundary = GameObject.Find("ArenaBoundary");
                 if (boundary != null) _arenaBoundary = boundary.transform;
             }
+            if (_opponent == null) _opponent = FindObjectOfType<TrainingOpponent>();
             if (_runeWallPool == null)
             {
                 GameObject pool = GameObject.Find("RuneWallPool");

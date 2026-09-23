@@ -92,6 +92,25 @@ namespace Vow.Tests
         }
 
         [Test]
+        public void RoundCancellation_RejectsAnInProgressRuneDragUntilTheFingerIsLifted()
+        {
+            TouchGestureRouter router = NewRouter(ControlMode.ModeA_FullScreenFlick, out RuneSink sink);
+            Frame(router, 0.00, 1, TouchPhaseKind.Began, RuneX, RuneY, 0.0);
+            Frame(router, 0.05, 1, TouchPhaseKind.Moved, RuneX - 200f, RuneY, 0.0);
+            Assert.IsTrue(router.IsRuneDragging);
+            router.CancelActiveTouches();
+            Frame(router, 3.00, 1, TouchPhaseKind.Ended, RuneX - 200f, RuneY, 0.0);
+            Assert.AreEqual(1, sink.Cancels);
+            Assert.AreEqual(0, sink.Releases);
+            Assert.AreEqual(0, sink.QuickCasts);
+            Assert.AreEqual(0, sink.WorldTaps);
+
+            Frame(router, 3.10, 2, TouchPhaseKind.Began, RuneX, RuneY, 3.1);
+            Frame(router, 3.15, 2, TouchPhaseKind.Ended, RuneX, RuneY, 3.1);
+            Assert.AreEqual(1, sink.QuickCasts, "舊手勢取消後的新手勢仍須可用");
+        }
+
+        [Test]
         public void LongPressWithoutDrag_StillQuickCasts()
         {
             TouchGestureRouter router = NewRouter(ControlMode.ModeA_FullScreenFlick, out RuneSink sink);

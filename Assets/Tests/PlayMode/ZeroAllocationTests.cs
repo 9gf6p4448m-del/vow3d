@@ -418,6 +418,9 @@ namespace Vow.Tests.PlayMode
     {
         private const string SceneName = "VOW_Phase1_Greybox";
 
+        [TearDown]
+        public void TearDown() { Time.captureDeltaTime = 0f; AllocationProbe.Measuring = false; }
+
         private static bool AnyRuneWallAlive(RuneWall[] pool)
         {
             for (int i = 0; i < pool.Length; i++) if (pool[i].IsAlive) return true;
@@ -469,6 +472,49 @@ namespace Vow.Tests.PlayMode
             Assert.GreaterOrEqual(AllocationProbe.Frames, 25);
             Assert.GreaterOrEqual(AllocationProbe.UpdateBytes, 256L * 25L,
                 "探針沒有量到每幀 256 bytes 的故意配置（量到 " + AllocationProbe.UpdateBytes + "）：這個量測來源在此環境沒有鑑別力");
+        }
+
+        [UnityTest]
+        public IEnumerator DuelChaseAndStrike_UpdateAndLateUpdate_AllocateNothing()
+        {
+            Time.captureDeltaTime = 1f / 60f;
+            SceneManager.LoadScene(SceneName, LoadSceneMode.Single);
+            yield return null;
+            yield return null;
+            Phase1Bootstrap bootstrap = UnityEngine.Object.FindObjectOfType<Phase1Bootstrap>();
+            HeroController hero = UnityEngine.Object.FindObjectOfType<HeroController>();
+            TrainingOpponent opponent = UnityEngine.Object.FindObjectOfType<TrainingOpponent>();
+            Assert.IsNotNull(bootstrap);
+            Assert.IsNotNull(hero);
+            Assert.IsNotNull(opponent);
+            hero.GetComponent<HeroLocomotion>().WarpTo(opponent.transform.position + Vector3.back * 1.6f);
+            yield return null;
+            Vector3 screen = Camera.main.WorldToScreenPoint(opponent.transform.position + Vector3.up);
+            bootstrap.WorldTapInput.SendScreenTap(screen.x, screen.y);
+            Assert.AreEqual(DuelRoundState.Active, bootstrap.DuelState);
+
+            float deadline = Time.time + 2f;
+            while (opponent.AttacksResolved < 1 && Time.time < deadline) yield return null;
+            Assert.GreaterOrEqual(opponent.AttacksResolved, 1, "暖機沒有真正出招");
+
+            AllocationProbe.Reset();
+            GameObject rig = new GameObject("DuelProbeRig");
+            rig.AddComponent<AllocationProbeBegin>();
+            rig.AddComponent<AllocationProbeEnd>();
+            yield return null;
+            int attacksBefore = opponent.AttacksResolved;
+            AllocationProbe.Measuring = true;
+            for (int i = 0; i < 180; i++) yield return null;
+            AllocationProbe.Measuring = false;
+            UnityEngine.Object.Destroy(rig);
+            Time.captureDeltaTime = 0f;
+
+            Assert.GreaterOrEqual(AllocationProbe.Frames, 180);
+            Assert.Greater(opponent.AttacksResolved, attacksBefore, "量測窗口內沒有出招，0 byte 沒有鑑別力");
+            Assert.AreEqual(0L, AllocationProbe.UpdateBytes,
+                "對局 Update 在 " + AllocationProbe.Frames + " 幀內配置了 " + AllocationProbe.UpdateBytes + " bytes");
+            Assert.AreEqual(0L, AllocationProbe.LateUpdateBytes,
+                "對局 LateUpdate 在 " + AllocationProbe.Frames + " 幀內配置了 " + AllocationProbe.LateUpdateBytes + " bytes");
         }
 
         [UnityTest]

@@ -26,6 +26,14 @@ namespace Vow.Combat
         // 驗收（V4-o）必須看得到「組裝端到底交了哪幾面牆給玩家」，不能自己另外湊一份。
         public RuneWall[] Pool => _pool;
 
+        public void ResetForRound()
+        {
+            if (_pool != null)
+                for (int i = 0; i < _pool.Length; i++)
+                    if (_pool[i] != null && _pool[i].IsAlive) _pool[i].CollapseWall(false);
+            _castLogic?.ResetCooldown();
+        }
+
         // input：拖曳更新／極速施放／取消（極速施放走延遲佇列時，input 應為包住 latency 的那一層）。
         // releaseInput：鬆手成牆，因 ARCHITECTURE 的 IPlayerInputService 沒有這個事件而另立 IRuneCastInput。
         public void Initialize(IPlayerInputService input, IRuneCastInput releaseInput, Transform hero, Camera worldCamera,

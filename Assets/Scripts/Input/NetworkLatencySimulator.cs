@@ -85,6 +85,12 @@ namespace Vow.Input
 
         public int PendingCount => _queue.Count;
 
+        // KO／重置是明示的取消邊界；平時的延遲佇列仍保序、不丟指令。
+        public void CancelPendingForRound()
+        {
+            while (_queue.TryDequeueAny(out Pending _)) { }
+        }
+
         public void Initialize(PlayerInputService inner)
         {
             Unsubscribe();

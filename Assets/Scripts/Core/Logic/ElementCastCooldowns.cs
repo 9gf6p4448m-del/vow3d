@@ -13,6 +13,11 @@ namespace Vow.Core.Logic
             _tuning = tuning;
         }
 
+        public void ResetForRound()
+        {
+            for (int i = 0; i < _readyAtSeconds.Length; i++) _readyAtSeconds[i] = 0f;
+        }
+
         // 冷卻中 → false，不重置冷卻
         public bool TryBeginCast(ElementCast cast, float nowSeconds)
         {

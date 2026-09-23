@@ -26,6 +26,8 @@ namespace Vow.Core.Logic
 
         public double CooldownRemaining(double now) => IsReady(now) ? 0.0 : _readyTime - now;
 
+        public void ResetCooldown() { _readyTime = double.NegativeInfinity; }
+
         // 只有真的要成牆時才呼叫；取消施法不經過這裡，所以不消耗冷卻。
         public bool TryBeginCast(double now)
         {

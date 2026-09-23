@@ -82,6 +82,19 @@ namespace Vow.Input
         public bool IsRuneDragging => _rune.Held && _rune.Dragging;
         public bool IsRuneCancelArmed => _rune.CancelArmed;
 
+        // 回合切換時將仍按著的手指作廢直到放開，避免舊拖曳在下一局生成符印。
+        public void CancelActiveTouches()
+        {
+            _pip.End();
+            EmitRune(_rune.Cancel());
+            for (int i = 0; i < MaxTouches; i++)
+            {
+                if (!_slotUsed[i]) continue;
+                _slotRoute[i] = TouchRoute.Rejected;
+                _trackers[i].Cancel();
+            }
+        }
+
         public ControlMode ActiveMode
         {
             get => _activeMode;

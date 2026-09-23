@@ -30,6 +30,8 @@ namespace Vow.Combat
 
         public bool IsActive => _active;
 
+        public void CancelForRound() { Despawn(); }
+
         // 活性計數（V4-n／V5 用）。池化重用時累加，不重設。
         public int Penetrations { get; private set; }
         public int Blocks { get; private set; }

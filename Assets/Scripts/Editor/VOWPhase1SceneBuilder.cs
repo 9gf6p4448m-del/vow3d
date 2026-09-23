@@ -50,6 +50,7 @@ namespace Vow.EditorTools
 
             HeroController hero = CreateHero(tuning, materials.Hero, materials.Bar);
             CreateDummy(new Vector3(0f, 0f, 6f), materials.Dummy, materials.Bar);
+            TrainingOpponent opponent = CreateOpponent(new Vector3(-4f, 0f, 8f), tuning, materials.Opponent, materials.Bar);
             CreateWall("TestWall_A", new Vector3(-7f, 0f, 3f), 0f, materials.Wall, materials.Bar);
             CreateWall("TestWall_B", new Vector3(7f, 0f, 3f), 90f, materials.Wall, materials.Bar);
             Transform runeWallPool = CreateRuneWallPool(tuning.Rune, materials.RuneWall, materials.Bar);
@@ -60,7 +61,7 @@ namespace Vow.EditorTools
             Transform elementZonePool = CreateElementZonePool(materials);
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
-            CreateSystems(hero, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform,
+            CreateSystems(hero, opponent, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform,
                           runeWallPool, enemyWallPool, turret, elementZonePool);
 
             EditorSceneManager.MarkSceneDirty(scene);
@@ -76,7 +77,7 @@ namespace Vow.EditorTools
         private struct Materials
         {
             public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines, RuneWall, RuneGhost, NavGrid;
-            public Material EnemyWall, Turret, Bullet;
+            public Material EnemyWall, Turret, Bullet, Opponent;
             public Material ZoneWater, ZoneBurning, ZoneQuicksand, ZoneSteam;
         }
 
@@ -102,6 +103,7 @@ namespace Vow.EditorTools
                 EnemyWall = GreyboxAssetFactory.EnsureLitMaterial("VOW_EnemyWall", new Color(0.72f, 0.18f, 0.16f)),
                 Turret = GreyboxAssetFactory.EnsureLitMaterial("VOW_Turret", new Color(0.3f, 0.65f, 0.9f)),
                 Bullet = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_Bullet", new Color(1f, 0.92f, 0.45f), false, false),
+                Opponent = GreyboxAssetFactory.EnsureLitMaterial("VOW_Opponent", new Color(0.82f, 0.16f, 0.18f)),
                 // 批 4：四種元素區域的灰盒色（冷庫協議：不做粒子／著色器，只有半透明扁圓柱）
                 ZoneWater = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneWater", new Color(0.24f, 0.55f, 0.95f, 0.38f), true, true),
                 ZoneBurning = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneBurning", new Color(1f, 0.45f, 0.12f, 0.45f), true, true),
@@ -254,6 +256,40 @@ namespace Vow.EditorTools
             TargetOverheadDisplay overhead = dummy.AddComponent<TargetOverheadDisplay>();
             SetReference(overhead, "_barMaterial", barMaterial);
             SetFloat(overhead, "_height", 1.6f);
+        }
+
+        private static TrainingOpponent CreateOpponent(Vector3 position, HeroTuningAsset tuning,
+                                                       Material material, Material barMaterial)
+        {
+            GameObject root = new GameObject("TrainingOpponent_Red");
+            root.transform.position = position;
+            CapsuleCollider capsule = root.AddComponent<CapsuleCollider>();
+            capsule.center = new Vector3(0f, 0.9f, 0f);
+            capsule.height = 1.8f;
+            capsule.radius = tuning.BodyRadius;
+
+            NavMeshAgent agent = root.AddComponent<NavMeshAgent>();
+            agent.radius = tuning.BodyRadius;
+            agent.height = 1.8f;
+            agent.obstacleAvoidanceType = ObstacleAvoidanceType.NoObstacleAvoidance;
+            agent.enabled = false;
+            root.AddComponent<HeroLocomotion>();
+            TrainingOpponent opponent = root.AddComponent<TrainingOpponent>();
+            SetFloat(opponent, "_maxHealth", 300f);
+            SetEnum(opponent, "_faction", (int)Faction.RedTeam);
+
+            GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            visual.name = "RedGreyboxBody";
+            visual.transform.SetParent(root.transform, false);
+            visual.transform.localPosition = new Vector3(0f, 0.9f, 0f);
+            visual.transform.localScale = new Vector3(0.7f, 0.9f, 0.7f);
+            visual.GetComponent<Renderer>().sharedMaterial = material;
+            Object.DestroyImmediate(visual.GetComponent<Collider>());
+
+            TargetOverheadDisplay overhead = root.AddComponent<TargetOverheadDisplay>();
+            SetReference(overhead, "_barMaterial", barMaterial);
+            SetFloat(overhead, "_height", 2f);
+            return opponent;
         }
 
         private static void CreateWall(string name, Vector3 position, float yawDegrees, Material material, Material barMaterial)
@@ -495,7 +531,7 @@ namespace Vow.EditorTools
             return camera;
         }
 
-        private static void CreateSystems(HeroController hero, Camera camera, FollowCameraRig rig, Transform shakePivot,
+        private static void CreateSystems(HeroController hero, TrainingOpponent opponent, Camera camera, FollowCameraRig rig, Transform shakePivot,
             Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug,
             Transform arenaBoundary, Transform runeWallPool, Transform enemyWallPool, TestTurret turret,
             Transform elementZonePool)
@@ -518,6 +554,9 @@ namespace Vow.EditorTools
 
             SkillTelegraphService telegraph = systems.AddComponent<SkillTelegraphService>();
             SetReference(telegraph, "_lineMaterial", materials.Telegraph);
+            SkillTelegraphService opponentTelegraph = systems.AddComponent<SkillTelegraphService>();
+            SetReference(opponentTelegraph, "_lineMaterial", materials.Telegraph);
+            SetColor(opponentTelegraph, "_baseColor", new Color(1f, 0.12f, 0.1f, 1f));
 
             HitboxVisualizer hitboxes = systems.AddComponent<HitboxVisualizer>();
             SetReference(hitboxes, "_lineMaterial", materials.HitboxLines);
@@ -532,6 +571,8 @@ namespace Vow.EditorTools
 
             Phase1Bootstrap bootstrap = systems.AddComponent<Phase1Bootstrap>();
             SetReference(bootstrap, "_hero", hero);
+            SetReference(bootstrap, "_opponent", opponent);
+            SetReference(bootstrap, "_opponentTelegraph", opponentTelegraph);
             SetReference(bootstrap, "_input", input);
             SetReference(bootstrap, "_latency", latency);
             SetReference(bootstrap, "_haptics", haptics);
@@ -612,6 +653,13 @@ namespace Vow.EditorTools
         {
             SerializedObject serialized = new SerializedObject(target);
             RequireProperty(serialized, propertyName).floatValue = value;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void SetColor(Object target, string propertyName, Color value)
+        {
+            SerializedObject serialized = new SerializedObject(target);
+            RequireProperty(serialized, propertyName).colorValue = value;
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 

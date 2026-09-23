@@ -62,6 +62,14 @@ namespace Vow.Combat
             _cooldown = 0f; // 打開時下一幀就射第一發；關閉時已在飛的子彈照常結算
         }
 
+        public void CancelProjectilesForRound()
+        {
+            SetFiring(false);
+            if (_pool == null) return;
+            for (int i = 0; i < _pool.Length; i++)
+                if (_pool[i] != null && _pool[i].IsActive) _pool[i].CancelForRound();
+        }
+
         private void Update()
         {
             if (!IsFiring || !_hasDirection || _tuning == null) return;

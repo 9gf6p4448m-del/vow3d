@@ -61,6 +61,14 @@ namespace Vow.Combat
             }
         }
 
+        public void ClearZonesForDuel()
+        {
+            if (_field == null) return;
+            for (int slot = 0; slot < _field.Capacity; slot++)
+                if (_field.TryGetBySlot(slot, out ElementZone zone)) _field.Terminate(zone.Id);
+            SyncViews();
+        }
+
         // 由 Phase1Bootstrap 注入。views 為 SceneBuilder 預建的池（執行期禁止 CreatePrimitive）。
         // callouts 為選用（V061_FEEDBACK_PLAN.md §1）：既有 5 參數呼叫（EditMode／PlayMode 既有測試）
         // 不必跟著改，null 時完全跳過飄字、行為與 v0.6.0 逐行相同。

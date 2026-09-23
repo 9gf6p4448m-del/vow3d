@@ -78,6 +78,14 @@ namespace Vow.UI
         private Action _toggleElementFaction;
         private Func<bool> _elementFactionIsBlue;
         private ElementCastCooldowns _elementCooldowns;
+        private Func<float> _opponentHealth;
+        private DuelRoundLogic _duelRound;
+
+        public void ConfigureDuel(Func<float> opponentHealth, DuelRoundLogic round)
+        {
+            _opponentHealth = opponentHealth;
+            _duelRound = round;
+        }
 
         // 零配置字串表：冷卻標籤一律查表，**不得字串串接**。索引＝ElementCastCooldowns.RemainingLabelIndex
         //（0 ＝可用；1..5 ＝向上取整的剩餘秒），所以**索引就是剩餘秒數**：表要遞增排。
@@ -519,28 +527,50 @@ namespace Vow.UI
             // ── 批 4：四顆元素除錯鈕。標籤一律查預建字串表（見 Update 的 RefreshElementLabels）──
             if (_castWater != null)
             {
-                Fill(_waterRect, _waterIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
+                Fill(_waterRect, _duelRound != null && _duelRound.State != DuelRoundState.Dormant
+                    ? ButtonCooldownColor : _waterIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
                 GUI.Label(_waterRect, _waterLabel, _buttonLabel);
             }
             if (_castFire != null)
             {
-                Fill(_fireRect, _fireIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
+                Fill(_fireRect, _duelRound != null && _duelRound.State != DuelRoundState.Dormant
+                    ? ButtonCooldownColor : _fireIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
                 GUI.Label(_fireRect, _fireLabel, _buttonLabel);
             }
             if (_castWind != null)
             {
-                Fill(_windRect, _windIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
+                Fill(_windRect, _duelRound != null && _duelRound.State != DuelRoundState.Dormant
+                    ? ButtonCooldownColor : _windIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
                 GUI.Label(_windRect, _windLabel, _buttonLabel);
             }
             if (_toggleElementFaction != null)
             {
-                Fill(_elemRect, _elemBlueShown == 1 ? ElemBlueColor : ElemRedColor);
+                Fill(_elemRect, _duelRound != null && _duelRound.State != DuelRoundState.Dormant
+                    ? ButtonCooldownColor : _elemBlueShown == 1 ? ElemBlueColor : ElemRedColor);
                 GUI.Label(_elemRect, _elemLabel, _buttonLabel);
             }
+
+            DrawDuelPanel();
 
             GUI.matrix = previous;
 
             if (modeB) DrawPipWidget();
+        }
+
+        private void DrawDuelPanel()
+        {
+            if (_duelRound == null || _hero == null || _opponentHealth == null) return;
+            float x = Screen.width / _scale - 176f - Pad;
+            if (x < PanelWidth + Pad * 2f) x = PanelWidth + Pad * 2f;
+            float y = Pad;
+            Fill(new Rect(x, y, 176f, 72f), PanelColor);
+            string state = _duelRound.State == DuelRoundState.Dormant ? "TAP RED TO START"
+                         : _duelRound.State == DuelRoundState.Active ? "DUEL ACTIVE" : "RESETTING";
+            GUI.Label(new Rect(x + 8f, y + 4f, 162f, Row), state, _label);
+            GUI.Label(new Rect(x + 8f, y + 26f, 92f, Row), "HERO HP", _label);
+            GUI.Label(new Rect(x + 105f, y + 26f, 56f, Row), IntStringCache.Get(Mathf.CeilToInt(_hero.Health)), _label);
+            GUI.Label(new Rect(x + 8f, y + 48f, 92f, Row), "RED HP", _label);
+            GUI.Label(new Rect(x + 105f, y + 48f, 56f, Row), IntStringCache.Get(Mathf.CeilToInt(_opponentHealth())), _label);
         }
 
         private void DrawPips(float x, float y)

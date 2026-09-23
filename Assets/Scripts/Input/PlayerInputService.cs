@@ -121,6 +121,11 @@ namespace Vow.Input
             router.ProcessTouch(touchId, TouchPhaseKind.Ended, screenX, screenY, now, now);
         }
 
+        public void CancelActiveGesturesForRound()
+        {
+            Router.CancelActiveTouches();
+        }
+
         private void Awake()
         {
             if (_worldCamera == null) _worldCamera = Camera.main;
