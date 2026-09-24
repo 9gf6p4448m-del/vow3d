@@ -513,4 +513,16 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 
 **試玩步驟**：① 點紅色對手一次，確認 HUD 顯示對局中且英雄沒有立刻揮刀；② 靠近看紅圈，先站圈內吃一次 20 傷，再用點地或微滑步躲一次；③ 對手與英雄隔牆時看它繞牆，並確認牆能擋住攻擊；④ 點對手普攻至一方倒地，等待重置，再點它開第二局；⑤ 回待機後確認元素鈕恢復。WebGL 只供日常試玩與畫面檢查，原生 Android／iOS 的 120Hz、震動、50／80ms 延遲及 10 人各 10 分鐘手感驗收仍須實機做。
 
-**工程驗證**：`Tools/DotnetCheck/verify.sh` 為純邏輯 201 通過／1 略過、Unity 腳本編譯 0 錯、8 條紅線掃描全過；Unity EditMode 198 通過／4 略過／0 失敗。針對新對局的 PlayMode 14／14 通過；原練習場砲台類 26／26 通過。完整 PlayMode、突變檢查、WebGL 建置及線上實測於送達前補記。
+**工程驗證**（WebGL 來源 `e18c0b4`）：
+- `bash Tools/DotnetCheck/verify.sh`（2026-09-24 於 `e18c0b4` 實跑）：純邏輯 201 通過／1 略過、Unity 腳本編譯 0 錯、8 條紅線掃描全過。
+- Unity EditMode：198 通過／4 略過／0 失敗（`../vow-toolchain/v070-edit-complete.xml`，00:22）；PlayMode：117／117 通過，含 `DuelPlayTests` 16 條與零配置測試（`v070-play-with-new-tests.xml`，09:00）。兩份結果晚於最後一次腳本變更（00:20）與 `DuelPlayTests.cs` 最後修改（00:39）；`e18c0b4` 只提交該測試檔，送達前未再重跑 Unity 測試。
+- `python Tools/DotnetCheck/mutation_check.py`（於 `e18c0b4` 的獨立 worktree 實跑）：114／114 CAUGHT、還原後 202 個測試 0 失敗（`v070-mutation-e18c0b4.log`）。先前 `v070-mutation.log`（18／114）與 `v070-mutation-tail.log`（70／96）兩份 FAILED 是與 Unity 同時編譯的干擾結果，已由這次獨立重跑取代。
+- WebGL：Unity batchmode `VOWWebGLBuilder.Build` 成功，10.5 MB、耗時 219 秒；首頁版本列 `v0.7.0 · build 2026-09-24 06:34 UTC · e18c0b4`。
+
+**瀏覽器實測**（Playwright，844×390、DPR 2、觸控、swiftshader 軟體渲染約 6 FPS；截圖在 `../vow-toolchain/browser-screenshots/`）：
+- 本機建置（`v070-local-a-*`、`-b-*`、`-c-*`）：第一下點紅色對手只開局，RED HP 維持 300；紅圈預警出現後英雄受擊 100→80→60→20；英雄被擊倒時 HUD 顯示 `RESETTING`、HERO HP 0，之後回到 `TAP RED TO START`、雙方滿血；英雄普攻使 RED HP 300→180→0，對手被擊倒後同樣重置；重置後再點紅色對手即開第二局。
+- 躲招（`v070-dodge-*`）：開局後持續點地面移動 10.5 秒，紅圈仍在追擊，HERO HP 維持 100；站著不動時約 9 秒內會被擊倒。
+- 線上 `https://9gf6p4448m-del.github.io/vow3d/`（`v070-online-*`）：版本列相同；開局→受擊至 40→`RESETTING`（HERO HP 0）→重置滿血。
+- 全部場次 console 0 error。
+
+**未驗證**：① KO 停頓期間的觸控是否被封住，瀏覽器沒有驗到：軟體渲染下每張截圖約 3 秒，比 2.5 秒停頓還長，無法確定點擊落在停頓內；這一項以 PlayMode「KO 停頓最後 80 ms 送出指令，重置後不得生效」的測試為準。② 符印牆擋招、繞牆追擊只有 PlayMode 證據，沒有做瀏覽器畫面實測。③ 原生 Android／iOS 的 120Hz、震動、50／80 ms 延遲與 10 人手感測試未做。舊版快取：PWA 若仍顯示 v0.6.2，關閉分頁重開或強制重新整理。
