@@ -23,6 +23,9 @@ namespace Vow.Combat
         [SerializeField] private Material _redMaterial;
 
         private readonly int[] _shownOwner = { -1, -1, -1, -1, -1, -1, -1 };
+        // 進度盤的 Transform 在 Initialize 抓一次：第一次讀某個 Component.transform 時 Unity 才建出它的 managed 包裝
+        // （實測每個 40 bytes）——若等到對局中那座塔第一次有人引導才讀，就會在 LateUpdate 裡配置（V-C03 量到）。
+        private readonly Transform[] _discTransforms = new Transform[HexBoardLayout.TileCount];
         private ICaptureMatchView _view;
         private CaptureTuning _tuning;
 
@@ -46,7 +49,17 @@ namespace Vow.Combat
         {
             _view = view;
             _tuning = tuning;
-            for (int i = 0; i < _shownOwner.Length; i++) _shownOwner[i] = -1;
+            // 起始狀態＝全部中立（與場景建置器預建的材質相同），在這裡明寫一次；之後只在歸屬真的變了才換色，
+            // 進入佔領待機時不必把 21 個物件全部重設一遍。
+            for (int i = 0; i < _shownOwner.Length; i++)
+            {
+                _shownOwner[i] = (int)Faction.Neutral;
+                if (_floors[i] != null) _floors[i].sharedMaterial = _neutralMaterial;
+                if (_rings[i] != null) _rings[i].sharedMaterial = _neutralMaterial;
+                if (_towers[i] != null) _towers[i].sharedMaterial = _neutralMaterial;
+            }
+            for (int i = 0; i < _discTransforms.Length; i++)
+                _discTransforms[i] = _progressDiscs[i] != null ? _progressDiscs[i].transform : null;
         }
 
         // 整組開關（Off 時整組不啟用，V-B01）。開啟當下立刻對一次顏色，不等到 LateUpdate。
@@ -108,7 +121,7 @@ namespace Vow.Combat
 
             float radius = _tuning.CircleRadius * progress / _tuning.CaptureSeconds;
             if (radius > _tuning.CircleRadius) radius = _tuning.CircleRadius;
-            disc.transform.localScale = new Vector3(radius * 2f, DiscHeightScale, radius * 2f);
+            _discTransforms[tile].localScale = new Vector3(radius * 2f, DiscHeightScale, radius * 2f);
             if (disc.sharedMaterial != material) disc.sharedMaterial = material;
             if (!disc.enabled) disc.enabled = true;
         }

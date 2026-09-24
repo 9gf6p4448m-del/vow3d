@@ -41,7 +41,7 @@ namespace Vow.Tests.PlayMode
         private CaptureBoardView _board;
 
         [TearDown]
-        public void TearDown() { Time.captureDeltaTime = 0f; }
+        public void TearDown() { Time.captureDeltaTime = 0f; AllocationProbe.Measuring = false; }
 
         private IEnumerator Setup()
         {
@@ -922,6 +922,304 @@ namespace Vow.Tests.PlayMode
             AssertXz(redDisc.transform.position, 10.5f, 6.0625f, "2 號進度盤應在 2 號塔上");
             for (int i = 0; i < 7; i++)
                 if (i != 5 && i != 2) Assert.IsFalse(_board.ProgressDisc(i).enabled, "進度盤 " + i + " 不應可見");
+        }
+
+        // ═════════════════════════ 步驟 C：組裝與完整一局（V-C01～V-C04）═════════════════════════
+
+        // 5 號光圈內的地面點：與 V-B05 修訂條文同一點（5 號塔心在 640×480 下落進 8px 邊緣死區）。
+        private static readonly Vector3 TowerFiveGroundPoint = new Vector3(-8.875f, 0f, -7.25f);
+
+        private int CountOwned(Faction faction)
+        {
+            int count = 0;
+            for (int i = 0; i < 7; i++) if (Owner(i) == faction) count++;
+            return count;
+        }
+
+        private static bool OnScreen(Vector3 screen, float margin)
+        {
+            return screen.z > 0f && screen.x >= margin && screen.x <= Screen.width - margin
+                   && screen.y >= margin && screen.y <= Screen.height - margin;
+        }
+
+        // ───────────── V-C01 真實輸入完整一局（藍勝）─────────────
+        [UnityTest]
+        public IEnumerator V_C01_ARealInputFullMatch_BlueWins_FreezesThreeSeconds_ThenLobby_AndTheSecondMatchResets()
+        {
+            yield return Setup();
+            TapCaptureButton();
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState);
+            TapOpponent();
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState);
+            Assert.AreEqual(1, _bootstrap.CaptureStartCount);
+            for (int i = 0; i < 30; i++) yield return null; // 鏡頭追上傳送後的英雄
+
+            // 真實點 5 號地面 → 270～420 幀內翻藍
+            TapWorld(TowerFiveGroundPoint, "5 號地面");
+            int f = 0;
+            while (Owner(5) != Faction.BlueTeam && f < 420)
+            {
+                yield return null;
+                f++;
+            }
+            Assert.AreEqual(Faction.BlueTeam, Owner(5), "點 5 號地面後 420 幀內應翻藍");
+            Assert.GreaterOrEqual(f, 270, "5 號翻藍太早：" + f);
+
+            // 真實點對手；投影不在畫面內就先真實點地朝它走（每次 4m），直到投影進入畫面再點。
+            bool tappedOpponent = false;
+            for (int attempt = 0; attempt < 40 && !tappedOpponent; attempt++)
+            {
+                if (_opponent.IsAlive)
+                {
+                    Vector3 screen = Camera.main.WorldToScreenPoint(_opponent.transform.position + Vector3.up);
+                    if (OnScreen(screen, 16f))
+                    {
+                        _bootstrap.WorldTapInput.SendScreenTap(screen.x, screen.y);
+                        tappedOpponent = true;
+                        break;
+                    }
+                }
+                if (_hero.IsAlive)
+                {
+                    Vector3 toward = _opponent.transform.position - _hero.transform.position;
+                    toward.y = 0f;
+                    if (toward.sqrMagnitude > 1e-4f) TapWorld(_hero.transform.position + toward.normalized * 4f, "朝對手走的點地");
+                }
+                for (int i = 0; i < 30; i++) yield return null;
+            }
+            Assert.IsTrue(tappedOpponent, "一直沒能讓對手進入畫面並點到它");
+            int g = 0;
+            while (_opponent.Health >= 300f && g < 600)
+            {
+                yield return null;
+                g++;
+            }
+            Assert.Less(_opponent.Health, 300f, "點對手後 600 幀內普攻沒有命中");
+
+            // 終局：藍方至少 1 塊後種子 (996, 目前紅分) → 126 幀內 Ended、藍勝、BLUE WINS
+            Assert.GreaterOrEqual(CountOwned(Faction.BlueTeam), 1, "種子前藍方應至少有 1 塊");
+            _bootstrap.SeedCaptureScoresForTest(996, _bootstrap.CaptureView.RedScore);
+            g = 0;
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && g < 126)
+            {
+                yield return null;
+                g++;
+            }
+            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "種子後 126 幀內應結束");
+            Assert.AreEqual(CaptureMatchResult.BlueWins, _bootstrap.CaptureView.Result);
+            Assert.AreEqual("BLUE WINS", _bootstrap.MatchStatusLabel);
+
+            // Ended 期間：點地不動、WATER 無效；174 幀時仍 Ended，186 幀前回 Lobby
+            int ended = 0;
+            Vector3 frozenAt = _hero.transform.position;
+            TapWorld(frozenAt + Vector3.right * 3f, "結算停頓中的點地");
+            _bootstrap.PressElementWaterButton();
+            Assert.AreEqual(0, _bootstrap.ElementField.ActiveZoneCount, "結算停頓中 WATER 應無效");
+            for (int i = 0; i < 30; i++)
+            {
+                yield return null;
+                ended++;
+                Assert.Less(Vector3.Distance(frozenAt, _hero.transform.position), 0.01f, "結算停頓中英雄不得移動（第 " + ended + " 幀）");
+            }
+            while (ended < 174)
+            {
+                yield return null;
+                ended++;
+            }
+            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "進入 Ended 後 174 幀時應仍在 Ended");
+            while (_bootstrap.CaptureState != CaptureMatchState.Lobby && ended < 186)
+            {
+                yield return null;
+                ended++;
+            }
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState, "進入 Ended 後 186 幀前應回到 Lobby");
+            AssertXz(_hero.transform.position, 0f, 0f, "回 Lobby 時英雄應在出生點");
+            AssertXz(_opponent.transform.position, -4f, 8f, "回 Lobby 時對手應在出生點");
+            Assert.AreEqual(100f, _hero.Health, 0.01f);
+            Assert.AreEqual(300f, _opponent.Health, 0.01f);
+            Assert.AreEqual("LAST: BLUE WINS", _bootstrap.MatchStatusLabel);
+            Assert.GreaterOrEqual(_bootstrap.CaptureView.BlueScore, 1000, "回 Lobby 後比分應保留");
+
+            // 第二局：真實點對手 → 開局次數 2、歸屬回開局狀態、比分 0／0
+            for (int i = 0; i < 30; i++) yield return null;
+            TapOpponent();
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState);
+            Assert.AreEqual(2, _bootstrap.CaptureStartCount);
+            for (int i = 0; i < 7; i++) Assert.AreEqual(OpeningOwners[i], Owner(i), "第二局開局歸屬 " + i);
+            Assert.AreEqual(0, _bootstrap.CaptureView.BlueScore);
+            Assert.AreEqual(0, _bootstrap.CaptureView.RedScore);
+        }
+
+        // ───────────── V-C02 紅勝與平手 ─────────────
+        [UnityTest]
+        public IEnumerator V_C02_RedWins_AndASimultaneousThousandIsADraw()
+        {
+            // 紅勝
+            yield return Setup();
+            EnterLobbyAndStart();
+            Assert.GreaterOrEqual(CountOwned(Faction.RedTeam), 1, "開局後紅方應至少有 1 塊");
+            _bootstrap.SeedCaptureScoresForTest(0, 996);
+            int f = 0;
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && f < 126)
+            {
+                yield return null;
+                f++;
+            }
+            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "種子 (0, 996) 後 126 幀內應結束");
+            Assert.AreEqual(CaptureMatchResult.RedWins, _bootstrap.CaptureView.Result);
+            Assert.AreEqual("RED WINS", _bootstrap.MatchStatusLabel);
+
+            // 平手：開局後第 30 幀種子 (998, 998) → 第 60～66 幀之間的那次計分同時到 1000
+            yield return Setup();
+            EnterLobbyAndStart();
+            for (f = 1; f <= 30; f++) yield return null;
+            for (int i = 0; i < 7; i++) Assert.AreEqual(OpeningOwners[i], Owner(i), "第 30 幀歸屬應仍是開局狀態 " + i);
+            _bootstrap.SeedCaptureScoresForTest(998, 998);
+            f = 30;
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && f < 66)
+            {
+                yield return null;
+                f++;
+            }
+            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "第 66 幀前應結束");
+            Assert.GreaterOrEqual(f, 60, "結束太早：第 " + f + " 幀");
+            Assert.AreEqual(CaptureMatchResult.Draw, _bootstrap.CaptureView.Result);
+            Assert.AreEqual("DRAW", _bootstrap.MatchStatusLabel);
+            Assert.AreEqual(1000, _bootstrap.CaptureView.BlueScore);
+            Assert.AreEqual(1000, _bootstrap.CaptureView.RedScore);
+        }
+
+        // ───────────── V-C03 佔領對局零配置 ─────────────
+        // 量法同 ZeroAllocationTests.cs:477-518（AllocationProbe 前後夾住全場 Update／LateUpdate，ProfilerRecorder 讀數）。
+        [UnityTest]
+        public IEnumerator V_C03_ACaptureMatchWithAFlipAKnockoutAndARespawn_AllocatesNothingInUpdateOrLateUpdate()
+        {
+            yield return Setup();
+
+            // 暖機局（量法同 ZeroAllocationTests.cs:477-518：該測試也是先等對手真的出招一次才開始量）。
+            // Mono 在倒地路徑第一次執行時 JIT 會記一次 48 bytes（診斷實測：第二次倒地 0 bytes；
+            // 用 RuntimeHelpers.PrepareMethod 預先編譯後第一次也是 0）——那是編輯器 JIT 的一次性成本，
+            // 不是每幀配置。暖機局只做「開局→英雄倒地→結算→回待機」：不翻任何塊，也不碰 5 號與 2 號的顯示物件，
+            // 免得把「每個物件第一次才配置」的錯誤實作藏起來。量測局的時間軸（開局後 60 幀起算、480 幀、第 160 幀倒地）不動。
+            EnterLobbyAndStart();
+            _hero.TakeDuelDamage(100f);
+            _bootstrap.SeedCaptureScoresForTest(998, 0);
+            int warm = 0;
+            while (_bootstrap.CaptureState != CaptureMatchState.Lobby && warm < 300)
+            {
+                yield return null;
+                warm++;
+            }
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState, "暖機局應結束並回 Lobby");
+            Assert.AreEqual(0, _bootstrap.CaptureFlipCount, "暖機局不得翻任何塊（否則會先動到量測局要換色的物件）");
+            for (int i = 0; i < 30; i++) yield return null; // 鏡頭追上回到出生點的英雄
+
+            AllocationProbe.Reset();
+            GameObject rig = new GameObject("CaptureProbeRig");
+            rig.AddComponent<AllocationProbeBegin>();
+            CaptureKnockoutDriver driver = rig.AddComponent<CaptureKnockoutDriver>();
+            driver.Hero = _hero;
+            driver.KnockoutAtFrame = 160;
+            rig.AddComponent<AllocationProbeEnd>();
+
+            TapOpponent();
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState, "量測局應開局");
+            _heroLocomotion.WarpTo(new Vector3(-10.5f, 0f, -6.0625f)); // 開局當幀傳送到 5 號塔心
+            for (int i = 0; i < 60; i++) yield return null;             // 開局後 60 幀開始量測
+
+            Assert.AreEqual(Faction.Neutral, Owner(5), "量測開始時 5 號應仍中立");
+            int flipsBefore = _bootstrap.CaptureFlipCount;
+            int respawnsBefore = _bootstrap.CaptureRespawnCount;
+            int scoreTicksBefore = _bootstrap.CaptureScoreTickCount;
+            int scoreLabelsBefore = _bootstrap.CaptureScoreLabelRecomputeCount;
+            int respawnLabelsBefore = _bootstrap.CaptureRespawnLabelRecomputeCount;
+            int swapsBefore = _board.MaterialSwapCount;
+            Vector3 opponentBefore = _opponent.transform.position;
+
+            AllocationProbe.Measuring = true;
+            for (int i = 0; i < 480; i++) yield return null;
+            AllocationProbe.Measuring = false;
+            Object.Destroy(rig);
+
+            Assert.GreaterOrEqual(AllocationProbe.Frames, 480);
+            Assert.IsTrue(driver.Fired, "驅動元件沒有在窗口第 160 幀擊倒英雄");
+            Assert.AreEqual(Faction.BlueTeam, Owner(5), "窗口內英雄應翻下 5 號（活性）");
+            Assert.GreaterOrEqual(_bootstrap.CaptureFlipCount - flipsBefore, 1, "翻塊（活性）");
+            Assert.GreaterOrEqual(_bootstrap.CaptureRespawnCount - respawnsBefore, 1, "英雄復活（活性）");
+            Assert.IsTrue(_hero.IsAlive, "窗口結束時英雄應已復活");
+            Assert.GreaterOrEqual(_bootstrap.CaptureScoreTickCount - scoreTicksBefore, 7, "計分（活性）");
+            Assert.GreaterOrEqual(Vector3.Distance(opponentBefore, _opponent.transform.position), 1.0f, "對手移動（活性）");
+            Assert.GreaterOrEqual(_bootstrap.CaptureScoreLabelRecomputeCount - scoreLabelsBefore, 1, "比分字串重算（活性）");
+            Assert.GreaterOrEqual(_bootstrap.CaptureRespawnLabelRecomputeCount - respawnLabelsBefore, 1, "復活字串重算（活性）");
+            Assert.GreaterOrEqual(_board.MaterialSwapCount - swapsBefore, 1, "地板換色（活性）");
+            Debug.Log("[CAPTURE-TEST] V-C03 frames=" + AllocationProbe.Frames + " update=" + AllocationProbe.UpdateBytes
+                      + " late=" + AllocationProbe.LateUpdateBytes + " flips=" + (_bootstrap.CaptureFlipCount - flipsBefore)
+                      + " respawns=" + (_bootstrap.CaptureRespawnCount - respawnsBefore)
+                      + " scoreTicks=" + (_bootstrap.CaptureScoreTickCount - scoreTicksBefore)
+                      + " opponentMoved=" + Vector3.Distance(opponentBefore, _opponent.transform.position)
+                      + " scoreLabels=" + (_bootstrap.CaptureScoreLabelRecomputeCount - scoreLabelsBefore)
+                      + " respawnLabels=" + (_bootstrap.CaptureRespawnLabelRecomputeCount - respawnLabelsBefore)
+                      + " swaps=" + (_board.MaterialSwapCount - swapsBefore));
+            Assert.AreEqual(0L, AllocationProbe.UpdateBytes,
+                "佔領對局 Update 在 " + AllocationProbe.Frames + " 幀內配置了 " + AllocationProbe.UpdateBytes + " bytes");
+            Assert.AreEqual(0L, AllocationProbe.LateUpdateBytes,
+                "佔領對局 LateUpdate 在 " + AllocationProbe.Frames + " 幀內配置了 " + AllocationProbe.LateUpdateBytes + " bytes");
+        }
+
+        // ───────────── V-C04 延遲模式開局只開一次 ─────────────
+        [UnityTest]
+        public IEnumerator V_C04_UnderSimulatedLatency_ATapOnTheOpponentStartsExactlyOneCaptureMatch()
+        {
+            yield return Setup();
+            TapCaptureButton();
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState);
+
+            _bootstrap.SetDuelLatencyPreset(80);
+            TapOpponent();
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState, "80 ms 模擬下開局指令不該立即生效");
+            yield return new WaitForSecondsRealtime(0.12f);
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState);
+            Assert.AreEqual(1, _bootstrap.CaptureStartCount);
+            Assert.AreEqual(0, _bootstrap.DuelStartCount, "開局點擊不得同時開單挑");
+            Assert.AreEqual(DuelRoundState.Dormant, _bootstrap.DuelState);
+
+            // 下一局：先把這局結束並回 Lobby
+            _bootstrap.SeedCaptureScoresForTest(998, 0);
+            int f = 0;
+            while (_bootstrap.CaptureState != CaptureMatchState.Lobby && f < 300)
+            {
+                yield return null;
+                f++;
+            }
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState, "第一局應結束並回 Lobby");
+            for (int i = 0; i < 30; i++) yield return null; // 鏡頭追上回到出生點的英雄
+
+            _bootstrap.SetDuelLatencyPreset(50);
+            TapOpponent();
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState, "50 ms 模擬下開局指令不該立即生效");
+            yield return new WaitForSecondsRealtime(0.12f);
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState);
+            Assert.AreEqual(2, _bootstrap.CaptureStartCount, "50 ms 模式下一次點擊只應開一局");
+            Assert.AreEqual(0, _bootstrap.DuelStartCount, "開局點擊不得同時開單挑");
+            Assert.AreEqual(DuelRoundState.Dormant, _bootstrap.DuelState);
+        }
+    }
+
+    // V-C03：在 Update 夾區內（探針架上）於窗口第 KnockoutAtFrame 幀擊倒英雄，讓倒地／復活路徑落在量測範圍裡。
+    public sealed class CaptureKnockoutDriver : MonoBehaviour
+    {
+        internal HeroController Hero;
+        public int KnockoutAtFrame = 160;
+        public int MeasuredFrames;
+        public bool Fired;
+
+        private void Update()
+        {
+            if (!AllocationProbe.Measuring || Hero == null) return;
+            MeasuredFrames++;
+            if (Fired || MeasuredFrames != KnockoutAtFrame) return;
+            Fired = true;
+            Hero.TakeDuelDamage(100f);
         }
     }
 }
