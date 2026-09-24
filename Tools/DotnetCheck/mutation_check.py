@@ -502,6 +502,17 @@ MUTATIONS = [
     ('C17', '邊界用嚴格不等號（CircleAt 的 <= 改 <）', LOGIC + "HexBoardLayout.cs",
      '                if (dx * dx + dz * dz <= radiusSq) return i;\n', '                if (dx * dx + dz * dz < radiusSq) return i;\n',
      'VA04_CircleAt_BoundaryInclusive'),
+
+    # ── v0.8.0 Capture Step A 審稿修補（2026-09-24 主對話裁定 1/2/3） ──
+    ('C18', '拿掉己方塊的排除（單獨守自家塔又空轉引導）', LOGIC + "CaptureMatchLogic.cs",
+     '            if (circle == -1 || _ownership[circle] == factionId)\n            {\n                tile = -1;\n                progress = 0f;\n                return;\n            }\n', '            if (circle == -1)\n            {\n                tile = -1;\n                progress = 0f;\n                return;\n            }\n',
+     'ReviewFix1_StandingAloneOnYourOwnBase_DoesNotChannel_ThenCapturingElsewhereStillWorks'),
+    ('C13b', '平手取索引大（SelectTargetTile 改用 <=，後面的同分覆寫前面）', LOGIC + "CaptureOpponentPolicy.cs",
+     '                if (best == -1 || distSq < bestDistSq)\n                {\n                    best = i;\n                    bestDistSq = distSq;\n                }\n', '                if (best == -1 || distSq <= bestDistSq)\n                {\n                    best = i;\n                    bestDistSq = distSq;\n                }\n',
+     'VA21_SelectTargetTile_NearestNonRedTile_SmallestIndexOnExactTie'),
+    ('C17b', '邊界用嚴格不等號（ContainsPoint 的 cross < 0f 改 <= 0f）', LOGIC + "HexBoardLayout.cs",
+     '                if (cross < 0f) return false;\n', '                if (cross <= 0f) return false;\n',
+     'VA03_TileAt_BoundaryInclusive_SmallestIndexOnOverlap'),
 ]
 
 

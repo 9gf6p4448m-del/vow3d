@@ -402,5 +402,48 @@ namespace Vow.Tests.EditMode
             Assert.AreEqual(0, logic.BlueScore);
             Assert.AreEqual(0, logic.RedScore);
         }
+
+        // 主對話 2026-09-24 審稿裁定 1（加嚴）：己方塊不引導——單獨站在自己已擁有的塔圈內不算引導，
+        // 不會每 CaptureSeconds 對自己的塊空轉一次翻塊。對照組證明離開自家塔、改去中立塊仍能正常引導。
+        [Test]
+        public void ReviewFix1_StandingAloneOnYourOwnBase_DoesNotChannel_ThenCapturingElsewhereStillWorks()
+        {
+            var logic = NewActiveMatch();
+            float bx = HexBoardLayout.CenterX(HexBoardLayout.BlueBaseTile);
+            float bz = HexBoardLayout.CenterZ(HexBoardLayout.BlueBaseTile);
+            for (int tick = 1; tick <= 20; tick++)
+            {
+                logic.Tick(0.25f, bx, bz, 17f, 17f);
+                Assert.AreEqual(-1, logic.BlueChannelingTile, "tick " + tick);
+                Assert.AreEqual(0f, logic.BlueChannelProgress, 1e-5f, "tick " + tick);
+            }
+            Assert.AreEqual(0, logic.FlipCount);
+
+            for (int tick = 21; tick <= 33; tick++) logic.Tick(0.25f, 0f, 0f, 17f, 17f);
+            Assert.AreEqual(2, logic.OwnerOf(0));
+            logic.Tick(0.25f, 0f, 0f, 17f, 17f); // 第34個tick
+            Assert.AreEqual(0, logic.OwnerOf(0));
+            Assert.AreEqual(1, logic.FlipCount);
+        }
+
+        // 主對話 2026-09-24 審稿裁定 2（修 bug）：爭奪只凍結「同一個圈」的進度；憑空出現在對方所在圈的
+        // 殘留進度（例如傳送）要視同離圈先歸零，不得帶進這次爭奪。若保留殘留進度會在第 15 個 tick 翻
+        // （2.0 + 0.25*6）；修好後第 10 個 tick 重新從 0 開始算 14 tick，第 23 個 tick 才翻。
+        [Test]
+        public void ReviewFix2_TeleportingIntoAContestedCircle_DoesNotCarryOverStaleProgress()
+        {
+            var logic = NewActiveMatch();
+            for (int tick = 1; tick <= 8; tick++) logic.Tick(0.25f, 0f, 0f, Away, Away);
+            Assert.AreEqual(2.0f, logic.BlueChannelProgress, 1e-5f);
+
+            float tx = HexBoardLayout.CenterX(2), tz = HexBoardLayout.CenterZ(2);
+            logic.Tick(0.25f, tx, tz, tx, tz); // 第9個tick：英雄直接傳到2號塔心，對手也在2號圈內（爭奪）
+            Assert.AreEqual(0f, logic.BlueChannelProgress, 1e-5f, "傳送到別的圈時，2號塔上不該帶著0號的殘留進度");
+
+            for (int tick = 10; tick <= 22; tick++) logic.Tick(0.25f, 0f, 0f, 17f, 17f);
+            Assert.AreEqual(2, logic.OwnerOf(0));
+            logic.Tick(0.25f, 0f, 0f, 17f, 17f); // 第23個tick
+            Assert.AreEqual(0, logic.OwnerOf(0));
+        }
     }
 }

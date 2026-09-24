@@ -226,6 +226,10 @@ namespace Vow.Core.Logic
         {
             if (blueCircle != -1 && blueCircle == redCircle)
             {
+                // 爭奪只凍結「同一個圈」的進度；若某方是這個 tick 才憑空出現在這個圈（例如 B 步的傳送/復活），
+                // 它在別的圈留下的殘留進度視同離圈，先歸零，不得帶進這次爭奪（否則之後回原圈會接著算，違反 E12）。
+                if (_blueTile != blueCircle) { _blueTile = -1; _blueProgress = 0f; }
+                if (_redTile != redCircle) { _redTile = -1; _redProgress = 0f; }
                 ContestTickCount++; // 雙方進度都凍結保留，不增加也不歸零
             }
             else
@@ -305,9 +309,12 @@ namespace Vow.Core.Logic
         }
 
         // ProcessChannels 對單一方套用的狀態機（不必先中立化，E9/V-A10）。
+        // 己方塊不引導（主對話 2026-09-24 審稿裁定，加嚴）：單獨站在自己已經擁有的塔圈內不算引導，
+        // 不然每 CaptureSeconds 會對自己的塊空轉一次「翻塊」。守塔爭奪（對方也在同一圈）走上面
+        // ProcessChannels 的凍結分支，不受這條影響。
         private void ProcessSide(int circle, float dt, ref int tile, ref float progress, int factionId)
         {
-            if (circle == -1)
+            if (circle == -1 || _ownership[circle] == factionId)
             {
                 tile = -1;
                 progress = 0f;
