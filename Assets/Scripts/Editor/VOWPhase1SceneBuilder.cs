@@ -59,10 +59,11 @@ namespace Vow.EditorTools
             RuneGhostPreview runeGhost = CreateRuneGhostPreview(tuning.Rune, materials.RuneGhost);
             NavGridDebugView navGridDebug = CreateNavGridDebugView(materials.NavGrid);
             Transform elementZonePool = CreateElementZonePool(materials);
+            CaptureBoardView captureBoard = CreateCaptureBoard(materials);
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
             CreateSystems(hero, opponent, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform,
-                          runeWallPool, enemyWallPool, turret, elementZonePool);
+                          runeWallPool, enemyWallPool, turret, elementZonePool, captureBoard);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -79,6 +80,7 @@ namespace Vow.EditorTools
             public Material Ground, Hero, Dummy, Wall, Bar, Flash, Decal, Telegraph, HitboxLines, RuneWall, RuneGhost, NavGrid;
             public Material EnemyWall, Turret, Bullet, Opponent;
             public Material ZoneWater, ZoneBurning, ZoneQuicksand, ZoneSteam;
+            public Material CaptureNeutral, CaptureBlue, CaptureRed;
         }
 
         private static Materials CreateMaterials()
@@ -108,7 +110,11 @@ namespace Vow.EditorTools
                 ZoneWater = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneWater", new Color(0.24f, 0.55f, 0.95f, 0.38f), true, true),
                 ZoneBurning = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneBurning", new Color(1f, 0.45f, 0.12f, 0.45f), true, true),
                 ZoneQuicksand = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneQuicksand", new Color(0.72f, 0.56f, 0.24f, 0.5f), true, true),
-                ZoneSteam = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneSteam", new Color(0.95f, 0.95f, 0.98f, 0.5f), true, true)
+                ZoneSteam = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_ZoneSteam", new Color(0.95f, 0.95f, 0.98f, 0.5f), true, true),
+                // v0.8.0 佔領板塊（E30）：中立灰／藍／紅三份預建材質，執行期只切 sharedMaterial
+                CaptureNeutral = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_CaptureNeutral", new Color(0.62f, 0.62f, 0.66f, 0.32f), true, true),
+                CaptureBlue = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_CaptureBlue", new Color(0.2f, 0.48f, 1f, 0.45f), true, true),
+                CaptureRed = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_CaptureRed", new Color(1f, 0.22f, 0.18f, 0.45f), true, true)
             };
         }
 
@@ -481,6 +487,131 @@ namespace Vow.EditorTools
             return root.transform;
         }
 
+        // ───────────────────────── v0.8.0：七塊板塊佔領（V080_CAPTURE_PLAN.md E1～E5、E23、E30）─────────────────────────
+        // 7 塊地板、7 座塔、7 個光圈、7 個進度盤全部在這裡預建（執行期禁止 CreatePrimitive）；陣列索引＝板塊索引。
+        // **一個 Collider 都沒有**（E23）：不擋路、不吃點擊射線、不登記進 BlockGrid，格點凍結常數與繞牆測試不受影響。
+        // 根物件預設關閉：不按 CAPTURE 時整組不啟用（§2.2、V-B01）。
+        private const string HexTileMeshPath = "Assets/Settings/VOW_HexTile.asset";
+        private const float HexVisualInset = 0.96f;   // 只縮地板網格讓相鄰兩塊之間露出縫；判定幾何一律以 HexBoardLayout 為準
+        private const float TowerRadius = 0.35f;
+        private const float TowerHeight = 2.4f;
+
+        private static CaptureBoardView CreateCaptureBoard(Materials materials)
+        {
+            Mesh hexMesh = EnsureHexTileMesh();
+            float ringDiameter = new CaptureTuning().CircleRadius * 2f;   // 光圈半徑的單一事實來源
+
+            GameObject root = new GameObject("CaptureBoard");
+            root.layer = IgnoreRaycastLayer;
+
+            int count = HexBoardLayout.TileCount;
+            Renderer[] floors = new Renderer[count];
+            Renderer[] towers = new Renderer[count];
+            Renderer[] rings = new Renderer[count];
+            Renderer[] discs = new Renderer[count];
+            for (int i = 0; i < count; i++)
+            {
+                GameObject tile = new GameObject("CaptureTile_" + i);
+                tile.layer = IgnoreRaycastLayer;
+                tile.transform.SetParent(root.transform, false);
+                tile.transform.localPosition = new Vector3(HexBoardLayout.CenterX(i), 0f, HexBoardLayout.CenterZ(i));
+
+                GameObject floor = new GameObject("Floor_" + i);
+                floor.layer = IgnoreRaycastLayer;
+                floor.transform.SetParent(tile.transform, false);
+                floor.transform.localPosition = new Vector3(0f, 0.01f, 0f);
+                floor.AddComponent<MeshFilter>().sharedMesh = hexMesh;
+                floors[i] = ConfigureBoardRenderer(floor.AddComponent<MeshRenderer>(), materials.CaptureNeutral, 0);
+
+                GameObject tower = CreateColliderlessCylinder("Tower_" + i, tile.transform,
+                    new Vector3(0f, TowerHeight * 0.5f, 0f), new Vector3(TowerRadius * 2f, TowerHeight * 0.5f, TowerRadius * 2f));
+                towers[i] = ConfigureBoardRenderer(tower.GetComponent<Renderer>(), materials.CaptureNeutral, 3);
+
+                GameObject ring = CreateColliderlessCylinder("Ring_" + i, tile.transform,
+                    new Vector3(0f, 0.02f, 0f), new Vector3(ringDiameter, 0.005f, ringDiameter));
+                rings[i] = ConfigureBoardRenderer(ring.GetComponent<Renderer>(), materials.CaptureNeutral, 1);
+
+                GameObject disc = CreateColliderlessCylinder("Progress_" + i, tile.transform,
+                    new Vector3(0f, 0.035f, 0f), new Vector3(0.01f, 0.01f, 0.01f));
+                discs[i] = ConfigureBoardRenderer(disc.GetComponent<Renderer>(), materials.CaptureBlue, 2);
+                discs[i].enabled = false; // 引導中才顯示
+            }
+
+            CaptureBoardView view = root.AddComponent<CaptureBoardView>();
+            SetObjectArray(view, "_floors", floors);
+            SetObjectArray(view, "_towers", towers);
+            SetObjectArray(view, "_rings", rings);
+            SetObjectArray(view, "_progressDiscs", discs);
+            SetReference(view, "_neutralMaterial", materials.CaptureNeutral);
+            SetReference(view, "_blueMaterial", materials.CaptureBlue);
+            SetReference(view, "_redMaterial", materials.CaptureRed);
+
+            root.SetActive(false);
+            return view;
+        }
+
+        private static GameObject CreateColliderlessCylinder(string objectName, Transform parent, Vector3 localPosition, Vector3 localScale)
+        {
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            go.name = objectName;
+            Object.DestroyImmediate(go.GetComponent<Collider>()); // E23：不擋路、不吃點擊、不進 BlockGrid
+            go.layer = IgnoreRaycastLayer;
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = localPosition;
+            go.transform.localScale = localScale;
+            return go;
+        }
+
+        // 半透明疊在棋盤地板上；sortingOrder 固定疊放順序（地板 < 光圈 < 進度盤 < 塔），避免同高度的透明物件互相搶排序。
+        private static Renderer ConfigureBoardRenderer(Renderer renderer, Material material, int sortingOrder)
+        {
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.sortingOrder = sortingOrder;
+            return renderer;
+        }
+
+        // 平頂六角形地板網格（E1／E2：頂點 (±7,0)、(±3.5,±6.0625)，取自 HexBoardLayout 本身），乘上 HexVisualInset 露縫。
+        // 已存在就就地覆寫內容，資產 GUID 不變（場景引用與 .meta 不會每次重建都換）。
+        private static Mesh EnsureHexTileMesh()
+        {
+            Mesh mesh = AssetDatabase.LoadAssetAtPath<Mesh>(HexTileMeshPath);
+            bool created = mesh == null;
+            if (created) mesh = new Mesh();
+            mesh.Clear();
+            mesh.name = "VOW_HexTile";
+
+            Vector3[] vertices = new Vector3[7];
+            Vector3[] normals = new Vector3[7];
+            vertices[0] = Vector3.zero;
+            normals[0] = Vector3.up;
+            for (int v = 0; v < 6; v++)
+            {
+                vertices[v + 1] = new Vector3(HexBoardLayout.VertexX(0, v) * HexVisualInset, 0f,
+                                              HexBoardLayout.VertexZ(0, v) * HexVisualInset);
+                normals[v + 1] = Vector3.up;
+            }
+
+            // HexBoardLayout 的頂點由上往下看是逆時針；Unity 正面是順時針，所以三角形寫成 (中心, v+1, v)。
+            int[] triangles = new int[18];
+            for (int v = 0; v < 6; v++)
+            {
+                triangles[v * 3] = 0;
+                triangles[v * 3 + 1] = (v + 1) % 6 + 1;
+                triangles[v * 3 + 2] = v + 1;
+            }
+
+            mesh.vertices = vertices;
+            mesh.normals = normals;
+            mesh.triangles = triangles;
+            mesh.RecalculateBounds();
+
+            if (created) AssetDatabase.CreateAsset(mesh, HexTileMeshPath);
+            else EditorUtility.SetDirty(mesh);
+            return mesh;
+        }
+
         // 批 4：擴散火浪的扇形預警載體（§4-6，不經 ISkillTelegraphService）。自有一條 LineRenderer。
         private static SectorTelegraph CreateSectorTelegraph(Material lineMaterial)
         {
@@ -534,7 +665,7 @@ namespace Vow.EditorTools
         private static void CreateSystems(HeroController hero, TrainingOpponent opponent, Camera camera, FollowCameraRig rig, Transform shakePivot,
             Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug,
             Transform arenaBoundary, Transform runeWallPool, Transform enemyWallPool, TestTurret turret,
-            Transform elementZonePool)
+            Transform elementZonePool, CaptureBoardView captureBoard)
         {
             GameObject systems = new GameObject("VOW_Systems");
 
@@ -598,6 +729,7 @@ namespace Vow.EditorTools
             SetReference(bootstrap, "_elementField", elementField);
             SetReference(bootstrap, "_sectorTelegraph", sectorTelegraph);
             SetReference(bootstrap, "_elementZonePool", elementZonePool);
+            SetReference(bootstrap, "_captureBoard", captureBoard);
         }
 
         // ───────────────────────── 專案設定 ─────────────────────────

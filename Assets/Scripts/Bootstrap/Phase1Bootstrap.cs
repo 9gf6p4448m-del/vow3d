@@ -123,6 +123,71 @@ namespace Vow.Bootstrap
         public ReactionCalloutDisplay Callouts => _callouts;
         public string HudStateLabel => _hud != null ? _hud.StateLabel : null;
 
+        // ───────────────────── v0.8.0：七塊板塊佔領迴圈（V080_CAPTURE_PLAN.md §2.1-3）─────────────────────
+        // 規則與時序全部在 CaptureMatchLogic（純邏輯、已驗收）；這裡只做 Unity 端的接線：每幀 Tick、受傷／倒地分派、
+        // 開局清場、復活傳送、牆推出、結算凍結與回待機。不按 CAPTURE 時（Off）這一段不改變單挑的任何一條路徑。
+        [SerializeField] private CaptureBoardView _captureBoard;
+        private readonly CaptureTuning _captureTuning = new CaptureTuning();
+        private CaptureMatchLogic _capture;
+        private CaptureMatchView _captureView;
+        private CombatTargetBehaviour[] _navBlockers = new CombatTargetBehaviour[0]; // 復活傳送後逐一推出（R10）
+        private Action<float> _opponentDamagedHandler;                             // 只建一次，執行期零配置
+
+        public CaptureMatchState CaptureState => _capture != null ? _capture.State : CaptureMatchState.Off;
+        public ICaptureMatchView CaptureView => _captureView;
+        public int CaptureStartCount => _capture != null ? _capture.StartCount : 0;
+        public CaptureBoardView CaptureBoard => _captureBoard;
+        public CaptureTuning CaptureTuning => _captureTuning;
+        public int CaptureFlipCount => _capture != null ? _capture.FlipCount : 0;
+        public int CaptureScoreTickCount => _capture != null ? _capture.ScoreTickCount : 0;
+        public int CaptureContestTickCount => _capture != null ? _capture.ContestTickCount : 0;
+        public int CaptureInterruptCount => _capture != null ? _capture.InterruptCount : 0;
+        public int CaptureRespawnCount => _capture != null ? _capture.RespawnCount : 0;
+
+        // CAPTURE 鈕走與真實觸控同一個入口（DebugHud.PressCaptureButton）；螢幕點＝登記給 InputRoutingManager 的矩形中心。
+        public void PressCaptureButton() { if (_hud != null) _hud.PressCaptureButton(); }
+
+        public bool TryGetCaptureButtonScreenPoint(out float x, out float y)
+        {
+            x = 0f;
+            y = 0f;
+            return _hud != null && _hud.TryGetCaptureButtonScreenPoint(out x, out y);
+        }
+
+        // HUD 字串代理（PlayMode 測試 asmdef 看不到 Vow.UI，比照 HudStateLabel）。
+        public string CaptureButtonLabel => _hud != null ? _hud.CaptureButtonLabel : null;
+        public string MatchStatusLabel => _hud != null ? _hud.MatchStatusLabel : null;
+        public string CaptureBlueScoreLabel => _hud != null ? _hud.CaptureBlueScoreLabel : null;
+        public string CaptureRedScoreLabel => _hud != null ? _hud.CaptureRedScoreLabel : null;
+        public string CaptureRespawnLabel => _hud != null ? _hud.CaptureRespawnLabel : null;
+        public int CaptureScoreLabelRecomputeCount => _hud != null ? _hud.CaptureScoreLabelRecomputeCount : 0;
+        public int CaptureRespawnLabelRecomputeCount => _hud != null ? _hud.CaptureRespawnLabelRecomputeCount : 0;
+
+#if UNITY_EDITOR
+        // PlayMode 終局用的比分種子入口（R12）：只寫兩個比分整數，不動計分時鐘、歸屬、進度。正式建置不編進去（V-D01）。
+        public void SeedCaptureScoresForTest(int blueScore, int redScore)
+        {
+            if (_capture != null) _capture.SeedScoresForTest(blueScore, redScore);
+        }
+#endif
+
+        // 符印鈕中心（螢幕座標）：與 RuneButtonView 同一個 RuneButtonLayout 算式——點下去就是真的符印觸控。
+        public bool TryGetRuneButtonScreenPoint(out float x, out float y)
+        {
+            x = 0f;
+            y = 0f;
+            if (_input == null) return false;
+            ScreenRegion button = RuneButtonLayout.Compute(Screen.width, Screen.height, _input.PixelsPerMillimeter).Button;
+            x = (button.XMin + button.XMax) * 0.5f;
+            y = (button.YMin + button.YMax) * 0.5f;
+            return true;
+        }
+
+        // 按住不放的模擬手指（V-B14：倒地前開始、復活後才放手的符印手勢）；走與真實手指相同的分流路徑。
+        public void BeginScreenHold(float x, float y) { if (_input != null) _input.BeginSimulatedHold(x, y); }
+        public void MoveScreenHold(float x, float y) { if (_input != null) _input.MoveSimulatedHold(x, y); }
+        public void EndScreenHold() { if (_input != null) _input.EndSimulatedHold(); }
+
         private void Awake()
         {
             // 紅線 6：畫面與輸入鎖定 120Hz（輸入取樣頻率由 PlayerInputService 設定 InputSystem.pollingFrequency）。
@@ -166,7 +231,13 @@ namespace Vow.Bootstrap
                 _opponentLocomotion = _opponent.GetComponent<HeroLocomotion>();
                 _opponent.Initialize(_hero, _opponentTelegraph, _duelTuning,
                                      new GridNavigator(_navGrid, _navTuning), _navTuning.BodyRadius);
+
+                _capture = new CaptureMatchLogic(_captureTuning);
+                _captureView = new CaptureMatchView(_capture);
+                _opponent.ConfigureCapture(_captureView, _captureTuning);
+                InitializeCaptureBoard();
             }
+            _navBlockers = CollectNavBlockers(targets);
 
             _input.Initialize(_targets, _camera);
             // 批 3：「哪些石牆算自家牆」由本地陣營決定（點自家牆＝點到牆後的地板，§4-1）。
@@ -184,8 +255,9 @@ namespace Vow.Bootstrap
             }
             if (_duelRound != null)
             {
-                _duelInput = new DuelInputRouter(heroInput, heroRuneInput, _opponent, _duelRound);
+                _duelInput = new DuelInputRouter(heroInput, heroRuneInput, _opponent, _duelRound, _captureView);
                 _duelInput.OnStartRequested += StartDuel;
+                _duelInput.OnCaptureStartRequested += StartCapture;
                 heroInput = _duelInput;
                 heroRuneInput = _duelInput;
             }
@@ -206,8 +278,12 @@ namespace Vow.Bootstrap
             if (_duelRound != null)
             {
                 _hero.ConfigureDuel(_duelTuning, _shield);
-                _hero.OnKnockedOut += HandleDuelKnockout;
-                _opponent.OnDied += HandleDuelKnockout;
+                // v0.8.0：倒地依模式分派（§2.1-3）——佔領對局中走 CaptureMatchLogic，其餘照舊走 HandleDuelKnockout。
+                _hero.OnKnockedOut += HandleHeroKnockedOut;
+                _opponent.OnDied += HandleOpponentDied;
+                _hero.OnDuelDamaged += HandleHeroDamaged;
+                _opponentDamagedHandler = HandleOpponentDamaged;
+                _opponent.OnDamaged += _opponentDamagedHandler;
             }
             // 「此刻放手會不會取消」是本機回饋，讀未經延遲的 _input，lambda 只在這裡建一次。
             if (_runeGhost != null && _tuningAsset != null)
@@ -241,6 +317,7 @@ namespace Vow.Bootstrap
                                 spawnEnemyWall, toggleTurret, turretFiring, _shield,
                                 castWater, castFire, castWind, toggleElement, elementBlue, _elementCooldowns);
                 if (_duelRound != null) _hud.ConfigureDuel(ReadOpponentHealth, _duelRound);
+                if (_captureView != null) _hud.ConfigureCapture(_captureView, HandleCaptureButton);
             }
             if (_aimPreview != null) _aimPreview.Initialize(_hero, _input, _telegraph, _camera);
         }
@@ -249,17 +326,22 @@ namespace Vow.Bootstrap
         {
             if (_hero != null && _feedback != null) _hero.StateMachine.OnStateChanged -= HandleHeroStateChanged;
             if (_hero != null) _hero.OnRootedStarted -= HandleHeroRooted;
-            if (_hero != null) _hero.OnKnockedOut -= HandleDuelKnockout;
-            if (_opponent != null) _opponent.OnDied -= HandleDuelKnockout;
+            if (_hero != null) _hero.OnKnockedOut -= HandleHeroKnockedOut;
+            if (_hero != null) _hero.OnDuelDamaged -= HandleHeroDamaged;
+            if (_opponent != null) _opponent.OnDied -= HandleOpponentDied;
+            if (_opponent != null && _opponentDamagedHandler != null) _opponent.OnDamaged -= _opponentDamagedHandler;
             if (_duelInput != null)
             {
                 _duelInput.OnStartRequested -= StartDuel;
+                _duelInput.OnCaptureStartRequested -= StartCapture;
                 _duelInput.Dispose();
             }
         }
 
         private void Update()
         {
+            // v0.8.0（R15）：佔領 Tick 必須排在單挑的提早 return 之前，否則永遠跑不到。
+            TickCapture(Time.deltaTime);
             if (_duelRound == null || !_duelRound.Tick(Time.deltaTime)) return;
             _latency?.CancelPendingForRound();
             _input?.CancelActiveGesturesForRound();
@@ -293,6 +375,195 @@ namespace Vow.Bootstrap
         }
 
         private float ReadOpponentHealth() { return _opponent != null ? _opponent.Health : 0f; }
+
+        // ───────────────────── v0.8.0：佔領迴圈的 Unity 端接線 ─────────────────────
+
+        private void InitializeCaptureBoard()
+        {
+            if (_captureBoard == null)
+            {
+                Debug.LogError("[VOW] 場景缺少 CaptureBoard 引用：佔領模式看不到板塊、晶塔與進度盤（規則照跑）。" +
+                               "請執行 VOW/Phase 1/Build Greybox Scene 重建場景。", this);
+                return;
+            }
+            _captureBoard.Initialize(_captureView, _captureTuning);
+            _captureBoard.SetShown(false); // Off 時整組不啟用（V-B01）
+        }
+
+        // 全場會擋路的牆（符印牆池、敵方牆池、兩面測試牆）。只在 Start 收一次，復活傳送後逐一推出。
+        private static CombatTargetBehaviour[] CollectNavBlockers(CombatTargetBehaviour[] targets)
+        {
+            int count = 0;
+            for (int i = 0; i < targets.Length; i++)
+                if (targets[i] is RuneWall || targets[i] is TestWallTarget) count++;
+            CombatTargetBehaviour[] blockers = new CombatTargetBehaviour[count];
+            int next = 0;
+            for (int i = 0; i < targets.Length; i++)
+                if (targets[i] is RuneWall || targets[i] is TestWallTarget) blockers[next++] = targets[i];
+            return blockers;
+        }
+
+        private MatchGateDecision CurrentGate()
+        {
+            return MatchGate.Evaluate(DuelState, CaptureState, _capture == null || !_capture.BlueKnockedOut);
+        }
+
+        // 元素／砲台／敵牆的閘門（R3）：Off 時與 v0.7.0 的「DuelState != Dormant」逐列相同（V-A20）。
+        private bool ElementsLocked => CurrentGate().ElementsLocked;
+
+        // Tick 內的順序凍結在 CaptureMatchLogic（§2.1-1）；這裡在它之後依序取出一次性事件：復活 → 結束 → 回待機。
+        private void TickCapture(float dt)
+        {
+            if (_capture == null || _capture.State == CaptureMatchState.Off) return;
+
+            CaptureMatchState before = _capture.State;
+            Vector3 heroPosition = _hero.transform.position;
+            Vector3 opponentPosition = _opponent.transform.position;
+            _capture.Tick(dt, heroPosition.x, heroPosition.z, opponentPosition.x, opponentPosition.z);
+
+            if (_capture.TryConsumeBlueRespawn(out float blueX, out float blueZ)) RespawnHero(blueX, blueZ);
+            if (_capture.TryConsumeRedRespawn(out float redX, out float redZ)) RespawnOpponent(redX, redZ);
+            if (before == CaptureMatchState.Active && _capture.State == CaptureMatchState.Ended) EnterCaptureEndPause();
+            if (_capture.TryConsumeJustReturnedToLobby()) ReturnToCaptureLobby();
+        }
+
+        // 佔領開局（E18）：清場規則直接沿用 v0.7.0 的 StartDuel；另外雙方傳送到各自基地復活點並補滿血。
+        // 敵方牆一併收掉（E28：待機時可用的測試設施「開局時清掉」）。
+        private void StartCapture()
+        {
+            if (_capture == null || !_capture.TryStart()) return;
+            _hero.CancelCombatForDuel();
+            _shield?.Clear();
+            _elementField?.ClearZonesForDuel();
+            _elementCooldowns?.ResetForRound();
+            _runeCaster?.ResetForRound();
+            _turret?.CancelProjectilesForRound();
+            _latency?.CancelPendingForRound();
+            CollapseEnemyWalls();
+
+            _hero.ResetForDuel(new Vector3(_captureTuning.BlueHomeRespawnX, _heroSpawn.y, _captureTuning.BlueHomeRespawnZ));
+            _hero.SetBodyHidden(false);
+            _opponent.RespawnAt(new Vector3(_captureTuning.RedHomeRespawnX, _opponent.transform.position.y,
+                                            _captureTuning.RedHomeRespawnZ));
+        }
+
+        private void CollapseEnemyWalls()
+        {
+            if (_enemyWalls == null || _enemyWalls.Pool == null) return;
+            RuneWall[] pool = _enemyWalls.Pool;
+            for (int i = 0; i < pool.Length; i++)
+                if (pool[i] != null && pool[i].IsAlive) pool[i].CollapseWall(false);
+        }
+
+        private void HandleHeroKnockedOut()
+        {
+            if (CaptureState == CaptureMatchState.Active)
+            {
+                // 佔領：5 秒後回基地復活，歸屬與比分保留（裁定 4）。倒地期間身體關掉（E19），
+                // 延遲層與進行中的手勢清掉，免得倒地前按下、復活後才放手的指令生效（V-B14）。
+                _capture.NotifyKnockedOut(CaptureMatchLogic.BlueFactionId);
+                _hero.SetBodyHidden(true);
+                _latency?.CancelPendingForRound();
+                _input?.CancelActiveGesturesForRound();
+                return;
+            }
+            HandleDuelKnockout();
+        }
+
+        private void HandleOpponentDied()
+        {
+            if (CaptureState == CaptureMatchState.Active)
+            {
+                _capture.NotifyKnockedOut(CaptureMatchLogic.RedFactionId);
+                _opponent.SetBodyHidden(true); // TrainingOpponent.HandleDeath 另外會 StopRound（停 AI、收預警）
+                return;
+            }
+            HandleDuelKnockout();
+        }
+
+        // 受傷打斷引導（E11）：英雄的事件在扣護盾之前發（護盾全額吸收也算）；對手走既有的 OnDamaged。
+        private void HandleHeroDamaged()
+        {
+            if (CaptureState == CaptureMatchState.Active) _capture.NotifyDamaged(CaptureMatchLogic.BlueFactionId);
+        }
+
+        private void HandleOpponentDamaged(float applied)
+        {
+            if (CaptureState == CaptureMatchState.Active) _capture.NotifyDamaged(CaptureMatchLogic.RedFactionId);
+        }
+
+        // 復活（E20／E21）：座標由 CaptureMatchLogic 在到期那個 tick 決定；補滿血並沿用 ResetForDuel 的清單。
+        private void RespawnHero(float x, float z)
+        {
+            _latency?.CancelPendingForRound();
+            _input?.CancelActiveGesturesForRound();
+            _hero.ResetForDuel(new Vector3(x, _heroSpawn.y, z));
+            _hero.SetBodyHidden(false);
+            EjectFromLiveWalls(_heroLocomotion);
+        }
+
+        private void RespawnOpponent(float x, float z)
+        {
+            _opponent.RespawnAt(new Vector3(x, _opponent.transform.position.y, z));
+            EjectFromLiveWalls(_opponentLocomotion);
+        }
+
+        // R10：HandleNavBlockerStamped 只推「立牆當下」被壓住的人（而且對手只在 IsEngaged 時才推），
+        // 倒地期間立在復活點上的牆推不到剛復活的人——所以復活傳送後對仍存活的每一面牆各推一次。
+        private void EjectFromLiveWalls(HeroLocomotion body)
+        {
+            if (body == null) return;
+            for (int i = 0; i < _navBlockers.Length; i++)
+            {
+                CombatTargetBehaviour wall = _navBlockers[i];
+                if (wall == null || !wall.IsAlive) continue;
+                if (!wall.TryGetNavBlockerBox(out float centerX, out float centerZ, out float normalX, out float normalZ,
+                                              out float halfWidth, out float halfThickness))
+                    continue;
+                body.EjectFromBox(centerX, centerZ, normalX, normalZ, halfWidth, halfThickness);
+            }
+        }
+
+        // 結算停頓（E17）：凍結英雄輸入與對手 AI；計分、引導、復活由 CaptureMatchLogic 自己停住。
+        private void EnterCaptureEndPause()
+        {
+            _hero.CancelCombatForDuel();
+            _opponent.StopRound();
+            _opponentTelegraph?.HideIndicator();
+            _latency?.CancelPendingForRound();
+            _input?.CancelActiveGesturesForRound();
+        }
+
+        // 回佔領待機（E17／E22）：雙方回 v0.7.0 出生點並補滿血，收牆走正常 CollapseWall；歸屬、比分、結果保留顯示。
+        private void ReturnToCaptureLobby()
+        {
+            _latency?.CancelPendingForRound();
+            _input?.CancelActiveGesturesForRound();
+            _hero.ResetForDuel(_heroSpawn);
+            _hero.SetBodyHidden(false);
+            _opponent.ReturnToCaptureLobby();
+            _runeCaster?.ResetForRound();
+            _elementCooldowns?.ResetForRound();
+        }
+
+        // CAPTURE 鈕（E27）：只在「單挑待機」與「佔領待機」之間切換；其餘狀態按了無效（觸控照樣被攔下）。
+        private void HandleCaptureButton()
+        {
+            if (_capture == null) return;
+            CaptureButtonAction action = CurrentGate().CaptureButton;
+            if (action == CaptureButtonAction.EnterCaptureMode)
+            {
+                if (!_capture.TryEnterCaptureMode()) return;
+                _opponent.SetCaptureMode(true);
+                if (_captureBoard != null) _captureBoard.SetShown(true);
+            }
+            else if (action == CaptureButtonAction.ExitCaptureMode)
+            {
+                if (!_capture.TryExitCaptureMode()) return;
+                _opponent.SetCaptureMode(false);
+                if (_captureBoard != null) _captureBoard.SetShown(false);
+            }
+        }
 
         // ───────────────────── Phase 2 批 2：阻擋格點的組裝 ─────────────────────
 
@@ -502,21 +773,21 @@ namespace Vow.Bootstrap
         // 不重置冷卻、不扣任何東西（§4-12）。
         private void CastElementWater()
         {
-            if (DuelState != DuelRoundState.Dormant) return;
+            if (ElementsLocked) return;
             if (!_elementCooldowns.TryBeginCast(ElementCast.Water, Time.time)) return;
             _elementField.CastWater(ElementCastPoint(), (int)_elementFaction);
         }
 
         private void CastElementFire()
         {
-            if (DuelState != DuelRoundState.Dormant) return;
+            if (ElementsLocked) return;
             if (!_elementCooldowns.TryBeginCast(ElementCast.Fire, Time.time)) return;
             _elementField.CastFire(ElementCastPoint(), (int)_elementFaction);
         }
 
         private void CastElementWind()
         {
-            if (DuelState != DuelRoundState.Dormant) return;
+            if (ElementsLocked) return;
             if (!_elementCooldowns.TryBeginCast(ElementCast.Wind, Time.time)) return;
             _elementField.CastWind(_hero.transform.position, _hero.transform.forward, (int)_elementFaction);
         }
@@ -524,7 +795,7 @@ namespace Vow.Bootstrap
         // ELEM 鈕無冷卻；切換只影響**之後**施放的技能，已成形的區域陣營不變（§4-12）。
         private void ToggleElementFaction()
         {
-            if (DuelState != DuelRoundState.Dormant) return;
+            if (ElementsLocked) return;
             _elementFaction = _elementFaction == Faction.BlueTeam ? Faction.RedTeam : Faction.BlueTeam;
         }
 
@@ -545,13 +816,13 @@ namespace Vow.Bootstrap
 
         private void SpawnEnemyWall()
         {
-            if (DuelState != DuelRoundState.Dormant) return;
+            if (ElementsLocked) return;
             if (_enemyWalls != null) _enemyWalls.Spawn();
         }
 
         private void ToggleTurret()
         {
-            if (DuelState != DuelRoundState.Dormant) return;
+            if (ElementsLocked) return;
             if (_turret != null) _turret.SetFiring(!_turret.IsFiring);
         }
 
@@ -611,6 +882,7 @@ namespace Vow.Bootstrap
                 if (boundary != null) _arenaBoundary = boundary.transform;
             }
             if (_opponent == null) _opponent = FindObjectOfType<TrainingOpponent>();
+            if (_captureBoard == null) _captureBoard = FindObjectOfType<CaptureBoardView>(true); // 預設是關著的
             if (_runeWallPool == null)
             {
                 GameObject pool = GameObject.Find("RuneWallPool");

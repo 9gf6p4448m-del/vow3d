@@ -126,6 +126,49 @@ namespace Vow.Input
             Router.CancelActiveTouches();
         }
 
+        // ── v0.8.0 驗收用：一根按住不放的模擬手指（V080_CAPTURE_PLAN.md V-B14「倒地前開始、復活後才放手的符印手勢」）──
+        // 真實觸控每幀都會回報仍在螢幕上的手指；只送一次 Began 的話，下一幀 EndFrame 會把它當成「沒出現就消失」回收。
+        // 所以按住期間由 Update 每幀補一筆 Stationary，走的仍是與真實手指一模一樣的分流與手勢狀態機。
+        private const int SimulatedHoldTouchIdBase = -3000;
+        private bool _simulatedHoldActive;
+        private int _simulatedHoldTouchId;
+        private float _simulatedHoldX;
+        private float _simulatedHoldY;
+        private double _simulatedHoldStartTime;
+        private int _simulatedHoldCount;
+
+        public bool IsSimulatedHoldActive => _simulatedHoldActive;
+
+        public void BeginSimulatedHold(float screenX, float screenY)
+        {
+            if (_simulatedHoldActive) EndSimulatedHold();
+            double now = Time.unscaledTimeAsDouble;
+            _simulatedHoldTouchId = SimulatedHoldTouchIdBase - _simulatedHoldCount;
+            _simulatedHoldCount++;
+            _simulatedHoldActive = true;
+            _simulatedHoldX = screenX;
+            _simulatedHoldY = screenY;
+            _simulatedHoldStartTime = now;
+            Router.ProcessTouch(_simulatedHoldTouchId, TouchPhaseKind.Began, screenX, screenY, now, now);
+        }
+
+        public void MoveSimulatedHold(float screenX, float screenY)
+        {
+            if (!_simulatedHoldActive) return;
+            _simulatedHoldX = screenX;
+            _simulatedHoldY = screenY;
+            Router.ProcessTouch(_simulatedHoldTouchId, TouchPhaseKind.Moved, screenX, screenY,
+                                Time.unscaledTimeAsDouble, _simulatedHoldStartTime);
+        }
+
+        public void EndSimulatedHold()
+        {
+            if (!_simulatedHoldActive) return;
+            _simulatedHoldActive = false;
+            Router.ProcessTouch(_simulatedHoldTouchId, TouchPhaseKind.Ended, _simulatedHoldX, _simulatedHoldY,
+                                Time.unscaledTimeAsDouble, _simulatedHoldStartTime);
+        }
+
         private void Awake()
         {
             if (_worldCamera == null) _worldCamera = Camera.main;
@@ -173,6 +216,9 @@ namespace Vow.Input
             }
             if (touches.Count > 0) _lastRealTouchTime = now;
             FeedMouse(router, now);
+            if (_simulatedHoldActive)
+                router.ProcessTouch(_simulatedHoldTouchId, TouchPhaseKind.Stationary, _simulatedHoldX, _simulatedHoldY,
+                                    now, _simulatedHoldStartTime);
             router.EndFrame();
 
             EmitHeldPipVector(router);

@@ -169,6 +169,40 @@ public interface IPlayerStateMachine
 * `AttackRelease` 狀態下，若收到 `OnCadenceVectorFlicked` 且充能 > 0，**0 幀立即轉換為 `CadenceDashing`**，消耗 1 格充能。
 * `AttackRelease` 狀態結束時若無微彈，**平滑切換至 `AttackRecovery` (0.15s)**，期間狂點螢幕平穩排隊，**嚴禁觸發卡刀硬直**。
 
+### 6. 板塊佔領唯讀視圖：`ICaptureMatchView`
+```csharp
+using Vow.Core.Logic; // CaptureMatchState、CaptureMatchResult
+
+public interface ICaptureMatchView
+{
+    CaptureMatchState State { get; }          // Off / Lobby / Active / Ended
+    int TileCount { get; }                    // 7（中央 1＋一圈 6）
+    Faction OwnerOf(int tileIndex);           // Neutral / BlueTeam / RedTeam，不新增 enum
+
+    int BlueScore { get; }
+    int RedScore { get; }
+
+    int BlueChannelingTile { get; }           // -1＝沒有在引導
+    float BlueChannelProgress { get; }        // 秒，滿 3.5 翻塊
+    int RedChannelingTile { get; }
+    float RedChannelProgress { get; }
+
+    bool BlueKnockedOut { get; }
+    float BlueRespawnRemaining { get; }       // 秒，倒數 5.0
+    bool RedKnockedOut { get; }
+    float RedRespawnRemaining { get; }
+
+    CaptureMatchResult Result { get; }        // 本局結果（Ended 時有值）
+    CaptureMatchResult LastResult { get; }    // 上一局結果（回待機後保留顯示）
+}
+```
+
+**契約約束**（`docs/V080_CAPTURE_PLAN.md` §2.1-2）：
+* 唯一的事實來源是 `Vow.Core.Logic.CaptureMatchLogic`（零 UnityEngine 的純邏輯）；本介面**唯讀**，所有寫入（`Tick`、受傷、倒地、開局）只經組裝根 `Phase1Bootstrap`。
+* HUD（Vow.UI）、板塊顯示（Vow.Combat 的 `CaptureBoardView`）、輸入路由（Vow.Input 的 `DuelInputRouter`）**只依賴這個介面**，不直接碰 `CaptureMatchLogic`。
+* 純邏輯用 int 陣營代碼（Blue=0、Red=1、Neutral=2）；轉成 `Faction` 的轉接在 Bootstrap 層（`Vow.Bootstrap.CaptureMatchView`）——`CaptureMatchLogic` 不得引用定義在含 `using UnityEngine` 檔案裡的 `Faction`。第一次開局之前 `OwnerOf` 一律回 `Neutral`。
+* `ICombatTarget`、`ISkillTelegraphService`、`IPlayerInputService` 的簽章不因佔領模式改動。
+
 ---
 
 ## 肆、 現代網絡架構規範 (Authoritative Netcode)

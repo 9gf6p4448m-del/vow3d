@@ -53,6 +53,16 @@ namespace Vow.Core
         public bool IsAlive => _vitality == null || _vitality.IsAlive;
         public event Action OnKnockedOut;
 
+        // v0.8.0（V080_CAPTURE_PLAN.md R13／E11）：被打中就發，發在扣護盾**之前**——護盾全額吸收也算受傷，
+        // 佔領引導據此打斷（只看 HP 有沒有下降的話，護盾會讓英雄挨打時照樣引導）。
+        public event Action OnDuelDamaged;
+
+        // v0.8.0（E19）：佔領對局倒地期間整個身體關掉——Renderer 不畫、Collider 不擋路也點不到。
+        // 陣列在 Awake 抓一次（模型是場景建置器預建的子物件），切換時零配置。
+        private Renderer[] _bodyRenderers;
+        private Collider[] _bodyColliders;
+        public bool IsBodyHidden { get; private set; }
+
         public event Action OnAttackWindupStarted;
         public event Action<ICombatTarget> OnAttackHitResolved;
 
@@ -76,6 +86,19 @@ namespace Vow.Core
 
             _quicksand = new QuicksandStatusLogic(_elementTuning);
             _vitality = new HeroVitality(new DuelTuning().HeroHealth);
+
+            _bodyRenderers = GetComponentsInChildren<Renderer>(true);
+            _bodyColliders = GetComponentsInChildren<Collider>(true);
+        }
+
+        // 佔領對局的倒地顯示切換（E19）。單挑模式從不呼叫它。
+        public void SetBodyHidden(bool hidden)
+        {
+            IsBodyHidden = hidden;
+            for (int i = 0; i < _bodyRenderers.Length; i++)
+                if (_bodyRenderers[i] != null) _bodyRenderers[i].enabled = !hidden;
+            for (int i = 0; i < _bodyColliders.Length; i++)
+                if (_bodyColliders[i] != null) _bodyColliders[i].enabled = !hidden;
         }
 
         public void ConfigureDuel(DuelTuning tuning, IRockShield shield)
@@ -87,6 +110,7 @@ namespace Vow.Core
         public void TakeDuelDamage(float amount)
         {
             if (!IsAlive || amount <= 0f) return;
+            OnDuelDamaged?.Invoke();
             if (_shield != null) amount = _shield.Absorb(amount);
             if (!_vitality.TakeDamage(amount)) return;
             CancelCombatForDuel();

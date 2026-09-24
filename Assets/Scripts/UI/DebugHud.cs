@@ -87,6 +87,123 @@ namespace Vow.UI
             _duelRound = round;
         }
 
+        // ── v0.8.0：CAPTURE 鈕與右上面板的佔領兩列（V080_CAPTURE_PLAN.md §2.4、E27、E29）──
+        // HUD 只依賴 ICaptureMatchView；按鈕的動作走 Phase1Bootstrap 交進來的委派（UI 不得反向依賴 Bootstrap）。
+        private ICaptureMatchView _captureView;
+        private Action _pressCapture;
+        private int _captureRegion = -1;
+        private Rect _captureRect;
+        private Rect _matchPanelRect;
+        private float _matchPanelCaptureHeight = 116f;
+
+        private int _blueScoreShown = -1;
+        private int _redScoreShown = -1;
+        private string _blueScoreLabel = CaptureHudLabels.Score(0);
+        private string _redScoreLabel = CaptureHudLabels.Score(0);
+        private int _respawnSecondsShown = -1;
+        private string _respawnLabel;
+
+        // 比分／復活字串被重算過幾次（零配置量測的活性，V-C03）。
+        public int CaptureScoreLabelRecomputeCount { get; private set; }
+        public int CaptureRespawnLabelRecomputeCount { get; private set; }
+
+        public void ConfigureCapture(ICaptureMatchView view, Action pressCapture)
+        {
+            _captureView = view;
+            _pressCapture = pressCapture;
+            if (_input != null && _pressCapture != null && _captureRegion < 0)
+                _captureRegion = _input.Routing.RegisterUiRegion(default);
+            RecalculateLayout();
+        }
+
+        public void PressCaptureButton() { if (_pressCapture != null) _pressCapture(); }
+
+        public bool TryGetCaptureButtonScreenPoint(out float x, out float y)
+        {
+            return TryGetButtonScreenPoint(_pressCapture != null && _captureRegion >= 0, _captureRect, out x, out y);
+        }
+
+        private bool InCaptureMode => _captureView != null && _captureView.State != CaptureMatchState.Off;
+
+        private MatchGateDecision CurrentGate()
+        {
+            CaptureMatchState captureState = _captureView != null ? _captureView.State : CaptureMatchState.Off;
+            bool heroAlive = _captureView == null || !_captureView.BlueKnockedOut;
+            return MatchGate.Evaluate(_duelRound != null ? _duelRound.State : DuelRoundState.Dormant, captureState, heroAlive);
+        }
+
+        // 元素／砲台／敵牆鈕反灰：Off 模式與 v0.7.0 的「DuelState != Dormant」逐列相同（V-A20）。
+        private bool ElementsLocked => _duelRound != null && CurrentGate().ElementsLocked;
+
+        public string CaptureButtonLabel => InCaptureMode ? CaptureHudLabels.CaptureButtonLabelOn : CaptureHudLabels.CaptureButtonLabelOff;
+
+        // 右上面板第 0 列。Off 時沿用 v0.7.0 的單挑字串。
+        public string MatchStatusLabel
+        {
+            get
+            {
+                if (!InCaptureMode)
+                {
+                    if (_duelRound == null) return null;
+                    return _duelRound.State == DuelRoundState.Dormant ? "TAP RED TO START"
+                         : _duelRound.State == DuelRoundState.Active ? "DUEL ACTIVE" : "RESETTING";
+                }
+                switch (_captureView.State)
+                {
+                    case CaptureMatchState.Active: return CaptureHudLabels.StatusActive;
+                    case CaptureMatchState.Ended: return ResultLabel(_captureView.Result, false);
+                    default: return _captureView.LastResult == CaptureMatchResult.None
+                        ? CaptureHudLabels.StatusLobby : ResultLabel(_captureView.LastResult, true);
+                }
+            }
+        }
+
+        public string CaptureBlueScoreLabel => _blueScoreLabel;
+        public string CaptureRedScoreLabel => _redScoreLabel;
+        public string CaptureRespawnLabel => _captureView != null && _captureView.State == CaptureMatchState.Active
+                                             && _captureView.BlueKnockedOut ? _respawnLabel : null;
+
+        private static string ResultLabel(CaptureMatchResult result, bool last)
+        {
+            switch (result)
+            {
+                case CaptureMatchResult.BlueWins: return last ? CaptureHudLabels.StatusLastBlueWins : CaptureHudLabels.StatusBlueWins;
+                case CaptureMatchResult.RedWins: return last ? CaptureHudLabels.StatusLastRedWins : CaptureHudLabels.StatusRedWins;
+                case CaptureMatchResult.Draw: return last ? CaptureHudLabels.StatusLastDraw : CaptureHudLabels.StatusDraw;
+                default: return CaptureHudLabels.StatusLobby;
+            }
+        }
+
+        // 比分與復活倒數：只在數值真的變了才查表換字串（查預建表，零配置）。
+        private void RefreshCaptureLabels()
+        {
+            if (_captureView == null) return;
+
+            int blue = _captureView.BlueScore;
+            if (blue != _blueScoreShown)
+            {
+                _blueScoreShown = blue;
+                _blueScoreLabel = CaptureHudLabels.Score(blue);
+                CaptureScoreLabelRecomputeCount++;
+            }
+            int red = _captureView.RedScore;
+            if (red != _redScoreShown)
+            {
+                _redScoreShown = red;
+                _redScoreLabel = CaptureHudLabels.Score(red);
+                CaptureScoreLabelRecomputeCount++;
+            }
+
+            if (!_captureView.BlueKnockedOut) return;
+            float remaining = _captureView.BlueRespawnRemaining;
+            int whole = (int)remaining;
+            int seconds = remaining > whole ? whole + 1 : whole;
+            if (seconds == _respawnSecondsShown && _respawnLabel != null) return;
+            _respawnSecondsShown = seconds;
+            _respawnLabel = CaptureHudLabels.Respawn(remaining);
+            CaptureRespawnLabelRecomputeCount++;
+        }
+
         // 零配置字串表：冷卻標籤一律查表，**不得字串串接**。索引＝ElementCastCooldowns.RemainingLabelIndex
         //（0 ＝可用；1..5 ＝向上取整的剩餘秒），所以**索引就是剩餘秒數**：表要遞增排。
         // 反過來排的話按下當下（index 5）會顯示「WATER 1」，4 秒後（index 1）顯示「WATER 5」——V4-n 守這條。
@@ -275,6 +392,7 @@ namespace Vow.UI
             if (Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight) RecalculateLayout();
 
             RefreshElementLabels();
+            RefreshCaptureLabels();
 
             // 護盾數值：只在整數變動時查表，不是每幀組字串（IntStringCache 已預先快取，零配置）。
             int shieldNow = _shield != null ? Mathf.RoundToInt(_shield.Amount) : 0;
@@ -372,6 +490,10 @@ namespace Vow.UI
             {
                 PressElementFactionButton();
             }
+            else if (regionId == _captureRegion)
+            {
+                PressCaptureButton();
+            }
         }
 
         private void RecalculateLayout()
@@ -401,6 +523,11 @@ namespace Vow.UI
             _windRect = ToRect(layout.Wind);
             _elemRect = ToRect(layout.Elem);
             _panelHeight = layout.PanelHeight;
+            // v0.8.0：右上面板與 CAPTURE 鈕同樣向 DebugHudLayout 要（§2.4／R14）。Off 時面板高 72，佔領模式另取 116 那一份。
+            _matchPanelRect = ToRect(layout.MatchPanel);
+            _captureRect = ToRect(layout.Capture);
+            _matchPanelCaptureHeight = DebugHudLayout.Compute(Screen.width, Screen.height, dpi,
+                _latency != null, _gridVisible != null, _toggleTurret != null || _spawnEnemyWall != null, true).MatchPanel.Height;
 
             if (_input == null) return;
             _input.Routing.UpdateUiRegion(_modeRegion, ToScreenRegion(_modeRect));
@@ -413,6 +540,7 @@ namespace Vow.UI
             _input.Routing.UpdateUiRegion(_fireRegion, ToScreenRegion(_fireRect));
             _input.Routing.UpdateUiRegion(_windRegion, ToScreenRegion(_windRect));
             _input.Routing.UpdateUiRegion(_elemRegion, ToScreenRegion(_elemRect));
+            _input.Routing.UpdateUiRegion(_captureRegion, ToScreenRegion(_captureRect));
         }
 
         private static Rect ToRect(HudRect rect)
@@ -527,25 +655,25 @@ namespace Vow.UI
             // ── 批 4：四顆元素除錯鈕。標籤一律查預建字串表（見 Update 的 RefreshElementLabels）──
             if (_castWater != null)
             {
-                Fill(_waterRect, _duelRound != null && _duelRound.State != DuelRoundState.Dormant
+                Fill(_waterRect, ElementsLocked
                     ? ButtonCooldownColor : _waterIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
                 GUI.Label(_waterRect, _waterLabel, _buttonLabel);
             }
             if (_castFire != null)
             {
-                Fill(_fireRect, _duelRound != null && _duelRound.State != DuelRoundState.Dormant
+                Fill(_fireRect, ElementsLocked
                     ? ButtonCooldownColor : _fireIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
                 GUI.Label(_fireRect, _fireLabel, _buttonLabel);
             }
             if (_castWind != null)
             {
-                Fill(_windRect, _duelRound != null && _duelRound.State != DuelRoundState.Dormant
+                Fill(_windRect, ElementsLocked
                     ? ButtonCooldownColor : _windIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
                 GUI.Label(_windRect, _windLabel, _buttonLabel);
             }
             if (_toggleElementFaction != null)
             {
-                Fill(_elemRect, _duelRound != null && _duelRound.State != DuelRoundState.Dormant
+                Fill(_elemRect, ElementsLocked
                     ? ButtonCooldownColor : _elemBlueShown == 1 ? ElemBlueColor : ElemRedColor);
                 GUI.Label(_elemRect, _elemLabel, _buttonLabel);
             }
@@ -560,17 +688,34 @@ namespace Vow.UI
         private void DrawDuelPanel()
         {
             if (_duelRound == null || _hero == null || _opponentHealth == null) return;
-            float x = Screen.width / _scale - 176f - Pad;
-            if (x < PanelWidth + Pad * 2f) x = PanelWidth + Pad * 2f;
-            float y = Pad;
-            Fill(new Rect(x, y, 176f, 72f), PanelColor);
-            string state = _duelRound.State == DuelRoundState.Dormant ? "TAP RED TO START"
-                         : _duelRound.State == DuelRoundState.Active ? "DUEL ACTIVE" : "RESETTING";
-            GUI.Label(new Rect(x + 8f, y + 4f, 162f, Row), state, _label);
+            // v0.8.0：位置改由 DebugHudLayout.MatchPanel 算（與 v0.7.0 的原式逐字相同，§2.4）；Off 時高 72，佔領模式 116。
+            bool captureMode = InCaptureMode;
+            float x = _matchPanelRect.x;
+            float y = _matchPanelRect.y;
+            Fill(new Rect(x, y, _matchPanelRect.width, captureMode ? _matchPanelCaptureHeight : _matchPanelRect.height), PanelColor);
+            GUI.Label(new Rect(x + 8f, y + 4f, 162f, Row), MatchStatusLabel, _label);
             GUI.Label(new Rect(x + 8f, y + 26f, 92f, Row), "HERO HP", _label);
             GUI.Label(new Rect(x + 105f, y + 26f, 56f, Row), IntStringCache.Get(Mathf.CeilToInt(_hero.Health)), _label);
             GUI.Label(new Rect(x + 8f, y + 48f, 92f, Row), "RED HP", _label);
             GUI.Label(new Rect(x + 105f, y + 48f, 56f, Row), IntStringCache.Get(Mathf.CeilToInt(_opponentHealth())), _label);
+
+            if (captureMode)
+            {
+                // 第 3 列比分（字串查 CaptureHudLabels 的 0～1012 表，不用上限 999 的 IntStringCache，R6）；
+                // 第 4 列復活倒數只在英雄倒地時顯示。
+                GUI.Label(new Rect(x + 8f, y + 70f, 44f, Row), "BLUE", _label);
+                GUI.Label(new Rect(x + 50f, y + 70f, 40f, Row), _blueScoreLabel, _label);
+                GUI.Label(new Rect(x + 92f, y + 70f, 36f, Row), "RED", _label);
+                GUI.Label(new Rect(x + 126f, y + 70f, 44f, Row), _redScoreLabel, _label);
+                string respawn = CaptureRespawnLabel;
+                if (respawn != null) GUI.Label(new Rect(x + 8f, y + 92f, 162f, Row), respawn, _label);
+            }
+
+            if (_pressCapture == null) return;
+            // CAPTURE 鈕：不論模式都畫在同一位置；按了無效的狀態反灰但照樣攔截觸控（E27）。
+            bool captureInvalid = CurrentGate().CaptureButton == CaptureButtonAction.Invalid;
+            Fill(_captureRect, captureInvalid ? ButtonCooldownColor : captureMode ? ButtonOnColor : ButtonColor);
+            GUI.Label(_captureRect, CaptureButtonLabel, _buttonLabel);
         }
 
         private void DrawPips(float x, float y)
