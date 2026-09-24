@@ -312,7 +312,19 @@ namespace Vow.Tests.PlayMode
             for (int i = 0; i < 30; i++) yield return null; // 鏡頭追上傳送後的英雄，投影才是當幀位置
 
             Faction[] before = SnapshotOwners();
-            TapWorld(new Vector3(-10.5f, 0f, -6.0625f), "5 號塔心地面投影點");
+            // 2026-09-25 主對話修訂（V080_CAPTURE_PLAN.md V-B05，commit 1406c93）：點 5 號光圈內的地面點 (−8.875, −7.25)。
+            // 原條文點 5 號塔心，但 640×480 下它的投影在 x≈0.18px（8px 邊緣死區內），任何實作都點不到。
+            // 點擊前先斷言投影離畫面四邊都 ≥ 16px；不成立就紅，不得換點。
+            Vector3 tapPoint = new Vector3(-8.875f, 0f, -7.25f);
+            Vector3 tapScreen = Camera.main.WorldToScreenPoint(tapPoint);
+            Debug.Log("[CAPTURE-TEST] V-B05 tap (-8.875, -7.25) → screen (" + tapScreen.x + ", " + tapScreen.y + ", depth "
+                      + tapScreen.z + ") of " + Screen.width + "x" + Screen.height);
+            Assert.Greater(tapScreen.z, 0f, "點擊點在鏡頭後方");
+            Assert.IsTrue(tapScreen.x >= 16f && tapScreen.x <= Screen.width - 16f
+                          && tapScreen.y >= 16f && tapScreen.y <= Screen.height - 16f,
+                "點擊點投影 (" + tapScreen.x + ", " + tapScreen.y + ") 離畫面邊緣不到 16px（畫面 "
+                + Screen.width + "x" + Screen.height + "）");
+            _bootstrap.WorldTapInput.SendScreenTap(tapScreen.x, tapScreen.y);
             bool sawProgress = false;
             int flipFrame = -1;
             for (int f = 1; f <= 420; f++)
@@ -326,6 +338,7 @@ namespace Vow.Tests.PlayMode
                 }
                 if (view.BlueChannelingTile == 5 && view.BlueChannelProgress > 0f) sawProgress = true;
             }
+            Debug.Log("[CAPTURE-TEST] V-B05 flipped at frame " + flipFrame + " after the tap");
             Assert.Greater(flipFrame, 0, "點擊後 420 幀內 5 號沒有翻藍");
             Assert.GreaterOrEqual(flipFrame, 270, "5 號翻藍太早：" + flipFrame);
             Assert.IsTrue(sawProgress, "翻藍前應至少有一幀藍方引導進度 > 0");
@@ -716,7 +729,10 @@ namespace Vow.Tests.PlayMode
             }
             Assert.IsTrue(_hero.IsAlive, "② f0＋306 幀前英雄應復活");
             respawn = _hero.transform.position;
-            yield return new WaitForSecondsRealtime(0.12f); // 讓 80 ms 佇列真的到期（若沒被清掉就會在這裡送出）
+            // 加嚴（主對話 2026-09-25 接受）：延遲層用真實時間計時，batchmode 一幀只有幾毫秒，只等 30 幀的話
+            // 沒被清掉的 80 ms 指令可能還沒送達，漏洞就看不到。這裡先讓佇列確實到期，再開始 30 幀的觀察。
+            // 鑑別力實測（突變 B14b：復活時不清延遲層）：紅在下方「② 復活後英雄不得被倒地時的點地帶走」，英雄被帶到 x=2.93。
+            yield return new WaitForSecondsRealtime(0.12f);
             for (int i = 0; i < 30; i++) yield return null;
             AssertXz(_hero.transform.position, respawn.x, respawn.z, "② 復活後英雄不得被倒地時的點地帶走");
             Assert.IsNull(_hero.CurrentTarget);
