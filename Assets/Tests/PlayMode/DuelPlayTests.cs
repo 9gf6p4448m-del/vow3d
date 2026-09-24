@@ -205,6 +205,39 @@ namespace Vow.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator FiveRealOpponentStrikes_KnockOutTheHero_ThenResetForAnotherRound()
+        {
+            yield return Setup(true);
+            TapOpponent();
+            float deadline = Time.time + 12f;
+            while (_hero.IsAlive && Time.time < deadline) yield return null;
+            Assert.IsFalse(_hero.IsAlive, "五次 20 傷應由對手實際預警與結算擊倒英雄");
+            Assert.AreEqual(5, _opponent.AttacksResolved);
+            Assert.AreEqual(DuelRoundState.KnockoutPause, _bootstrap.DuelState);
+            for (int i = 0; i < 155; i++) yield return null;
+            Assert.AreEqual(DuelRoundState.Dormant, _bootstrap.DuelState);
+            Assert.AreEqual(100f, _hero.Health, 0.01f);
+            TapOpponent();
+            Assert.AreEqual(DuelRoundState.Active, _bootstrap.DuelState);
+            Assert.AreEqual(2, _bootstrap.DuelStartCount);
+        }
+
+        [UnityTest]
+        public IEnumerator WallStampedUnderOpponent_EjectsItToAFreeCell()
+        {
+            yield return Setup();
+            TapOpponent();
+            Vector3 initial = _opponent.transform.position;
+            RuneWall wall = Object.FindObjectOfType<RuneCaster>().Pool[0];
+            wall.Activate(initial + Vector3.up, Quaternion.identity, Faction.BlueTeam, null, 0);
+            Vector3 moved = _opponent.transform.position;
+            Assert.Greater(Vector3.Distance(initial, moved), 0.1f, "牆壓在對手腳下時應立即推出");
+            Assert.IsFalse(BlockGrid.CircleOverlapsBox(moved.x, moved.z, new NavGridTuning().BodyRadius,
+                                                      initial.x, initial.z, 0f, 1f, 2f, 0.3f),
+                "推出後對手身體不可仍與牆相交");
+        }
+
+        [UnityTest]
         public IEnumerator Knockout_KeepsTheWallDuringPause_ThenClearsGridAndReturnsThePoolSlot()
         {
             yield return Setup();
@@ -325,6 +358,11 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(DuelRoundState.Dormant, _bootstrap.DuelState);
             Assert.AreEqual(1, _bootstrap.DuelStartCount,
                 "KO 停頓末端排入的點擊不能在重置後自動開下一局");
+            _bootstrap.SetDuelLatencyPreset(50);
+            TapOpponent();
+            yield return new WaitForSecondsRealtime(0.09f);
+            Assert.AreEqual(DuelRoundState.Active, _bootstrap.DuelState);
+            Assert.AreEqual(2, _bootstrap.DuelStartCount, "50 ms 模式下一次點擊只應開一局");
         }
     }
 }
