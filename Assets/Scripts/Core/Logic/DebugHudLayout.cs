@@ -42,11 +42,15 @@ namespace Vow.Core.Logic
         // IMGUI 座標（原點左上、未乘 Scale）
         public HudRect Mode, Hitbox, Latency, Grid, EnemyWall, Turret;
         public HudRect Water, Fire, Wind, Elem;
+        public HudRect MatchPanel, Capture; // v0.8.0 佔領對局面板與 CAPTURE 鈕（V080_CAPTURE_PLAN.md §2.4）
         public float Scale;
         public float PanelHeight;
 
+        // captureModeActive 為選用參數（預設 false）：既有呼叫端不必改，MatchPanel/Capture 一律照算
+        // （不影響左側面板與既有六個矩形，V-A24／既有 V4-o／V4-p 不受影響）。
         public static DebugHudLayout Compute(float screenWidth, float screenHeight, float dpi,
-                                             bool hasLatencyRow, bool hasGridRow, bool hasWallOrTurretRow)
+                                             bool hasLatencyRow, bool hasGridRow, bool hasWallOrTurretRow,
+                                             bool captureModeActive = false)
         {
             DebugHudLayout layout = default;
             layout.Scale = dpi > 0f ? (dpi / ReferenceDpi > 1f ? dpi / ReferenceDpi : 1f) : 1f;
@@ -79,6 +83,14 @@ namespace Vow.Core.Logic
                                  + (hasGridRow ? Row * 1.6f + Pad : 0f)
                                  + (hasWallOrTurretRow ? Row * 1.6f + Pad : 0f)
                                  + (Row * 1.6f + Pad) * 2f;
+
+            // v0.8.0：右上對局面板＋CAPTURE 鈕（§2.4）。與左側面板的算式完全獨立，不讀不寫上面任何欄位。
+            float matchPanelX = screenWidth / layout.Scale - 176f - Pad;
+            if (matchPanelX < PanelWidth + Pad * 2f) matchPanelX = PanelWidth + Pad * 2f;
+            float matchPanelHeight = captureModeActive ? 116f : 72f;
+            layout.MatchPanel = new HudRect(matchPanelX, Pad, 176f, matchPanelHeight);
+            layout.Capture = new HudRect(matchPanelX, Pad + 116f + Pad, 176f, Row * 1.6f);
+
             return layout;
         }
     }
