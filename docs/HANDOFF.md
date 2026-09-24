@@ -20,11 +20,11 @@
 
 ## 2026-09-24 v0.7.0 送達（灰盒對手攻防）
 
-- 分支 `v070-greybox-duel`：A `3ea449f`、B `482f31b`、C `dcf8ba6`＋補測 `e18c0b4`（對手擊倒英雄後重置、對手腳下立牆推出、50 ms 延遲開局一次）。這個分支尚未合併進 main。
+- 分支 `v070-greybox-duel`：A `3ea449f`、B `482f31b`、C `dcf8ba6`＋補測 `e18c0b4`（對手擊倒英雄後重置、對手腳下立牆推出、50 ms 延遲開局一次）。2026-09-24 以 fast-forward 併入 main（`origin/main` 3b10ad5→61ffcd3）。
 - `bash Tools/DotnetCheck/verify.sh`：201 通過／1 略過、編譯 0 error、8 條紅線全過；Unity EditMode 198 通過／4 略過／0 失敗；PlayMode 117／117；`mutation_check.py` 114／114 CAUGHT（獨立 worktree 實跑）。
 - WebGL 10.5 MB，以 `SKIP_BUILD=1 bash Tools/deploy-webgl.sh` 部署剛才實測過的那份產物 → `origin/gh-pages f9d0d12`；線上版本列讀回 `v0.7.0 · build 2026-09-24 06:34 UTC · e18c0b4`。
 - 手機模擬實測（本機與線上，844×390、DPR 2、觸控）：開局只開不打、受擊 20、KO→2.5 秒→重置、再開第二局、英雄普攻擊倒對手、移動躲招，console 0 error。細節與未驗證項見驗收指南 §17。
-- 下一步：① 決定是否把 `v070-greybox-duel` 合併進 main；② 在原生裝置驗 120Hz、震動與延遲注入下的手感；③ KO 停頓期間的輸入封鎖目前只有 PlayMode 證據，要在實機或較快的瀏覽器環境補驗。
+- 下一步：① 在原生裝置驗 120Hz、震動與延遲注入下的手感；② KO 停頓期間的輸入封鎖目前只有 PlayMode 證據，要在實機或較快的瀏覽器環境補驗。
 
 ## 2026-09-23 v0.6.2 送達
 
