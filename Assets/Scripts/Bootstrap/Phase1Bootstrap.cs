@@ -131,6 +131,7 @@ namespace Vow.Bootstrap
         private CaptureMatchLogic _capture;
         private CaptureMatchView _captureView;
         private CombatTargetBehaviour[] _navBlockers = new CombatTargetBehaviour[0]; // 復活傳送後逐一推出（R10）
+        private DummyTarget[] _dummies = new DummyTarget[0];                        // 佔領模式停用、回單挑恢復（r1 M1）
         private Action<float> _opponentDamagedHandler;                             // 只建一次，執行期零配置
 
         public CaptureMatchState CaptureState => _capture != null ? _capture.State : CaptureMatchState.Off;
@@ -183,10 +184,13 @@ namespace Vow.Bootstrap
             return true;
         }
 
+#if UNITY_EDITOR
         // 按住不放的模擬手指（V-B14：倒地前開始、復活後才放手的符印手勢）；走與真實手指相同的分流路徑。
+        // 測試專用，正式建置不編進去（r1 對抗審查 L2，比照 SeedCaptureScoresForTest）。
         public void BeginScreenHold(float x, float y) { if (_input != null) _input.BeginSimulatedHold(x, y); }
         public void MoveScreenHold(float x, float y) { if (_input != null) _input.MoveSimulatedHold(x, y); }
         public void EndScreenHold() { if (_input != null) _input.EndSimulatedHold(); }
+#endif
 
         private void Awake()
         {
@@ -238,6 +242,7 @@ namespace Vow.Bootstrap
                 InitializeCaptureBoard();
             }
             _navBlockers = CollectNavBlockers(targets);
+            _dummies = CollectDummies(targets);
 
             _input.Initialize(_targets, _camera);
             // 批 3：「哪些石牆算自家牆」由本地陣營決定（點自家牆＝點到牆後的地板，§4-1）。
@@ -403,6 +408,27 @@ namespace Vow.Bootstrap
             return blockers;
         }
 
+        // 全場的木樁（場景目前 1 根）。只在 Start 收一次；模式切換時逐一停用／恢復（r1 M1）。
+        private static DummyTarget[] CollectDummies(CombatTargetBehaviour[] targets)
+        {
+            int count = 0;
+            for (int i = 0; i < targets.Length; i++)
+                if (targets[i] is DummyTarget) count++;
+            DummyTarget[] dummies = new DummyTarget[count];
+            int next = 0;
+            for (int i = 0; i < targets.Length; i++)
+                if (targets[i] is DummyTarget dummy) dummies[next++] = dummy;
+            return dummies;
+        }
+
+        // Off↔佔領模式的切換只有 HandleCaptureButton 這一處（TryEnterCaptureMode／TryExitCaptureMode 各 1 個呼叫點，
+        // Ended→Lobby 不經過 Off），所以木樁的停用／恢復掛在這裡就涵蓋全部入口。
+        private void SetDummiesSuppressed(bool suppressed)
+        {
+            for (int i = 0; i < _dummies.Length; i++)
+                if (_dummies[i] != null) _dummies[i].SetCaptureSuppressed(suppressed);
+        }
+
         private MatchGateDecision CurrentGate()
         {
             return MatchGate.Evaluate(DuelState, CaptureState, _capture == null || !_capture.BlueKnockedOut);
@@ -556,12 +582,14 @@ namespace Vow.Bootstrap
                 if (!_capture.TryEnterCaptureMode()) return;
                 _opponent.SetCaptureMode(true);
                 if (_captureBoard != null) _captureBoard.SetShown(true);
+                SetDummiesSuppressed(true);
             }
             else if (action == CaptureButtonAction.ExitCaptureMode)
             {
                 if (!_capture.TryExitCaptureMode()) return;
                 _opponent.SetCaptureMode(false);
                 if (_captureBoard != null) _captureBoard.SetShown(false);
+                SetDummiesSuppressed(false);
             }
         }
 

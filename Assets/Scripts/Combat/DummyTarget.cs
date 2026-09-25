@@ -24,6 +24,14 @@ namespace Vow.Combat
         private float _wobbleTimer;
         private float _respawnTimer;
         private bool _frozen;
+        private Renderer[] _allRenderers;
+        private TargetOverheadDisplay _overhead;
+
+        // v0.8.0 對抗審查 r1 M1（使用者裁定 2026-09-25，計畫書 §4「不得改既有木樁」的授權例外）：
+        // 木樁在 0／1 號塔的南北連線上、不在格點裡，對手從紅方基地走向 0 號會正面卡死。
+        // 佔領模式（Lobby／Active／Ended）時停用：全部 Renderer（含頭頂血條）與 Collider 關閉；回單挑（Off）時恢復。
+        // 單挑模式從不呼叫 SetCaptureSuppressed，這個旗標恆為 false，行為與 v0.7.0 逐行相同。
+        public bool IsCaptureSuppressed { get; private set; }
 
         protected override void Awake()
         {
@@ -32,9 +40,22 @@ namespace Vow.Combat
             if (_bodyRenderer == null) _bodyRenderer = GetComponentInChildren<Renderer>();
             _visual = _bodyRenderer != null ? _bodyRenderer.transform : transform;
             _visualRestRotation = _visual.localRotation;
+            _allRenderers = GetComponentsInChildren<Renderer>(true);
+            _overhead = GetComponent<TargetOverheadDisplay>();
             ApplyColor(_baseColor);
 
             OnDamaged += HandleDamaged;
+        }
+
+        public void SetCaptureSuppressed(bool suppressed)
+        {
+            IsCaptureSuppressed = suppressed;
+            // 恢復時若木樁正在死亡倒數，維持倒地時的隱藏狀態，交給 Update 的復活流程打開（同 HandleDeath）。
+            bool shown = !suppressed && IsAlive;
+            for (int i = 0; i < _allRenderers.Length; i++)
+                if (_allRenderers[i] != null) _allRenderers[i].enabled = shown;
+            SetCollidersEnabled(shown);
+            if (_overhead != null) _overhead.SetHidden(suppressed);
         }
 
         private void OnDestroy()
@@ -76,8 +97,11 @@ namespace Vow.Combat
                 _respawnTimer -= dt;
                 if (_respawnTimer <= 0f)
                 {
-                    if (_bodyRenderer != null) _bodyRenderer.enabled = true;
-                    SetCollidersEnabled(true);
+                    if (!IsCaptureSuppressed) // 佔領模式中倒數到期：照樣復活補血，但不得把停用的身體打開
+                    {
+                        if (_bodyRenderer != null) _bodyRenderer.enabled = true;
+                        SetCollidersEnabled(true);
+                    }
                     ApplyColor(_baseColor);
                     Revive();
                 }

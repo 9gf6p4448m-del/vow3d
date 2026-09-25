@@ -126,9 +126,11 @@ namespace Vow.Input
             Router.CancelActiveTouches();
         }
 
+#if UNITY_EDITOR
         // ── v0.8.0 驗收用：一根按住不放的模擬手指（V080_CAPTURE_PLAN.md V-B14「倒地前開始、復活後才放手的符印手勢」）──
         // 真實觸控每幀都會回報仍在螢幕上的手指；只送一次 Began 的話，下一幀 EndFrame 會把它當成「沒出現就消失」回收。
         // 所以按住期間由 Update 每幀補一筆 Stationary，走的仍是與真實手指一模一樣的分流與手勢狀態機。
+        // 測試專用，正式建置不編進去（r1 對抗審查 L2；比照 Phase1Bootstrap.SeedCaptureScoresForTest）。
         private const int SimulatedHoldTouchIdBase = -3000;
         private bool _simulatedHoldActive;
         private int _simulatedHoldTouchId;
@@ -168,6 +170,7 @@ namespace Vow.Input
             Router.ProcessTouch(_simulatedHoldTouchId, TouchPhaseKind.Ended, _simulatedHoldX, _simulatedHoldY,
                                 Time.unscaledTimeAsDouble, _simulatedHoldStartTime);
         }
+#endif
 
         private void Awake()
         {
@@ -216,9 +219,11 @@ namespace Vow.Input
             }
             if (touches.Count > 0) _lastRealTouchTime = now;
             FeedMouse(router, now);
+#if UNITY_EDITOR
             if (_simulatedHoldActive)
                 router.ProcessTouch(_simulatedHoldTouchId, TouchPhaseKind.Stationary, _simulatedHoldX, _simulatedHoldY,
                                     now, _simulatedHoldStartTime);
+#endif
             router.EndFrame();
 
             EmitHeldPipVector(router);

@@ -85,6 +85,12 @@ namespace Vow.Combat
             _target.OnRevived -= RefreshBar;
         }
 
+        // v0.8.0 M1：木樁在佔領模式停用時，血條與飄字整組藏起來（它們在獨立的 _root 底下，不掛在目標身上）。
+        public void SetHidden(bool hidden)
+        {
+            if (_root != null) _root.gameObject.SetActive(!hidden);
+        }
+
         private void CreateBarQuad(string objectName, Color color, float depthOffset, out Transform quadTransform)
         {
             GameObject quad = QuadMeshFactory.Create(objectName, _barMaterial);
