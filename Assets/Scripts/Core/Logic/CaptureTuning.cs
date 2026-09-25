@@ -38,5 +38,12 @@ namespace Vow.Core.Logic
         public float BlueEdgeRespawnZ = -17f;
         public float RedEdgeRespawnX = 17f;
         public float RedEdgeRespawnZ = 17f;
+
+        // ── v0.9.0 劣勢狂怒（V090_ENCIRCLE_PLAN.md E14／E15／E17，2026-09-25 使用者裁定） ──
+        // 落後判定用整數：Denominator·(領先分−自身分) > Numerator·領先分（即落後 > 15%）。
+        public int RageDeficitNumerator = 3;
+        public int RageDeficitDenominator = 20;
+        public float RageSpeedMultiplier = 1.15f;
+        public float RageSeconds = 12f;
     }
 }

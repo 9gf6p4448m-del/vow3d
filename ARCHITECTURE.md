@@ -176,7 +176,7 @@ using Vow.Core.Logic; // CaptureMatchState、CaptureMatchResult
 public interface ICaptureMatchView
 {
     CaptureMatchState State { get; }          // Off / Lobby / Active / Ended
-    int TileCount { get; }                    // 7（中央 1＋一圈 6）
+    int TileCount { get; }                    // 19（中央 1＋中圈 6＋外圈 12；v0.8.0 七塊夾具為 7）
     Faction OwnerOf(int tileIndex);           // Neutral / BlueTeam / RedTeam，不新增 enum
 
     int BlueScore { get; }
@@ -192,12 +192,15 @@ public interface ICaptureMatchView
     bool RedKnockedOut { get; }
     float RedRespawnRemaining { get; }
 
+    float BlueRageRemaining { get; }          // 秒，劣勢狂怒剩餘（觸發設為 12.0）；> 0 即生效
+    float RedRageRemaining { get; }
+
     CaptureMatchResult Result { get; }        // 本局結果（Ended 時有值）
     CaptureMatchResult LastResult { get; }    // 上一局結果（回待機後保留顯示）
 }
 ```
 
-**契約約束**（`docs/V080_CAPTURE_PLAN.md` §2.1-2）：
+**契約約束**（`docs/V080_CAPTURE_PLAN.md` §2.1-2；v0.9.0 擴充見 `docs/V090_ENCIRCLE_PLAN.md` §2.1-2）：
 * 唯一的事實來源是 `Vow.Core.Logic.CaptureMatchLogic`（零 UnityEngine 的純邏輯）；本介面**唯讀**，所有寫入（`Tick`、受傷、倒地、開局）只經組裝根 `Phase1Bootstrap`。
 * HUD（Vow.UI）、板塊顯示（Vow.Combat 的 `CaptureBoardView`）、輸入路由（Vow.Input 的 `DuelInputRouter`）**只依賴這個介面**，不直接碰 `CaptureMatchLogic`。
 * 純邏輯用 int 陣營代碼（Blue=0、Red=1、Neutral=2）；轉成 `Faction` 的轉接在 Bootstrap 層（`Vow.Bootstrap.CaptureMatchView`）——`CaptureMatchLogic` 不得引用定義在含 `using UnityEngine` 檔案裡的 `Faction`。第一次開局之前 `OwnerOf` 一律回 `Neutral`。

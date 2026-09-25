@@ -13,7 +13,7 @@ namespace Vow.Bootstrap
         public CaptureMatchView(CaptureMatchLogic logic) { _logic = logic; }
 
         public CaptureMatchState State => _logic.State;
-        public int TileCount => HexBoardLayout.TileCount;
+        public int TileCount => _logic.TileCount;
 
         // 第一次開局前 CaptureMatchLogic 的歸屬陣列還是 int 預設值 0（＝Blue 代碼），不是「開局狀態」；
         // 這段期間（佔領待機、從未開過局）一律回中立，板塊才不會整片顯示成藍色。開過局之後忠實轉達。
@@ -38,6 +38,9 @@ namespace Vow.Bootstrap
         public float BlueRespawnRemaining => _logic.BlueRespawnRemaining;
         public bool RedKnockedOut => _logic.RedKnockedOut;
         public float RedRespawnRemaining => _logic.RedRespawnRemaining;
+
+        public float BlueRageRemaining => _logic.BlueRageRemaining;
+        public float RedRageRemaining => _logic.RedRageRemaining;
 
         public CaptureMatchResult Result => _logic.Result;
         public CaptureMatchResult LastResult => _logic.LastResult;

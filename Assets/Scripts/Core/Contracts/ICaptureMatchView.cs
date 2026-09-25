@@ -25,6 +25,10 @@ namespace Vow.Core
         bool RedKnockedOut { get; }
         float RedRespawnRemaining { get; }
 
+        // v0.9.0 劣勢狂怒剩餘秒數（V090_ENCIRCLE_PLAN.md E15／§2.1-2）；> 0 即生效。
+        float BlueRageRemaining { get; }
+        float RedRageRemaining { get; }
+
         CaptureMatchResult Result { get; }
         CaptureMatchResult LastResult { get; }
     }
