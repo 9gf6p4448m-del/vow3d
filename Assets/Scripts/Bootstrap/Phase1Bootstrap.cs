@@ -127,11 +127,15 @@ namespace Vow.Bootstrap
         // 規則與時序全部在 CaptureMatchLogic（純邏輯、已驗收）；這裡只做 Unity 端的接線：每幀 Tick、受傷／倒地分派、
         // 開局清場、復活傳送、牆推出、結算凍結與回待機。不按 CAPTURE 時（Off）這一段不改變單挑的任何一條路徑。
         [SerializeField] private CaptureBoardView _captureBoard;
+        [SerializeField] private RageAuraView _rageAuras;   // v0.9.0 E18：兩個獨立根物件的狂怒光環
         private readonly CaptureTuning _captureTuning = new CaptureTuning();
+        // v0.9.0（V090_ENCIRCLE_PLAN.md §2.1-3、E27）：正式版一律 19 塊；7 塊只留在純邏輯回歸夾具。
+        private readonly CaptureBoardSpec _captureSpec = CaptureBoardSpec.V090Nineteen;
         private CaptureMatchLogic _capture;
         private CaptureMatchView _captureView;
         private CombatTargetBehaviour[] _navBlockers = new CombatTargetBehaviour[0]; // 復活傳送後逐一推出（R10）
         private DummyTarget[] _dummies = new DummyTarget[0];                        // 佔領模式停用、回單挑恢復（r1 M1）
+        private TestWallTarget[] _testWalls = new TestWallTarget[0];                // 佔領模式停用、回單挑恢復（v0.9.0 E22）
         private Action<float> _opponentDamagedHandler;                             // 只建一次，執行期零配置
 
         public CaptureMatchState CaptureState => _capture != null ? _capture.State : CaptureMatchState.Off;
@@ -144,6 +148,14 @@ namespace Vow.Bootstrap
         public int CaptureContestTickCount => _capture != null ? _capture.ContestTickCount : 0;
         public int CaptureInterruptCount => _capture != null ? _capture.InterruptCount : 0;
         public int CaptureRespawnCount => _capture != null ? _capture.RespawnCount : 0;
+        public CaptureBoardSpec CaptureSpec => _captureSpec;
+        public RageAuraView RageAuras => _rageAuras;
+        public int CaptureBlueNeutralizedCount => _capture != null ? _capture.BlueNeutralizedCount : 0;
+        public int CaptureRedNeutralizedCount => _capture != null ? _capture.RedNeutralizedCount : 0;
+        public int CaptureBlueRageTriggerCount => _capture != null ? _capture.BlueRageTriggerCount : 0;
+        public int CaptureRedRageTriggerCount => _capture != null ? _capture.RedRageTriggerCount : 0;
+        // 由紅方造成的翻塊次數（V9-B20 的活性計數；CaptureFlipCount 不分陣營）。判定見 TickCapture。
+        public int CaptureRedFlipCount { get; private set; }
 
         // CAPTURE 鈕走與真實觸控同一個入口（DebugHud.PressCaptureButton）；螢幕點＝登記給 InputRoutingManager 的矩形中心。
         public void PressCaptureButton() { if (_hud != null) _hud.PressCaptureButton(); }
@@ -163,12 +175,21 @@ namespace Vow.Bootstrap
         public string CaptureRespawnLabel => _hud != null ? _hud.CaptureRespawnLabel : null;
         public int CaptureScoreLabelRecomputeCount => _hud != null ? _hud.CaptureScoreLabelRecomputeCount : 0;
         public int CaptureRespawnLabelRecomputeCount => _hud != null ? _hud.CaptureRespawnLabelRecomputeCount : 0;
+        public string CaptureRageLabel => _hud != null ? _hud.CaptureRageLabel : null;
+        public int CaptureRageLabelRecomputeCount => _hud != null ? _hud.CaptureRageLabelRecomputeCount : 0;
 
 #if UNITY_EDITOR
         // PlayMode 終局用的比分種子入口（R12）：只寫兩個比分整數，不動計分時鐘、歸屬、進度。正式建置不編進去（V-D01）。
         public void SeedCaptureScoresForTest(int blueScore, int redScore)
         {
             if (_capture != null) _capture.SeedScoresForTest(blueScore, redScore);
+        }
+
+        // v0.9.0 E28：盤面種子入口。只寫歸屬（CaptureMatchLogic 陣營代碼：藍 0、紅 1、中立 2），不跑 BFS，
+        // 不動引導、計分時鐘、狂怒與比分。正式建置不編進去。
+        public void SeedCaptureOwnershipForTest(int[] owners)
+        {
+            if (_capture != null) _capture.SeedOwnershipForTest(owners);
         }
 #endif
 
@@ -236,13 +257,14 @@ namespace Vow.Bootstrap
                 _opponent.Initialize(_hero, _opponentTelegraph, _duelTuning,
                                      new GridNavigator(_navGrid, _navTuning), _navTuning.BodyRadius);
 
-                _capture = new CaptureMatchLogic(_captureTuning);
+                _capture = new CaptureMatchLogic(_captureTuning, _captureSpec);
                 _captureView = new CaptureMatchView(_capture);
-                _opponent.ConfigureCapture(_captureView, _captureTuning);
+                _opponent.ConfigureCapture(_captureView, _captureTuning, _captureSpec);
                 InitializeCaptureBoard();
             }
             _navBlockers = CollectNavBlockers(targets);
             _dummies = CollectDummies(targets);
+            _testWalls = CollectTestWalls(targets);
 
             _input.Initialize(_targets, _camera);
             // 批 3：「哪些石牆算自家牆」由本地陣營決定（點自家牆＝點到牆後的地板，§4-1）。
@@ -393,6 +415,14 @@ namespace Vow.Bootstrap
             }
             _captureBoard.Initialize(_captureView, _captureTuning);
             _captureBoard.SetShown(false); // Off 時整組不啟用（V-B01）
+
+            if (_rageAuras == null)
+            {
+                Debug.LogError("[VOW] 場景缺少 RageAuraView 引用：狂怒在畫面上看不見（規則照跑）。" +
+                               "請執行 VOW/Phase 1/Build Greybox Scene 重建場景。", this);
+                return;
+            }
+            _rageAuras.Initialize(_captureView, _hero.transform, _opponent.transform);
         }
 
         // 全場會擋路的牆（符印牆池、敵方牆池、兩面測試牆）。只在 Start 收一次，復活傳送後逐一推出。
@@ -421,6 +451,25 @@ namespace Vow.Bootstrap
             return dummies;
         }
 
+        // 兩面測試牆（TestWall_A／B）。只在 Start 收一次；模式切換時逐一停用／恢復（v0.9.0 E22）。
+        private static TestWallTarget[] CollectTestWalls(CombatTargetBehaviour[] targets)
+        {
+            int count = 0;
+            for (int i = 0; i < targets.Length; i++)
+                if (targets[i] is TestWallTarget) count++;
+            TestWallTarget[] walls = new TestWallTarget[count];
+            int next = 0;
+            for (int i = 0; i < targets.Length; i++)
+                if (targets[i] is TestWallTarget wall) walls[next++] = wall;
+            return walls;
+        }
+
+        private void SetTestWallsSuppressed(bool suppressed)
+        {
+            for (int i = 0; i < _testWalls.Length; i++)
+                if (_testWalls[i] != null) _testWalls[i].SetCaptureSuppressed(suppressed);
+        }
+
         // Off↔佔領模式的切換只有 HandleCaptureButton 這一處（TryEnterCaptureMode／TryExitCaptureMode 各 1 個呼叫點，
         // Ended→Lobby 不經過 Off），所以木樁的停用／恢復掛在這裡就涵蓋全部入口。
         private void SetDummiesSuppressed(bool suppressed)
@@ -445,12 +494,31 @@ namespace Vow.Bootstrap
             CaptureMatchState before = _capture.State;
             Vector3 heroPosition = _hero.transform.position;
             Vector3 opponentPosition = _opponent.transform.position;
+            int redTileBefore = _capture.RedKnockedOut ? -1 : _capture.RedChannelingTile;
+            int flipsBefore = _capture.FlipCount;
             _capture.Tick(dt, heroPosition.x, heroPosition.z, opponentPosition.x, opponentPosition.z);
+            // 紅方翻塊＝本 tick 翻塊數增加、紅方原本在引導 t、tick 後紅方引導歸零而它人仍在 t 的光圈內
+            //（離圈或換圈時引導也會歸零，但那時人已不在 t；爭奪時引導凍結不歸零）。孤島翻塊當場中立化也算翻塊（E10）。
+            if (redTileBefore >= 0 && _capture.FlipCount > flipsBefore && _capture.RedChannelingTile == -1
+                && !_capture.RedKnockedOut
+                && _captureSpec.CircleAt(opponentPosition.x, opponentPosition.z, _captureTuning.CircleRadius) == redTileBefore)
+                CaptureRedFlipCount++;
 
             if (_capture.TryConsumeBlueRespawn(out float blueX, out float blueZ)) RespawnHero(blueX, blueZ);
             if (_capture.TryConsumeRedRespawn(out float redX, out float redZ)) RespawnOpponent(redX, redZ);
             if (before == CaptureMatchState.Active && _capture.State == CaptureMatchState.Ended) EnterCaptureEndPause();
             if (_capture.TryConsumeJustReturnedToLobby()) ReturnToCaptureLobby();
+            ApplyRageSpeed();
+        }
+
+        // E17：狂怒倍率每幀依 view 寫入（復活走 ResetForDuel 會把倍率歸 1，只寫一次會失效，R3）。
+        // 英雄的實際倍率在 HeroController 一處與流沙合成；對手沒有流沙，直接寫進移動元件。同值時不重算、不配置。
+        private void ApplyRageSpeed()
+        {
+            float multiplier = _captureTuning.RageSpeedMultiplier;
+            _hero.SetRageSpeedMultiplier(_capture.BlueRageRemaining > 0f ? multiplier : 1f);
+            if (_opponentLocomotion != null)
+                _opponentLocomotion.SetSpeedMultiplier(_capture.RedRageRemaining > 0f ? multiplier : 1f);
         }
 
         // 佔領開局（E18）：清場規則直接沿用 v0.7.0 的 StartDuel；另外雙方傳送到各自基地復活點並補滿血。
@@ -467,10 +535,13 @@ namespace Vow.Bootstrap
             _latency?.CancelPendingForRound();
             CollapseEnemyWalls();
 
-            _hero.ResetForDuel(new Vector3(_captureTuning.BlueHomeRespawnX, _heroSpawn.y, _captureTuning.BlueHomeRespawnZ));
+            // v0.9.0 E21：雙方傳送到第一優先母板塊的復活點（座標由 spec 提供）。
+            int blue = CaptureMatchLogic.BlueFactionId;
+            int red = CaptureMatchLogic.RedFactionId;
+            _hero.ResetForDuel(new Vector3(_captureSpec.MotherRespawnX(blue, 0), _heroSpawn.y, _captureSpec.MotherRespawnZ(blue, 0)));
             _hero.SetBodyHidden(false);
-            _opponent.RespawnAt(new Vector3(_captureTuning.RedHomeRespawnX, _opponent.transform.position.y,
-                                            _captureTuning.RedHomeRespawnZ));
+            _opponent.RespawnAt(new Vector3(_captureSpec.MotherRespawnX(red, 0), _opponent.transform.position.y,
+                                            _captureSpec.MotherRespawnZ(red, 0)));
         }
 
         private void CollapseEnemyWalls()
@@ -585,6 +656,7 @@ namespace Vow.Bootstrap
                 _opponent.SetCaptureMode(true);
                 if (_captureBoard != null) _captureBoard.SetShown(true);
                 SetDummiesSuppressed(true);
+                SetTestWallsSuppressed(true);
             }
             else if (action == CaptureButtonAction.ExitCaptureMode)
             {
@@ -592,6 +664,7 @@ namespace Vow.Bootstrap
                 _opponent.SetCaptureMode(false);
                 if (_captureBoard != null) _captureBoard.SetShown(false);
                 SetDummiesSuppressed(false);
+                SetTestWallsSuppressed(false);
             }
         }
 
@@ -913,6 +986,7 @@ namespace Vow.Bootstrap
             }
             if (_opponent == null) _opponent = FindObjectOfType<TrainingOpponent>();
             if (_captureBoard == null) _captureBoard = FindObjectOfType<CaptureBoardView>(true); // 預設是關著的
+            if (_rageAuras == null) _rageAuras = FindObjectOfType<RageAuraView>(true);
             if (_runeWallPool == null)
             {
                 GameObject pool = GameObject.Find("RuneWallPool");

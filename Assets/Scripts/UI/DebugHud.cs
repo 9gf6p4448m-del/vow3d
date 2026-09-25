@@ -102,10 +102,13 @@ namespace Vow.UI
         private string _redScoreLabel = CaptureHudLabels.Score(0);
         private int _respawnSecondsShown = -1;
         private string _respawnLabel;
+        private int _rageSecondsShown = -1;
+        private string _rageLabel;
 
         // 比分／復活字串被重算過幾次（零配置量測的活性，V-C03）。
         public int CaptureScoreLabelRecomputeCount { get; private set; }
         public int CaptureRespawnLabelRecomputeCount { get; private set; }
+        public int CaptureRageLabelRecomputeCount { get; private set; }
 
         public void ConfigureCapture(ICaptureMatchView view, Action pressCapture)
         {
@@ -162,6 +165,9 @@ namespace Vow.UI
         public string CaptureRedScoreLabel => _redScoreLabel;
         public string CaptureRespawnLabel => _captureView != null && _captureView.State == CaptureMatchState.Active
                                              && _captureView.BlueKnockedOut ? _respawnLabel : null;
+        // v0.9.0 E18／E25：第 4 列右半部只顯示藍方的 RAGE n（紅方只靠光環，§5 Q13）。
+        public string CaptureRageLabel => _captureView != null && _captureView.State == CaptureMatchState.Active
+                                          && _captureView.BlueRageRemaining > 0f ? _rageLabel : null;
 
         private static string ResultLabel(CaptureMatchResult result, bool last)
         {
@@ -192,6 +198,19 @@ namespace Vow.UI
                 _redScoreShown = red;
                 _redScoreLabel = CaptureHudLabels.Score(red);
                 CaptureScoreLabelRecomputeCount++;
+            }
+
+            float rage = _captureView.BlueRageRemaining;
+            if (rage > 0f)
+            {
+                int rageWhole = (int)rage;
+                int rageSeconds = rage > rageWhole ? rageWhole + 1 : rageWhole;
+                if (rageSeconds != _rageSecondsShown || _rageLabel == null)
+                {
+                    _rageSecondsShown = rageSeconds;
+                    _rageLabel = CaptureHudLabels.Rage(rage);
+                    CaptureRageLabelRecomputeCount++;
+                }
             }
 
             if (!_captureView.BlueKnockedOut) return;
@@ -701,14 +720,16 @@ namespace Vow.UI
 
             if (captureMode)
             {
-                // 第 3 列比分（字串查 CaptureHudLabels 的 0～1012 表，不用上限 999 的 IntStringCache，R6）；
-                // 第 4 列復活倒數只在英雄倒地時顯示。
+                // 第 3 列比分（字串查 CaptureHudLabels 的 0～1037 表（v0.9.0 E24），不用上限 999 的 IntStringCache，R6）；
+                // 第 4 列：左半部復活倒數只在英雄倒地時顯示；右半部 RAGE n 只在藍方狂怒中顯示（v0.9.0 E18，兩者可同時出現）。
                 GUI.Label(new Rect(x + 8f, y + 70f, 44f, Row), "BLUE", _label);
                 GUI.Label(new Rect(x + 50f, y + 70f, 40f, Row), _blueScoreLabel, _label);
                 GUI.Label(new Rect(x + 92f, y + 70f, 36f, Row), "RED", _label);
                 GUI.Label(new Rect(x + 126f, y + 70f, 44f, Row), _redScoreLabel, _label);
                 string respawn = CaptureRespawnLabel;
-                if (respawn != null) GUI.Label(new Rect(x + 8f, y + 92f, 162f, Row), respawn, _label);
+                if (respawn != null) GUI.Label(new Rect(x + 8f, y + 92f, 88f, Row), respawn, _label);
+                string rageLabel = CaptureRageLabel;
+                if (rageLabel != null) GUI.Label(new Rect(x + 100f, y + 92f, 70f, Row), rageLabel, _label);
             }
 
             if (_pressCapture == null) return;

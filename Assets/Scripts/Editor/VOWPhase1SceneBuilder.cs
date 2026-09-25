@@ -60,10 +60,11 @@ namespace Vow.EditorTools
             NavGridDebugView navGridDebug = CreateNavGridDebugView(materials.NavGrid);
             Transform elementZonePool = CreateElementZonePool(materials);
             CaptureBoardView captureBoard = CreateCaptureBoard(materials);
+            RageAuraView rageAuras = CreateRageAuras(materials.Rage);
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
             CreateSystems(hero, opponent, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform,
-                          runeWallPool, enemyWallPool, turret, elementZonePool, captureBoard);
+                          runeWallPool, enemyWallPool, turret, elementZonePool, captureBoard, rageAuras);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -81,6 +82,7 @@ namespace Vow.EditorTools
             public Material EnemyWall, Turret, Bullet, Opponent;
             public Material ZoneWater, ZoneBurning, ZoneQuicksand, ZoneSteam;
             public Material CaptureNeutral, CaptureBlue, CaptureRed;
+            public Material Rage;
         }
 
         private static Materials CreateMaterials()
@@ -114,7 +116,9 @@ namespace Vow.EditorTools
                 // v0.8.0 佔領板塊（E30）：中立灰／藍／紅三份預建材質，執行期只切 sharedMaterial
                 CaptureNeutral = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_CaptureNeutral", new Color(0.62f, 0.62f, 0.66f, 0.32f), true, true),
                 CaptureBlue = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_CaptureBlue", new Color(0.2f, 0.48f, 1f, 0.45f), true, true),
-                CaptureRed = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_CaptureRed", new Color(1f, 0.22f, 0.18f, 0.45f), true, true)
+                CaptureRed = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_CaptureRed", new Color(1f, 0.22f, 0.18f, 0.45f), true, true),
+                // v0.9.0 E18：狂怒光環＝亮橘、不受光、不透明（與中灰半透明的棋盤、白色地板都拉得開）
+                Rage = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_Rage", new Color(1f, 0.5f, 0.05f, 1f), false, true)
             };
         }
 
@@ -487,24 +491,27 @@ namespace Vow.EditorTools
             return root.transform;
         }
 
-        // ───────────────────────── v0.8.0：七塊板塊佔領（V080_CAPTURE_PLAN.md E1～E5、E23、E30）─────────────────────────
-        // 7 塊地板、7 座塔、7 個光圈、7 個進度盤全部在這裡預建（執行期禁止 CreatePrimitive）；陣列索引＝板塊索引。
+        // ───────────────────────── 板塊佔領（V080_CAPTURE_PLAN.md E23、E30；v0.9.0 19 塊：V090_ENCIRCLE_PLAN.md E1～E3、E26）─────────────────────────
+        // 19 塊地板、19 座塔、19 個光圈、19 個進度盤全部在這裡預建（執行期禁止 CreatePrimitive）；陣列索引＝板塊索引。
+        // 幾何的單一事實來源是 CaptureBoardSpec.V090Nineteen（與 Phase1Bootstrap 用的是同一份）。
         // **一個 Collider 都沒有**（E23）：不擋路、不吃點擊射線、不登記進 BlockGrid，格點凍結常數與繞牆測試不受影響。
         // 根物件預設關閉：不按 CAPTURE 時整組不啟用（§2.2、V-B01）。
-        private const string HexTileMeshPath = "Assets/Settings/VOW_HexTile.asset";
-        private const float HexVisualInset = 0.96f;   // 只縮地板網格讓相鄰兩塊之間露出縫；判定幾何一律以 HexBoardLayout 為準
+        // E26：新的資產路徑。建置器遇到已存在的資產會直接載入，沿用 v0.8.0 的 VOW_HexTile.asset 會拿到 7m 的網格（R5）。
+        private const string HexTileMeshPath = "Assets/Settings/VOW_HexTile19.asset";
+        private const float HexVisualInset = 0.96f;   // 只縮地板網格讓相鄰兩塊之間露出縫；判定幾何一律以 CaptureBoardSpec 為準
         private const float TowerRadius = 0.35f;
         private const float TowerHeight = 2.4f;
 
         private static CaptureBoardView CreateCaptureBoard(Materials materials)
         {
-            Mesh hexMesh = EnsureHexTileMesh();
+            CaptureBoardSpec spec = CaptureBoardSpec.V090Nineteen;
+            Mesh hexMesh = EnsureHexTileMesh(spec);
             float ringDiameter = new CaptureTuning().CircleRadius * 2f;   // 光圈半徑的單一事實來源
 
             GameObject root = new GameObject("CaptureBoard");
             root.layer = IgnoreRaycastLayer;
 
-            int count = HexBoardLayout.TileCount;
+            int count = spec.TileCount;
             Renderer[] floors = new Renderer[count];
             Renderer[] towers = new Renderer[count];
             Renderer[] rings = new Renderer[count];
@@ -514,7 +521,7 @@ namespace Vow.EditorTools
                 GameObject tile = new GameObject("CaptureTile_" + i);
                 tile.layer = IgnoreRaycastLayer;
                 tile.transform.SetParent(root.transform, false);
-                tile.transform.localPosition = new Vector3(HexBoardLayout.CenterX(i), 0f, HexBoardLayout.CenterZ(i));
+                tile.transform.localPosition = new Vector3(spec.CenterX(i), 0f, spec.CenterZ(i));
 
                 GameObject floor = new GameObject("Floor_" + i);
                 floor.layer = IgnoreRaycastLayer;
@@ -572,15 +579,15 @@ namespace Vow.EditorTools
             return renderer;
         }
 
-        // 平頂六角形地板網格（E1／E2：頂點 (±7,0)、(±3.5,±6.0625)，取自 HexBoardLayout 本身），乘上 HexVisualInset 露縫。
+        // 平頂六角形地板網格（v0.9.0 E1／E2：頂點 (±4.375,0)、(±2.1875,±3.7890625)，取自 spec 本身），乘上 HexVisualInset 露縫。
         // 已存在就就地覆寫內容，資產 GUID 不變（場景引用與 .meta 不會每次重建都換）。
-        private static Mesh EnsureHexTileMesh()
+        private static Mesh EnsureHexTileMesh(CaptureBoardSpec spec)
         {
             Mesh mesh = AssetDatabase.LoadAssetAtPath<Mesh>(HexTileMeshPath);
             bool created = mesh == null;
             if (created) mesh = new Mesh();
             mesh.Clear();
-            mesh.name = "VOW_HexTile";
+            mesh.name = "VOW_HexTile19";
 
             Vector3[] vertices = new Vector3[7];
             Vector3[] normals = new Vector3[7];
@@ -588,12 +595,12 @@ namespace Vow.EditorTools
             normals[0] = Vector3.up;
             for (int v = 0; v < 6; v++)
             {
-                vertices[v + 1] = new Vector3(HexBoardLayout.VertexX(0, v) * HexVisualInset, 0f,
-                                              HexBoardLayout.VertexZ(0, v) * HexVisualInset);
+                vertices[v + 1] = new Vector3((spec.VertexX(0, v) - spec.CenterX(0)) * HexVisualInset, 0f,
+                                              (spec.VertexZ(0, v) - spec.CenterZ(0)) * HexVisualInset);
                 normals[v + 1] = Vector3.up;
             }
 
-            // HexBoardLayout 的頂點由上往下看是逆時針；Unity 正面是順時針，所以三角形寫成 (中心, v+1, v)。
+            // spec 的頂點由上往下看是逆時針；Unity 正面是順時針，所以三角形寫成 (中心, v+1, v)。
             int[] triangles = new int[18];
             for (int v = 0; v < 6; v++)
             {
@@ -610,6 +617,40 @@ namespace Vow.EditorTools
             if (created) AssetDatabase.CreateAsset(mesh, HexTileMeshPath);
             else EditorUtility.SetDirty(mesh);
             return mesh;
+        }
+
+        // v0.9.0 E18：兩個狂怒光環（半徑 1.2m、y＝0.05 的扁圓盤、VOW_Rage 不受光材質）。**獨立的根物件**，不掛在英雄／對手底下
+        //（R4：既有 AssertBody 會斷言英雄／對手底下全部 Renderer 的開關）；由 RageAuraView 在 LateUpdate 跟隨身體 xz。
+        // 沒有 Collider：不擋路、不吃點擊、不進 BlockGrid。預設不顯示（狂怒中才開）。
+        private const float RageAuraRadius = 1.2f;
+        private const float RageAuraHeight = 0.05f;
+
+        private static RageAuraView CreateRageAuras(Material rageMaterial)
+        {
+            Renderer blue = CreateRageAuraDisc("RageAura_Blue", rageMaterial);
+            Renderer red = CreateRageAuraDisc("RageAura_Red", rageMaterial);
+
+            GameObject viewObject = new GameObject("RageAuraView");
+            RageAuraView view = viewObject.AddComponent<RageAuraView>();
+            SetReference(view, "_blueAura", blue);
+            SetReference(view, "_redAura", red);
+            return view;
+        }
+
+        private static Renderer CreateRageAuraDisc(string objectName, Material material)
+        {
+            GameObject disc = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            disc.name = objectName;
+            Object.DestroyImmediate(disc.GetComponent<Collider>());
+            disc.layer = IgnoreRaycastLayer;
+            disc.transform.position = new Vector3(0f, RageAuraHeight, 0f);
+            disc.transform.localScale = new Vector3(RageAuraRadius * 2f, 0.005f, RageAuraRadius * 2f);
+            Renderer renderer = disc.GetComponent<Renderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.enabled = false;
+            return renderer;
         }
 
         // 批 4：擴散火浪的扇形預警載體（§4-6，不經 ISkillTelegraphService）。自有一條 LineRenderer。
@@ -665,7 +706,7 @@ namespace Vow.EditorTools
         private static void CreateSystems(HeroController hero, TrainingOpponent opponent, Camera camera, FollowCameraRig rig, Transform shakePivot,
             Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug,
             Transform arenaBoundary, Transform runeWallPool, Transform enemyWallPool, TestTurret turret,
-            Transform elementZonePool, CaptureBoardView captureBoard)
+            Transform elementZonePool, CaptureBoardView captureBoard, RageAuraView rageAuras)
         {
             GameObject systems = new GameObject("VOW_Systems");
 
@@ -730,6 +771,7 @@ namespace Vow.EditorTools
             SetReference(bootstrap, "_sectorTelegraph", sectorTelegraph);
             SetReference(bootstrap, "_elementZonePool", elementZonePool);
             SetReference(bootstrap, "_captureBoard", captureBoard);
+            SetReference(bootstrap, "_rageAuras", rageAuras);
         }
 
         // ───────────────────────── 專案設定 ─────────────────────────

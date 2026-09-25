@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Text;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -19,13 +18,6 @@ namespace Vow.Tests.PlayMode
     {
         private const string SceneName = "VOW_Phase1_Greybox";
         private const float EdgeMarginPixels = 8f; // GestureMath.EdgeDeadzonePixels
-        private const float CircleRadius = 2.5f;   // E6（字面值，不讀 CaptureTuning）
-
-        // 量測窗口寫死：13.625 → 0 號光圈邊 2.5 約 11.1m，對手 4 m/s 約 2.8 秒；窗口 360 幀＝6.0 秒。
-        private const int WindowFrames = 360;
-        private const int TraceEveryFrames = 30;
-        // 準備階段（讓對手依序翻 2、6 號）每塊的上限：引導 3.5 秒＝210 幀，另留 30 幀。不屬於量測窗口。
-        private const int FlipBudgetFrames = 240;
 
         private Phase1Bootstrap _bootstrap;
         private HeroController _hero;
@@ -82,61 +74,8 @@ namespace Vow.Tests.PlayMode
 
         private Faction Owner(int tile) { return _bootstrap.CaptureView.OwnerOf(tile); }
 
-        private static float PlanarDistance(Vector3 a, float x, float z)
-        {
-            float dx = a.x - x;
-            float dz = a.z - z;
-            return Mathf.Sqrt(dx * dx + dz * dz);
-        }
-
-        // 把對手放到塔心，讓它自己引導 3.5 秒翻成紅（走真實的 Tick 與對手 AI，不動純邏輯）。
-        private IEnumerator LetTheOpponentFlip(int tile, Vector3 towerCenter)
-        {
-            _opponentLocomotion.WarpTo(towerCenter);
-            int f = 0;
-            while (Owner(tile) != Faction.RedTeam && f < FlipBudgetFrames)
-            {
-                yield return null;
-                f++;
-            }
-            Assert.AreEqual(Faction.RedTeam, Owner(tile), "準備階段：對手站在 " + tile + " 號塔心 " + f + " 幀仍未翻紅");
-        }
-
-        // ───────────── M1 重現：紅方基地 → 0 號，途中的木樁 ─────────────
-        [UnityTest]
-        public IEnumerator M1_FromTheRedHomeWithTwoAndSixRed_TheOpponentReachesTowerZerosCircleWithinSixSeconds()
-        {
-            yield return Setup();
-            EnterLobbyAndStart();
-            _heroLocomotion.WarpTo(new Vector3(-17f, 0f, -17f)); // 遠處，不觸發追打（E9 6m）
-
-            yield return LetTheOpponentFlip(2, new Vector3(10.5f, 0f, 6.0625f));
-            yield return LetTheOpponentFlip(6, new Vector3(-10.5f, 0f, 6.0625f));
-            Assert.AreEqual(Faction.RedTeam, Owner(1), "前提：1 號（紅方基地）是紅");
-            Assert.AreEqual(Faction.RedTeam, Owner(2), "前提：2 號是紅");
-            Assert.AreEqual(Faction.RedTeam, Owner(6), "前提：6 號是紅");
-            Assert.AreNotEqual(Faction.RedTeam, Owner(0), "前提：0 號不是紅");
-            Assert.IsTrue(_hero.IsAlive);
-            Assert.IsTrue(_opponent.IsAlive);
-
-            _opponentLocomotion.WarpTo(new Vector3(0f, 0f, 13.625f)); // 紅方基地復活點（E7）
-            StringBuilder trace = new StringBuilder();
-            trace.Append("f0 ").Append(_opponent.transform.position.ToString("F3"));
-            int enteredFrame = -1;
-            for (int f = 1; f <= WindowFrames; f++)
-            {
-                yield return null;
-                Vector3 position = _opponent.transform.position;
-                if (f == 1) Assert.AreEqual(0, _opponent.CaptureTargetTile, "前提：對手的目標塔應為 0");
-                Assert.IsFalse(_opponent.IsChasingHero, "英雄在 (−17,−17)，第 " + f + " 幀對手不應追打");
-                if (enteredFrame < 0 && PlanarDistance(position, 0f, 0f) <= CircleRadius) enteredFrame = f;
-                if (f % TraceEveryFrames == 0)
-                    trace.Append(" | f").Append(f).Append(' ').Append(position.ToString("F3"));
-            }
-            Debug.Log("[M1-PROBE] enteredFrame=" + enteredFrame + " trace: " + trace);
-            Assert.GreaterOrEqual(enteredFrame, 1,
-                "對手從 (0,13.625) 出發 " + WindowFrames + " 幀內沒有進入 0 號光圈（半徑 2.5）；軌跡：" + trace);
-        }
+        // v0.9.0 §2.6（使用者 2026-09-25 同意，§5 Q8）：「M1 重現」依賴 7 塊座標（對手在 (±10.5, 6.0625) 翻 2、6 號），
+        // 已退役，由 Capture19PlayTests.V9_B20（對手連續搶塊不卡住的掃描）取代。
 
         // ───────────── M1 修法：佔領模式停用木樁，回單挑恢復（使用者裁定 2026-09-25）─────────────
         [UnityTest]

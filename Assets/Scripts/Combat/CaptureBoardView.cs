@@ -4,28 +4,31 @@ using Vow.Core.Logic;
 
 namespace Vow.Combat
 {
-    // v0.8.0 七塊板塊的顯示（V080_CAPTURE_PLAN.md §2.1-4、E30）。只讀 ICaptureMatchView，不碰 CaptureMatchLogic。
+    // 板塊的顯示（V080_CAPTURE_PLAN.md §2.1-4、E30；v0.9.0 起 19 塊，V090_ENCIRCLE_PLAN.md E26、R6）。
+    // 只讀 ICaptureMatchView，不碰 CaptureMatchLogic。
     //
-    // 全部物件由 VOWPhase1SceneBuilder 預建（執行期禁止 CreatePrimitive）：7 塊地板、7 座塔、7 個光圈、7 個進度盤，
-    // 陣列索引＝板塊索引（E3）。換色只換 sharedMaterial（讀 renderer.material 會複製材質＝配置），
-    // 而且只在歸屬真的變了才換；進度盤每塔一個（7 個 > 同時引導上限 2），不共用池。
+    // 全部物件由 VOWPhase1SceneBuilder 預建（執行期禁止 CreatePrimitive）：每塊一片地板、一座塔、一個光圈、一個進度盤，
+    // 陣列索引＝板塊索引（E3）。塊數以 view.TileCount 為準，內部緩衝在 Initialize 依它配置一次（R6：不寫死 7）。
+    // 換色只換 sharedMaterial（讀 renderer.material 會複製材質＝配置），
+    // 而且只在歸屬真的變了才換；進度盤每塔一個（遠多於同時引導上限 2），不共用池。
     // 沒有任何 Collider（E23）：不擋路、不吃點擊、不進 BlockGrid。
     public sealed class CaptureBoardView : MonoBehaviour
     {
         private const float DiscHeightScale = 0.01f;
 
-        [SerializeField] private Renderer[] _floors = new Renderer[HexBoardLayout.TileCount];
-        [SerializeField] private Renderer[] _towers = new Renderer[HexBoardLayout.TileCount];
-        [SerializeField] private Renderer[] _rings = new Renderer[HexBoardLayout.TileCount];
-        [SerializeField] private Renderer[] _progressDiscs = new Renderer[HexBoardLayout.TileCount];
+        [SerializeField] private Renderer[] _floors = new Renderer[0];
+        [SerializeField] private Renderer[] _towers = new Renderer[0];
+        [SerializeField] private Renderer[] _rings = new Renderer[0];
+        [SerializeField] private Renderer[] _progressDiscs = new Renderer[0];
         [SerializeField] private Material _neutralMaterial;
         [SerializeField] private Material _blueMaterial;
         [SerializeField] private Material _redMaterial;
 
-        private readonly int[] _shownOwner = { -1, -1, -1, -1, -1, -1, -1 };
+        private int[] _shownOwner = new int[0];
         // 進度盤的 Transform 在 Initialize 抓一次：第一次讀某個 Component.transform 時 Unity 才建出它的 managed 包裝
         // （實測每個 40 bytes）——若等到對局中那座塔第一次有人引導才讀，就會在 LateUpdate 裡配置（V-C03 量到）。
-        private readonly Transform[] _discTransforms = new Transform[HexBoardLayout.TileCount];
+        private Transform[] _discTransforms = new Transform[0];
+        private int _tileCount;
         private ICaptureMatchView _view;
         private CaptureTuning _tuning;
 
@@ -49,8 +52,20 @@ namespace Vow.Combat
         {
             _view = view;
             _tuning = tuning;
+            _tileCount = view.TileCount;
+            if (_floors.Length != _tileCount || _towers.Length != _tileCount || _rings.Length != _tileCount
+                || _progressDiscs.Length != _tileCount)
+            {
+                Debug.LogError("[VOW] CaptureBoard 的預建物件數（地板 " + _floors.Length + "、塔 " + _towers.Length + "、光圈 "
+                               + _rings.Length + "、進度盤 " + _progressDiscs.Length + "）與板塊數 " + _tileCount
+                               + " 不符：請執行 VOW/Phase 1/Build Greybox Scene 重建場景。顯示停用（規則照跑）。", this);
+                _view = null;
+                return;
+            }
+            _shownOwner = new int[_tileCount];
+            _discTransforms = new Transform[_tileCount];
             // 起始狀態＝全部中立（與場景建置器預建的材質相同），在這裡明寫一次；之後只在歸屬真的變了才換色，
-            // 進入佔領待機時不必把 21 個物件全部重設一遍。
+            // 進入佔領待機時不必把全部物件重設一遍。
             for (int i = 0; i < _shownOwner.Length; i++)
             {
                 _shownOwner[i] = (int)Faction.Neutral;
@@ -78,7 +93,7 @@ namespace Vow.Combat
         {
             if (_view == null || _tuning == null) return;
 
-            for (int i = 0; i < HexBoardLayout.TileCount; i++)
+            for (int i = 0; i < _tileCount; i++)
             {
                 int owner = (int)_view.OwnerOf(i);
                 if (owner != _shownOwner[i])

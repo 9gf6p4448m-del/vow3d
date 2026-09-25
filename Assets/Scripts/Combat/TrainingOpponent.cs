@@ -31,7 +31,8 @@ namespace Vow.Combat
         // 旗標關著時 Update 走的是原本的單挑分支，一行都沒改；旗標只由 Phase1Bootstrap 在 CAPTURE 鈕進出模式時切換。
         private ICaptureMatchView _captureView;
         private CaptureTuning _captureTuning;
-        private readonly int[] _ownershipBuffer = new int[HexBoardLayout.TileCount];
+        private CaptureBoardSpec _captureSpec;   // v0.9.0：塔心與板塊數讀 spec（V090_ENCIRCLE_PLAN.md §2.1-4、E19）
+        private int[] _ownershipBuffer = new int[0]; // ConfigureCapture 時依 spec.TileCount 配置一次
         private Renderer[] _bodyRenderers;
         private bool _captureMode;
         private bool _chasingHero;
@@ -49,10 +50,12 @@ namespace Vow.Combat
             _bodyRenderers = GetComponentsInChildren<Renderer>(true);
         }
 
-        public void ConfigureCapture(ICaptureMatchView view, CaptureTuning tuning)
+        public void ConfigureCapture(ICaptureMatchView view, CaptureTuning tuning, CaptureBoardSpec spec)
         {
             _captureView = view;
             _captureTuning = tuning;
+            _captureSpec = spec;
+            _ownershipBuffer = new int[spec.TileCount];
         }
 
         public void SetCaptureMode(bool captureMode)
@@ -198,7 +201,7 @@ namespace Vow.Combat
         // CaptureOpponentPolicy；決定追英雄就走與單挑相同的 Chase → Windup → Recovery，前搖與恢復一定跑完（E10）。
         private void UpdateCapture()
         {
-            if (!_active || _frozen || _hero == null || _captureView == null || _captureTuning == null) return;
+            if (!_active || _frozen || _hero == null || _captureView == null || _captureTuning == null || _captureSpec == null) return;
             float dt = Time.deltaTime;
             if (_phase == AttackPhase.Chase)
             {
@@ -231,7 +234,7 @@ namespace Vow.Combat
 
             CaptureOpponentDecision decision = CaptureOpponentPolicy.Decide(
                 self.x, self.z, heroPosition.x, heroPosition.z, !_hero.IsAlive,
-                _chasingHero, _ownershipBuffer, _captureTuning);
+                _chasingHero, _ownershipBuffer, _captureTuning, _captureSpec);
 
             if (decision.ChaseHero)
             {
@@ -270,8 +273,8 @@ namespace Vow.Combat
             else if (_targetTile >= 0 && _locomotion.HasArrived)
             {
                 // 移動指令被外力清掉（例如被傳送）而且人不在該塔光圈內：補下一次，不然會原地發呆。
-                float dx = HexBoardLayout.CenterX(_targetTile) - self.x;
-                float dz = HexBoardLayout.CenterZ(_targetTile) - self.z;
+                float dx = _captureSpec.CenterX(_targetTile) - self.x;
+                float dz = _captureSpec.CenterZ(_targetTile) - self.z;
                 float radius = _captureTuning.CircleRadius;
                 if (dx * dx + dz * dz > radius * radius) IssueTileOrder(self.y);
             }
@@ -285,7 +288,7 @@ namespace Vow.Combat
                 _locomotion.Stop();
                 return;
             }
-            _locomotion.MoveTo(new Vector3(HexBoardLayout.CenterX(_targetTile), groundY, HexBoardLayout.CenterZ(_targetTile)));
+            _locomotion.MoveTo(new Vector3(_captureSpec.CenterX(_targetTile), groundY, _captureSpec.CenterZ(_targetTile)));
         }
 
         private void ResolveAttack()

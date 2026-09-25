@@ -130,6 +130,7 @@ namespace Vow.Core
             _quicksand.Reset();
             _wasRooted = false;
             _locomotion.SetMovementLocked(false);
+            _rageMultiplier = 1f;
             _locomotion.SetSpeedMultiplier(1f);
             _locomotion.WarpTo(spawnPosition);
             _vitality.Restore();
@@ -161,6 +162,13 @@ namespace Vow.Core
 
         public bool IsRooted => _quicksand != null && _quicksand.IsRooted;
         public float QuicksandSpeedMultiplier => _quicksand != null ? _quicksand.SpeedMultiplier : 1f;
+
+        // v0.9.0 E17：劣勢狂怒的移速倍率。實際倍率＝流沙倍率 × 狂怒倍率，只在 TickQuicksand 這一處合成
+        //（TickQuicksand 每幀都會覆寫 SetSpeedMultiplier，R2）。由組裝根每幀依 ICaptureMatchView 寫入；
+        // ResetForDuel 會把它歸 1（R3），所以復活後靠組裝根的下一次寫入恢復。單挑模式從不呼叫，恆為 1f。
+        private float _rageMultiplier = 1f;
+        public float RageSpeedMultiplier => _rageMultiplier;
+        public void SetRageSpeedMultiplier(float multiplier) { _rageMultiplier = multiplier; }
 
         // 由 Phase1Bootstrap 注入依賴（不在這裡 Find，任何一項都可以換成測試替身）。
         public void Initialize(IPlayerInputService input, ICombatFeedbackService feedback, Camera viewCamera,
@@ -214,7 +222,7 @@ namespace Vow.Core
 
             _quicksand.Tick(dt, zoneId);
             _locomotion.SetMovementLocked(_quicksand.IsRooted);
-            _locomotion.SetSpeedMultiplier(_quicksand.SpeedMultiplier);
+            _locomotion.SetSpeedMultiplier(_quicksand.SpeedMultiplier * _rageMultiplier);
 
             bool isRootedNow = _quicksand.IsRooted;
             if (isRootedNow && !_wasRooted) OnRootedStarted?.Invoke();
