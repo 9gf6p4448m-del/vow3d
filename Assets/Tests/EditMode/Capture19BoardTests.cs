@@ -199,6 +199,10 @@ namespace Vow.Tests.EditMode
             Assert.IsTrue(chase.ChaseHero, "英雄 (6.0,0) → 追");
             var noChase = CaptureOpponentPolicy.Decide(0f, 0f, 6.0625f, 0f, false, false, a, tuning, spec);
             Assert.IsFalse(noChase.ChaseHero, "英雄 (6.0625,0) → 不追");
+            // 加嚴（實作者 2026-09-25，補紅燈「新多載仍用 7 塊資料」在 Decide 路徑上的鑑別力）：不追時的目標也走 19 塊資料。
+            var target = CaptureOpponentPolicy.Decide(0f, 7.578125f, 1000f, 1000f, false, false, b, tuning, spec);
+            Assert.IsFalse(target.ChaseHero);
+            Assert.AreEqual(2, target.TargetTile, "Decide 19 塊多載在 (b) 盤面選 2");
         }
 
         // ── V9-A16 HUD 字串表 ──
