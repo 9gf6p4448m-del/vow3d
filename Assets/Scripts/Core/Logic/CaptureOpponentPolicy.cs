@@ -15,12 +15,23 @@ namespace Vow.Core.Logic
     // 灰盒對手的佔領模式決策（V080_CAPTURE_PLAN.md E9／E10／E24、V-A21／V-A22，2026-09-24 凍結）。零 UnityEngine。
     public static class CaptureOpponentPolicy
     {
-        // ownership 用 CaptureMatchLogic 的陣營代碼（BlueFactionId/RedFactionId/NeutralFactionId），7 個元素。
+        // ownership 用 CaptureMatchLogic 的陣營代碼（BlueFactionId/RedFactionId/NeutralFactionId），7 個元素（v0.8.0 七塊夾具）。
         public static CaptureOpponentDecision Decide(
             float opponentX, float opponentZ,
             float heroX, float heroZ, bool heroKnockedOut,
             bool wasChasingLastFrame,
             int[] ownership, CaptureTuning tuning)
+        {
+            return Decide(opponentX, opponentZ, heroX, heroZ, heroKnockedOut, wasChasingLastFrame,
+                          ownership, tuning, CaptureBoardSpec.V080Seven);
+        }
+
+        // v0.9.0 多載（V090_ENCIRCLE_PLAN.md E19、V9-A15）：規則不變，只把板塊資料換成 spec；ownership 長度＝spec.TileCount。
+        public static CaptureOpponentDecision Decide(
+            float opponentX, float opponentZ,
+            float heroX, float heroZ, bool heroKnockedOut,
+            bool wasChasingLastFrame,
+            int[] ownership, CaptureTuning tuning, CaptureBoardSpec spec)
         {
             bool chase = false;
             if (!heroKnockedOut)
@@ -37,7 +48,7 @@ namespace Vow.Core.Logic
 
             if (chase) return new CaptureOpponentDecision(true, -1);
 
-            int target = SelectTargetTile(opponentX, opponentZ, ownership);
+            int target = SelectTargetTile(opponentX, opponentZ, ownership, spec);
             return new CaptureOpponentDecision(false, target);
         }
 
@@ -45,13 +56,19 @@ namespace Vow.Core.Logic
         // 同分不覆寫既有的較小索引）；一塊都沒有回 -1。
         public static int SelectTargetTile(float opponentX, float opponentZ, int[] ownership)
         {
+            return SelectTargetTile(opponentX, opponentZ, ownership, CaptureBoardSpec.V080Seven);
+        }
+
+        // v0.9.0 多載：同一條規則，板塊資料來自 spec（V9-A15）。
+        public static int SelectTargetTile(float opponentX, float opponentZ, int[] ownership, CaptureBoardSpec spec)
+        {
             int best = -1;
             float bestDistSq = 0f;
-            for (int i = 0; i < HexBoardLayout.TileCount; i++)
+            for (int i = 0; i < spec.TileCount; i++)
             {
                 if (ownership[i] == CaptureMatchLogic.RedFactionId) continue;
-                float dx = HexBoardLayout.CenterX(i) - opponentX;
-                float dz = HexBoardLayout.CenterZ(i) - opponentZ;
+                float dx = spec.CenterX(i) - opponentX;
+                float dz = spec.CenterZ(i) - opponentZ;
                 float distSq = dx * dx + dz * dz;
                 if (best == -1 || distSq < bestDistSq)
                 {
