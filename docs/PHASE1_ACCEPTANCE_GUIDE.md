@@ -526,3 +526,40 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 - 全部場次 console 0 error。
 
 **未驗證**：① KO 停頓期間的觸控是否被封住，瀏覽器沒有驗到：軟體渲染下每張截圖約 3 秒，比 2.5 秒停頓還長，無法確定點擊落在停頓內；這一項以 PlayMode「KO 停頓最後 80 ms 送出指令，重置後不得生效」的測試為準。② 符印牆擋招、繞牆追擊只有 PlayMode 證據，沒有做瀏覽器畫面實測。③ 原生 Android／iOS 的 120Hz、震動、50／80 ms 延遲與 10 人手感測試未做。舊版快取：PWA 若仍顯示 v0.6.2，關閉分頁重開或強制重新整理。
+
+## 18. v0.8.0：七塊板塊佔領迴圈（2026-09-25）
+
+規格與凍結驗收見 `docs/V080_CAPTURE_PLAN.md`（§1 規則與數值、§3 V 條文、§6 修訂紀錄）。7 塊平頂六角鋪在場地內：4 號（南、鏡頭近側）是藍方（英雄）基地、1 號（北）是紅方（對手）基地，其餘 5 塊開局為灰。站進塔心半徑 2.5m 的光圈內自動引導 3.5 秒即翻成己方顏色；受傷、離圈、倒地會讓進度歸零，雙方同在一圈時都凍結。開局後每 1.0 秒整點計分，每方加「己方塊數 × 2」，先到 1000 分者勝（同一次計分雙方都到 1000 時分高者勝、同分平手）。對手會依選點規則依序搶塊，英雄在 6m 內時轉為追打；雙方倒地後在基地（被搶時改在場邊）復活。結算停 3.0 秒後回佔領待機，雙方回 v0.7.0 出生點、結果與比分保留到下一局。佔領模式（待機／對局中／結算）時木樁整個停用，回單挑才恢復；進佔領模式時英雄原本的鎖定會清掉（r2 N1）。
+
+**試玩步驟**：① 按右上 `CAPTURE`：按鈕變綠 `CAPTURE: ON`、右上顯示 `CAPTURE: TAP RED`、地板出現 7 塊灰色六角與光圈，木樁消失；② 點紅色對手開局：英雄移到 4 號、畫面顯示 `CAPTURE ACTIVE`、比分 0／0；③ 點左上 5 號塔附近的地面，走進光圈站 3.5 秒看它翻藍；④ 放著不動會被對手逐塊搶走並擊倒，約 95 秒遊戲時間紅方到 1000，顯示 `LAST: RED WINS` 後回待機；⑤ 再點紅色對手開第二局（比分、歸屬重置）；⑥ 在待機時再按 `CAPTURE` 回原本的單挑模式。
+
+**工程驗證**（WebGL 來源 `96e143f`；N1 修正 `0bc2853`）：
+- N1（打木樁中按 CAPTURE 對空揮刀）：`Phase1Bootstrap.cs:583-584` 進佔領模式時呼叫 `_hero.CancelCombatForDuel()`；新測試 `CaptureDummyPlayTests.N1_EnteringCaptureModeWhileAttackingTheDummy_ClearsTheHerosTargetAndStopsTheHits`。改壞驗紅：拿掉該行後紅在 `CaptureDummyPlayTests.cs:280`（Expected null，But was Dummy_Target），備份還原 sha256 一致（256684f8…）。
+- `bash Tools/DotnetCheck/verify.sh`（`0bc2853` 與 `96e143f` 各跑一次）：純邏輯 233 通過／1 略過、Unity 腳本編譯 0 錯、紅線掃描全過，`RESULT: ALL PASS`。
+- Unity EditMode：234 項 229 通過／5 略過／0 失敗（`0bc2853` 與 `96e143f` 各一次，`../vow-toolchain/v080-N1-edit.xml`、`v080-D-edit.xml`）；PlayMode（`0bc2853`，完整一次）：143／143 通過（`v080-N1-play.xml`）。
+- `SeedCaptureScoresForTest` 與模擬手指 API 都在 `#if UNITY_EDITOR` 內（`Phase1Bootstrap.cs:167-173,187-193`）。
+- WebGL：Unity batchmode `VOWWebGLBuilder.Build` 成功，10.6 MB、耗時 154 秒（`../vow-toolchain/v080-D-webgl-build.log`）；以 `SKIP_BUILD=1 bash Tools/deploy-webgl.sh` 部署同一份產物 → `origin/gh-pages d232ee6`（2026-09-25 12:41:51 +0800）。
+
+**瀏覽器實測**（Playwright；Chromium 844×390、DPR 2、觸控、swiftshader 約 5～12 FPS；截圖在 `../vow-toolchain/browser-screenshots/`；腳本 `../vow-toolchain/v080-online-check.py`、`v080-webkit-check.py`，座標推導 `v080_coords.py`：CAPTURE (786,90)、待機對手 (321,21)、5 號塔心地面 (162,49)）：
+- 本機建置預演（`v080-local-*`）與線上（`v080-online-*`）結果一致，兩場 `pageerror`＝0、`console.error`＝0（`../vow-toolchain/v080-local-check.log`、`v080-online-check.log`）。
+- 線上版本列：`v0.8.0 · build 2026-09-25 04:27 UTC · 96e143f`。
+- `v080-online-01-lobby`：`CAPTURE: ON`（綠）、`CAPTURE: TAP RED`、灰色六角與光圈、木樁已隱藏。
+- `v080-online-02-active`：`CAPTURE ACTIVE`、BLUE 0／RED 0、4 號藍。
+- `v080-online-03-tower5`（點 5 號後 9.0 秒不輸入）：英雄站在 5 號、5 號為藍，BLUE 34。
+- `v080-online-04-red-wins`（之後不輸入 300 秒）：`LAST: RED WINS`、RED 1004、BLUE 108，畫面內各塊全紅，英雄在中央出生點。
+- `v080-online-05-second-match`：`CAPTURE ACTIVE`、比分 0／0、4 號藍。
+- WebKit `iPhone 13 landscape`（`v080-webkit-loaded.png`、`../vow-toolchain/v080-webkit-check.log`）：7.8 秒內 `vowUnityInstance` 為真、`#vow-loading` 為 `display:none`、版本列同上、`pageerror`＝0、`console.error`＝0。
+
+**已知限制**：
+- WebGL 只供日常試玩與看畫面；瀏覽器的輸入延遲、幀率與觸控取樣與原生 App 不同。
+- 844×390 畫面下，開局後鏡頭跟著英雄在 4 號，1 號（紅方基地）在畫面外，`02-active` 截圖看不到 1 號的紅色。
+- r2 N2（LOW，記錄不修）：佔領待機時元素區仍會傷到隱藏的木樁，沒有錯誤顯示。r2 N4（LOW，記錄不修）：`verify.sh` 的 Unity 編譯檢查固定定義 `UNITY_EDITOR`，正式版路徑要靠 WebGL 建置把關。
+- 既有 `ZeroAllocationTests.Combat_UpdateAndLateUpdate_AllocateNothing` 在高負載單跑時會紅在 164 bytes，v0.7.0 起點 `5687f66` 同樣 5/5 紅，與 v0.8.0 無關（`../vow-toolchain/v080-za-summary.txt`）；本次完整 PlayMode 這條是綠的。
+
+**未驗證**：
+1. 原生 Android／iOS 的 120Hz、震動、50／80 ms 延遲注入下的手感。
+2. 倒地倒數（復活秒數）在線上畫面的可讀性：軟體渲染每張截圖約 3 秒，本輪沒有截到倒地畫面。
+3. 對手第二目標在 0.5mm 不等距（h＝6.0625）下的實際表現，只有 PlayMode 證據。
+4. 線上畫面中 1 號開局為紅（鏡頭外，見已知限制）。
+5. WebKit 只驗載入，沒有在 WebKit 上跑佔領流程。
+6. 舊版快取：PWA 若仍顯示 v0.7.0，關閉分頁重開或強制重新整理。

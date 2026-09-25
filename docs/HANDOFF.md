@@ -6,7 +6,7 @@
 - Claude Code 交接基線為 `e6e9d30`；Codex 入口與本紀錄於 `d652ce4` 加入。開始工作時以實際 `git status` 與 `git log` 為準；`e6e9d30` 記錄 v0.6.1 驗收與線上試玩結果。
 - v0.6.1 新增五種元素反應飄字、英雄受困 `ROOTED` 飄字與 HUD `ROOTED`／`SLOWED`。規格與凍結驗收見 `docs/V061_FEEDBACK_PLAN.md`；結果見驗收指南 §15。
 - 驗收指南記錄：`verify.sh` 195 通過、1 略過；Unity EditMode 0 紅、PlayMode 99 全綠；突變 114／114 CAUGHT。這是 2026-09-21 的既有紀錄；2026-09-23 的重新驗證見下節。
-- `origin/gh-pages` 為 `f9d0d12`（2026-09-24 15:13:51 +0800），部署 v0.7.0（灰盒對手攻防），建置來源 `e18c0b4`（分支 `v070-greybox-duel`）；線上首頁顯示 `v0.7.0 · build 2026-09-24 06:34 UTC · e18c0b4`。驗收指南 §17 記有實測結果。可回退送達點：v0.6.2 的 `fcaf70c`（來源 `cdb41d0`）。
+- `origin/gh-pages` 為 `d232ee6`（2026-09-25 12:41:51 +0800），部署 v0.8.0（七塊板塊佔領迴圈），建置來源 `96e143f`（分支 `v080-capture`）；線上首頁顯示 `v0.8.0 · build 2026-09-25 04:27 UTC · 96e143f`。驗收指南 §18 記有實測結果。可回退送達點：v0.7.0 的 `f9d0d12`（來源 `e18c0b4`）。
 
 ## 未決事項與下一步
 
@@ -17,6 +17,14 @@
 ## 交接檢查
 
 開始工作時重新執行 `git status --short --branch`、`git log -5 --oneline`、`git log origin/gh-pages -1`；以當下結果為準。若要宣告新版本完成，附改動檔案、實跑指令與輸出，以及部署後的送達證明。
+
+## 2026-09-25 v0.8.0 送達（七塊板塊佔領迴圈）
+
+- 分支 `v080-capture`：步驟 A～C、r1 修補 `61a3168`、r2 N1 `0bc2853`（進佔領模式時清掉英雄鎖定）、版本號 `96e143f`（建置來源）。規格與凍結驗收見 `docs/V080_CAPTURE_PLAN.md`。
+- `UNITY_REFS_DIR=../vow-toolchain/refs bash Tools/DotnetCheck/verify.sh`：233 通過／1 略過、編譯 0 錯、紅線全過，`RESULT: ALL PASS`；Unity EditMode 229 通過／5 略過／0 失敗；PlayMode 143／143（`0bc2853`）。
+- WebGL 10.6 MB、154 秒（batchmode `VOWWebGLBuilder.Build`），本機 `python -m http.server` 預演通過後以 `SKIP_BUILD=1 bash Tools/deploy-webgl.sh` 部署同一份產物 → `origin/gh-pages d232ee6`（2026-09-25 12:41:51 +0800）；線上版本列讀回 `v0.8.0 · build 2026-09-25 04:27 UTC · 96e143f`。
+- 線上實測（Chromium 844×390、DPR 2、觸控、swiftshader）：CAPTURE→待機→開局→英雄翻 5 號→放置 300 秒紅勝（RED 1004）→第二局，`pageerror`／`console.error` 皆 0；WebKit `iPhone 13 landscape` 載入成功、0 error。細節、截圖與未驗證項見驗收指南 §18。
+- 下一步：① 手機試玩 v0.8.0（倒地倒數可讀性、1 號開局紅色在畫面外）；② 原生裝置驗 120Hz、震動與延遲注入下的手感。
 
 ## 2026-09-24 v0.7.0 送達（灰盒對手攻防）
 
