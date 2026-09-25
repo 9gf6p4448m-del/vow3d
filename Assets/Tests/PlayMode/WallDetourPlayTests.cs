@@ -275,34 +275,46 @@ namespace Vow.Tests.PlayMode
             Vector3 destination = new Vector3(_castObb.Center.x, 0f, _castObb.Center.y); // 牆腳
             float limit = 1.5f * 2.76134f / MoveSpeed;
 
-            _input.TapGround(destination);
-            yield return null; // L5：剛下指令的那一幀 _hasOrder 還是 false，HasArrived 會假性回 true
-            yield return null;
-
-            float deadline = Time.time + limit;
-            bool sawMoving = false;
-            while (Time.time <= deadline)
+            // 隨機失敗歸因（2026-09-25）：修前單跑 15 次，base 14dd9be 紅 5/15、fd5b678 紅 6/15，紅的停點
+            // 都固定在 (0.24, 0.05, 2.66)（限值 1.357107m）。本測試沒有釘住 Time.captureDeltaTime，
+            // 最後一步的幀長隨編輯器實際渲染速度變動，讓停點在格點邊界附近抖動。固定 dt 讓停點變成決定性的
+            // （寫法比照 ShieldAndProjectilePlayTests.cs:612-630 的區域性 try/finally）。門檻、點擊點、案例不動。
+            Time.captureDeltaTime = 1f / 60f;
+            try
             {
-                if (_hero.StateMachine.CurrentState == PlayerState.Moving) sawMoving = true;
-                if (_hero.StateMachine.CurrentState == PlayerState.Idle && _locomotion.HasArrived) break;
+                _input.TapGround(destination);
+                yield return null; // L5：剛下指令的那一幀 _hasOrder 還是 false，HasArrived 會假性回 true
                 yield return null;
+
+                float deadline = Time.time + limit;
+                bool sawMoving = false;
+                while (Time.time <= deadline)
+                {
+                    if (_hero.StateMachine.CurrentState == PlayerState.Moving) sawMoving = true;
+                    if (_hero.StateMachine.CurrentState == PlayerState.Idle && _locomotion.HasArrived) break;
+                    yield return null;
+                }
+
+                Assert.IsTrue(sawMoving, "英雄從頭到尾沒有進入 Moving：這個測試沒有測到任何移動");
+                Assert.IsTrue(_locomotion.HasArrived, "T=" + limit + "s 內 HasArrived 仍為 false：英雄還在頂牆或發呆");
+                Assert.AreEqual(PlayerState.Idle, _hero.StateMachine.CurrentState, "狀態機沒有回到 Idle");
+                yield return AssertHeroHasStopped();
+
+                Vector3 stop = _hero.transform.position;
+                float stopTolerance = 0.3f + 0.35f + 0.5f * Mathf.Sqrt(2f);
+                Assert.LessOrEqual(PlanarDistance(stop, destination), stopTolerance,
+                    "停點離牆腳太遠：" + stop + "（上限 " + stopTolerance + "m）");
+
+                // §6 R1 新增：停點必須與英雄起點在牆的同一側（禁區 z∈[3.35,4.65]）
+                Assert.Less(stop.z, 3.35f, "停點跑到牆的另一側去了：" + stop);
+                Assert.AreEqual(0.25f, stop.x, ArriveTolerance, "停點不是 R1a 定義的那一格格心 x：" + stop);
+                Assert.AreEqual(2.75f, stop.z, ArriveTolerance, "停點不是 R1a 定義的那一格格心 z：" + stop);
+                Assert.Less(heroStart.z, 3.35f, "前置條件：英雄起點本來就在牆的南側");
             }
-
-            Assert.IsTrue(sawMoving, "英雄從頭到尾沒有進入 Moving：這個測試沒有測到任何移動");
-            Assert.IsTrue(_locomotion.HasArrived, "T=" + limit + "s 內 HasArrived 仍為 false：英雄還在頂牆或發呆");
-            Assert.AreEqual(PlayerState.Idle, _hero.StateMachine.CurrentState, "狀態機沒有回到 Idle");
-            yield return AssertHeroHasStopped();
-
-            Vector3 stop = _hero.transform.position;
-            float stopTolerance = 0.3f + 0.35f + 0.5f * Mathf.Sqrt(2f);
-            Assert.LessOrEqual(PlanarDistance(stop, destination), stopTolerance,
-                "停點離牆腳太遠：" + stop + "（上限 " + stopTolerance + "m）");
-
-            // §6 R1 新增：停點必須與英雄起點在牆的同一側（禁區 z∈[3.35,4.65]）
-            Assert.Less(stop.z, 3.35f, "停點跑到牆的另一側去了：" + stop);
-            Assert.AreEqual(0.25f, stop.x, ArriveTolerance, "停點不是 R1a 定義的那一格格心 x：" + stop);
-            Assert.AreEqual(2.75f, stop.z, ArriveTolerance, "停點不是 R1a 定義的那一格格心 z：" + stop);
-            Assert.Less(heroStart.z, 3.35f, "前置條件：英雄起點本來就在牆的南側");
+            finally
+            {
+                Time.captureDeltaTime = 0f;
+            }
         }
 
         // ───────────────────────────── V4 d ─────────────────────────────
