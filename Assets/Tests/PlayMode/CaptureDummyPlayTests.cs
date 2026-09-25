@@ -250,6 +250,42 @@ namespace Vow.Tests.PlayMode
             AssertDummy(dummy, overhead, true, "回 Off 後自己復活");
         }
 
+        // r2 N1（使用者裁定 2026-09-25）：英雄正在打木樁時按 CAPTURE，進佔領模式就要清掉鎖定；之後 120 幀不得再命中。
+        [UnityTest]
+        public IEnumerator N1_EnteringCaptureModeWhileAttackingTheDummy_ClearsTheHerosTargetAndStopsTheHits()
+        {
+            yield return Setup();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            Assert.IsNotNull(dummy, "場景缺少木樁");
+            int hits = 0;
+            _hero.OnAttackHitResolved += _ => hits++;
+
+            // 走真實觸控路由點木樁（單挑待機 Off／Dormant）
+            Vector3 screen = Camera.main.WorldToScreenPoint(dummy.transform.position + Vector3.up);
+            Assert.Greater(screen.z, 0f, "木樁在鏡頭後方");
+            _bootstrap.WorldTapInput.SendScreenTap(screen.x, screen.y);
+            int f = 0;
+            while (hits < 1 && f < 300)
+            {
+                yield return null;
+                f++;
+            }
+            Assert.GreaterOrEqual(hits, 1, "前提：點木樁 300 幀內英雄應至少命中一次（活性）");
+            Assert.IsTrue(ReferenceEquals(dummy, _hero.CurrentTarget), "前提：英雄應鎖定木樁");
+            Assert.IsTrue(dummy.IsAlive, "前提：木樁仍活著");
+            Assert.AreEqual(CaptureMatchState.Off, _bootstrap.CaptureState);
+
+            TapCaptureButton();
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState);
+            Assert.IsNull(_hero.CurrentTarget, "進佔領模式後英雄的鎖定應清掉");
+            int hitsAtTap = hits;
+            float healthAtTap = dummy.Health;
+            for (int i = 0; i < 120; i++) yield return null;
+            Assert.AreEqual(hitsAtTap, hits, "進佔領模式後 120 幀內英雄的命中數不得增加");
+            Assert.AreEqual(healthAtTap, dummy.Health, 0.01f, "進佔領模式後 120 幀內木樁血量不得減少");
+            Assert.IsNull(_hero.CurrentTarget, "120 幀後英雄仍不得鎖定任何目標");
+        }
+
         private static bool IsDrawn(Renderer renderer)
         {
             return renderer.enabled && renderer.gameObject.activeInHierarchy;

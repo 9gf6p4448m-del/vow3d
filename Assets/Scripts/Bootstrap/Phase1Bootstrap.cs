@@ -580,6 +580,8 @@ namespace Vow.Bootstrap
             if (action == CaptureButtonAction.EnterCaptureMode)
             {
                 if (!_capture.TryEnterCaptureMode()) return;
+                // r2 N1（使用者裁定 2026-09-25）：進佔領模式時清掉英雄的鎖定，免得在 Lobby 對著停用的木樁繼續揮刀。只改這個入口。
+                _hero.CancelCombatForDuel();
                 _opponent.SetCaptureMode(true);
                 if (_captureBoard != null) _captureBoard.SetShown(true);
                 SetDummiesSuppressed(true);
