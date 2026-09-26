@@ -17,6 +17,18 @@ namespace Vow.Core.Logic
         public const int MaxRageSeconds = 12;
         private static readonly string[] RageTable = BuildRageTable();
 
+        // v0.10.0 E16：15 分鐘倒數 "M:SS"（無條件進位，0～900 共 901 個預建字串）。
+        public const int MaxClockSeconds = 900;
+        private static readonly string[] ClockTable = BuildClockTable();
+
+        // v0.10.0 E16：聖所常駐字串（強度固定 15% 時顯示）。
+        public const string SanctuaryLabel = "SANCT 15%";
+
+        // v0.10.0 E16：圍城衰減中的聖所強度 "SIEGE n%"（n＝0～14）。
+        public const int MinSiegePercent = 0;
+        public const int MaxSiegePercent = 14;
+        private static readonly string[] SiegeTable = BuildSiegeTable();
+
         // 對局狀態與按鈕字串（§2.4；預建常數，同一參考重複使用）。
         public const string CaptureButtonLabelOff = "CAPTURE";
         public const string CaptureButtonLabelOn = "CAPTURE: ON";
@@ -56,6 +68,26 @@ namespace Vow.Core.Logic
             return RageTable[n - MinRageSeconds];
         }
 
+        // 剩餘秒數無條件進位到整數秒，夾在 [0, 900]（E16：900→"15:00"、899.75→"15:00"、899.0→"14:59"）。
+        public static string Clock(float remainingSeconds)
+        {
+            int whole = (int)remainingSeconds;
+            int n = remainingSeconds > whole ? whole + 1 : whole;
+            if (n < 0) n = 0;
+            if (n > MaxClockSeconds) n = MaxClockSeconds;
+            return ClockTable[n];
+        }
+
+        public static string Sanctuary() => SanctuaryLabel;
+
+        // 聖所強度（圍城衰減中），夾在 [0, 14]。
+        public static string Siege(int percent)
+        {
+            if (percent < MinSiegePercent) percent = MinSiegePercent;
+            if (percent > MaxSiegePercent) percent = MaxSiegePercent;
+            return SiegeTable[percent - MinSiegePercent];
+        }
+
         private static string[] BuildScoreTable()
         {
             string[] table = new string[MaxScore + 1];
@@ -76,6 +108,26 @@ namespace Vow.Core.Logic
             string[] table = new string[MaxRageSeconds - MinRageSeconds + 1];
             for (int i = MinRageSeconds; i <= MaxRageSeconds; i++)
                 table[i - MinRageSeconds] = "RAGE " + i;
+            return table;
+        }
+
+        private static string[] BuildClockTable()
+        {
+            string[] table = new string[MaxClockSeconds + 1];
+            for (int i = 0; i <= MaxClockSeconds; i++)
+            {
+                int minutes = i / 60;
+                int seconds = i % 60;
+                table[i] = minutes + ":" + (seconds < 10 ? "0" + seconds : seconds.ToString());
+            }
+            return table;
+        }
+
+        private static string[] BuildSiegeTable()
+        {
+            string[] table = new string[MaxSiegePercent - MinSiegePercent + 1];
+            for (int i = MinSiegePercent; i <= MaxSiegePercent; i++)
+                table[i - MinSiegePercent] = "SIEGE " + i + "%";
             return table;
         }
     }

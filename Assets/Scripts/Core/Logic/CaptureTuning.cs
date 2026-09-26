@@ -45,5 +45,16 @@ namespace Vow.Core.Logic
         public int RageDeficitDenominator = 20;
         public float RageSpeedMultiplier = 1.15f;
         public float RageSeconds = 12f;
+
+        // ── v0.10.0 母板塊聖所／圍城衰減／15 分鐘倒數／慢計分（V0100_SANCTUARY_PLAN.md E1、V10-A01） ──
+        public int SanctuaryPercent = 15;
+        public float ReclaimCaptureSeconds = 1.8f;
+        public int SiegeTileNumerator = 7;
+        public int SiegeTileDenominator = 10;
+        public float SiegeSeconds = 120f;
+        public float SiegeStepSeconds = 1f;
+        public float MatchTimeLimitSeconds = 900f;
+        public int PacedScoreUnitsPerTilePerTick = 1;
+        public int PacedScoreUnitsPerPoint = 7;
     }
 }

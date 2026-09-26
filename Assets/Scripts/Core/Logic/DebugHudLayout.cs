@@ -43,6 +43,7 @@ namespace Vow.Core.Logic
         public HudRect Mode, Hitbox, Latency, Grid, EnemyWall, Turret;
         public HudRect Water, Fire, Wind, Elem;
         public HudRect MatchPanel, Capture; // v0.8.0 佔領對局面板與 CAPTURE 鈕（V080_CAPTURE_PLAN.md §2.4）
+        public HudRect MatchClock, SanctuaryRow; // v0.10.0 上方正中倒數與聖所/圍城列（V0100_SANCTUARY_PLAN.md E17）
         public float Scale;
         public float PanelHeight;
 
@@ -90,6 +91,11 @@ namespace Vow.Core.Logic
             float matchPanelHeight = captureModeActive ? 116f : 72f;
             layout.MatchPanel = new HudRect(matchPanelX, Pad, 176f, matchPanelHeight);
             layout.Capture = new HudRect(matchPanelX, Pad + 116f + Pad, 176f, Row * 1.6f);
+
+            // v0.10.0：上方正中倒數／聖所列（E17）。與左側面板、右上面板的算式完全獨立，不讀不寫上面任何欄位。
+            float clockX = screenWidth / layout.Scale / 2f - 44f;
+            layout.MatchClock = new HudRect(clockX, 8f, 88f, 22f);
+            layout.SanctuaryRow = new HudRect(clockX, 8f + 22f, 88f, 22f);
 
             return layout;
         }

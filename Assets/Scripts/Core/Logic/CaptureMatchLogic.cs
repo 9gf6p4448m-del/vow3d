@@ -8,15 +8,17 @@ namespace Vow.Core.Logic
     // 棋盤由 CaptureBoardSpec 決定：單參數建構子＝V080Seven（v0.8.0 規則，包夾與狂怒關閉，E27），
     // 雙參數建構子傳 V090Nineteen＝本批十九塊規則。
     //
-    // Tick 內固定順序（語意凍結，不得打亂）：
+    // Tick 內固定順序（語意凍結，不得打亂；v0.10.0 新增 ③c、⑦，見 V0100_SANCTUARY_PLAN.md §2.1-1）：
     //   ① 非 Active 狀態只推進結算停頓
     //   ②′ 雙方狂怒倒數減 dt（夾在 0）
-    //   ② 算雙方在哪個光圈（倒地方不算）
-    //   ③ 引導／爭奪／翻塊
+    //   ② 算雙方在哪個光圈與所在板塊（倒地方都算 -1）
+    //   ③ 引導／爭奪／翻塊（門檻依 E6：自己的母板塊用 ReclaimCaptureSeconds，否則 CaptureSeconds）
     //   ③b 本 tick 有翻塊就對雙方各跑一次 BFS，連不回己方根的己方塊中立化；依 E13／E14 判定狂怒
+    //   ③c 圍城時鐘、聖所強度、在聖所判定（E2、E9～E11；每個 Active tick 都跑，不像 ③b 只在翻塊時跑）
     //   ④ 倒地倒數與復活地點（必須在 ③ 之後：看得到本 tick 的翻塊）
-    //   ⑤ 計分時鐘
-    //   ⑥ 勝負（進入 Ended 時清除狂怒）
+    //   ⑤ 計分時鐘、MatchElapsed += dt、計分（E15 慢計分）
+    //   ⑥ 1000 分勝負（進入 Ended 時清除狂怒）
+    //   ⑦ 時間到（E13；⑥ 之後仍是 Active 且 MatchElapsed ≥ MatchTimeLimitSeconds 才判）
     public sealed class CaptureMatchLogic
     {
         // 板塊歸屬代碼，數值對齊 Contracts.Faction 的序數（BlueTeam=0,RedTeam=1,Neutral=2）；
@@ -38,6 +40,14 @@ namespace Vow.Core.Logic
         private readonly int[] _neutralizedCount = new int[2];
         private readonly int[] _cutEventCount = new int[2];
         private readonly int[] _rageTriggerCount = new int[2];
+
+        // 以陣營代碼為索引的 v0.10.0 狀態（V0100_SANCTUARY_PLAN.md E2～E15）。
+        private readonly bool[] _inSanctuary = new bool[2];
+        private readonly int[] _sanctuaryPercent = new int[2];      // pct，E3
+        private readonly float[] _siegeTime = new float[2];         // siege_B，E10
+        private readonly float[] _siegeStepClock = new float[2];    // E11 步進時鐘
+        private readonly int[] _previousSiegeTarget = new int[2];   // E11 上一 tick 的 target
+        private readonly int[] _units = new int[2];                 // 慢計分整數餘數，E15
 
         private int _blueTile = -1;
         private float _blueProgress;
@@ -112,6 +122,33 @@ namespace Vow.Core.Logic
         public int BlueRageTriggerCount => _rageTriggerCount[BlueFactionId];
         public int RedRageTriggerCount => _rageTriggerCount[RedFactionId];
 
+        // v0.10.0 母板塊聖所／圍城／倒數（E2、E3、E9～E11、E13、E18）。
+        // 在聖所與受傷百分比只在對局 Active 時才可能為 true／<100（E2 的定義本身含「對局 Active」）。
+        public bool BlueInSanctuary => State == CaptureMatchState.Active && _inSanctuary[BlueFactionId];
+        public bool RedInSanctuary => State == CaptureMatchState.Active && _inSanctuary[RedFactionId];
+        public int BlueSanctuaryPercent => _sanctuaryPercent[BlueFactionId];
+        public int RedSanctuaryPercent => _sanctuaryPercent[RedFactionId];
+        public int BlueDamageTakenPercent => State != CaptureMatchState.Active ? 100
+            : (_inSanctuary[BlueFactionId] ? 100 - _sanctuaryPercent[BlueFactionId] : 100);
+        public int RedDamageTakenPercent => State != CaptureMatchState.Active ? 100
+            : (_inSanctuary[RedFactionId] ? 100 - _sanctuaryPercent[RedFactionId] : 100);
+        public float BlueChannelRequiredSeconds => _blueTile == -1 ? 0f : RequiredCaptureSeconds(BlueFactionId, _blueTile);
+        public float RedChannelRequiredSeconds => _redTile == -1 ? 0f : RequiredCaptureSeconds(RedFactionId, _redTile);
+        // 被圍時間，不進 ICaptureMatchView（E18）；供 V10-A07、A10(h) 的「siege 0」斷言讀取。
+        public float BlueSiegeSeconds => _siegeTime[BlueFactionId];
+        public float RedSiegeSeconds => _siegeTime[RedFactionId];
+
+        public float MatchElapsed { get; private set; }
+        public float MatchRemainingSeconds
+        {
+            get
+            {
+                float remaining = _tuning.MatchTimeLimitSeconds - MatchElapsed;
+                return remaining > 0f ? remaining : 0f;
+            }
+        }
+        public bool EndedByTime { get; private set; }
+
         public bool TryEnterCaptureMode()
         {
             if (State != CaptureMatchState.Off) return false;
@@ -147,6 +184,18 @@ namespace Vow.Core.Logic
 
             _blueKnockedOut = false; _blueRespawnRemaining = 0f; _bluePendingRespawn = false;
             _redKnockedOut = false; _redRespawnRemaining = 0f; _redPendingRespawn = false;
+
+            // v0.10.0（E20）：聖所／圍城／倒數／慢計分歸零，第二局不沿用上一局的狀態。
+            _inSanctuary[BlueFactionId] = false; _inSanctuary[RedFactionId] = false;
+            _sanctuaryPercent[BlueFactionId] = _tuning.SanctuaryPercent;
+            _sanctuaryPercent[RedFactionId] = _tuning.SanctuaryPercent;
+            _siegeTime[BlueFactionId] = 0f; _siegeTime[RedFactionId] = 0f;
+            _siegeStepClock[BlueFactionId] = 0f; _siegeStepClock[RedFactionId] = 0f;
+            _previousSiegeTarget[BlueFactionId] = _tuning.SanctuaryPercent;
+            _previousSiegeTarget[RedFactionId] = _tuning.SanctuaryPercent;
+            _units[BlueFactionId] = 0; _units[RedFactionId] = 0;
+            MatchElapsed = 0f;
+            EndedByTime = false;
 
             Result = CaptureMatchResult.None;
             _endPauseRemaining = 0f;
@@ -217,10 +266,26 @@ namespace Vow.Core.Logic
 
         // PlayMode 的終局用比分種子入口（R12）；只寫兩個比分整數，不動計分時鐘、歸屬、進度（V-A15）。
         // #if UNITY_EDITOR 的權限收斂由 Unity 端的入口（Bootstrap）負責——本檔是純邏輯測試也要呼叫得到，不能在這裡加。
+        // v0.10.0：另外清雙方 units（慢計分整數餘數），否則種子後殘留的餘數會讓比分提早跨過門檻
+        // （V10-A08：不清的話下一次計分就可能多算一分）。不動時鐘、歸屬、進度。
         public void SeedScoresForTest(int blueScore, int redScore)
         {
             BlueScore = blueScore;
             RedScore = redScore;
+            _units[BlueFactionId] = 0;
+            _units[RedFactionId] = 0;
+        }
+
+        // v0.10.0（E19）：只寫 MatchElapsed，不動 pct、步進時鐘、歸屬、比分。
+        public void SeedMatchElapsedForTest(float matchElapsed)
+        {
+            MatchElapsed = matchElapsed;
+        }
+
+        // v0.10.0（E19）：只寫該方的被圍時間 siege_B，不動 pct、步進時鐘、歸屬、比分。
+        public void SeedSiegeForTest(int side, float seconds)
+        {
+            _siegeTime[side] = seconds;
         }
 
         // 包夾測試用的盤面種子入口（V090 E28）：只寫入歸屬，不跑 BFS，不動引導、計分時鐘、狂怒與比分。
@@ -269,10 +334,14 @@ namespace Vow.Core.Logic
             int redFlipped = redCircle != -1 && redCircleOwnerBefore != RedFactionId && _ownership[redCircle] == RedFactionId ? redCircle : -1;
             if (blueFlipped != -1 || redFlipped != -1) ProcessEncircle(blueFlipped, redFlipped);   // ③b 包夾 BFS 與狂怒判定
 
+            // ③c（v0.10.0）：圍城時鐘、聖所強度、在聖所判定。每個 Active tick 都跑（不像 ③b 只在翻塊時跑），
+            // 用 ③b 之後的歸屬與本 tick 的位置（E2、E9～E11）。
+            ProcessSanctuaryAndSiege(dt, heroX, heroZ, opponentX, opponentZ);
+
             // ④ 必須排在 ③ 之後：復活地點看得到本 tick 的翻塊（E20；把它搬到 ③ 之前就是突變 N13）。
             ProcessKnockouts(dt);   // ④ 倒地倒數與復活地點
 
-            ProcessScoring(dt);   // ⑤ 計分時鐘 ⑥ 勝負
+            ProcessScoring(dt);   // ⑤ 計分時鐘、MatchElapsed ⑥ 勝負 ⑦ 時間到
         }
 
         private void TickRage(float dt)
@@ -409,9 +478,13 @@ namespace Vow.Core.Logic
             z = _spec.EdgeRespawnZ(side);
         }
 
-        // 計分時鐘（每滿 1.0 秒整點發一次；翻塊與倒地都不重置這個時鐘）與勝負判定。
+        // 計分時鐘（每滿 1.0 秒整點發一次；翻塊與倒地都不重置這個時鐘）、MatchElapsed（E13）與勝負判定
+        // （⑥ 1000 分勝負；⑦ 時間到，v0.10.0）。⑥ 一定排在 ⑦ 之前判——S18 驗的就是這個順序。
         private void ProcessScoring(float dt)
         {
+            // ⑤（v0.10.0 E13）：MatchElapsed 只在 TimeLimitEnabled 時累加；V090Nineteen／V080Seven 不受影響。
+            if (_spec.TimeLimitEnabled) MatchElapsed += dt;
+
             _scoreClock += dt;
             if (_scoreClock >= _tuning.ScoreTickSeconds)
             {
@@ -422,32 +495,59 @@ namespace Vow.Core.Logic
                     if (_ownership[i] == BlueFactionId) blueTiles++;
                     else if (_ownership[i] == RedFactionId) redTiles++;
                 }
-                BlueScore += blueTiles * _tuning.ScorePerTilePerTick;
-                RedScore += redTiles * _tuning.ScorePerTilePerTick;
                 ScoreTickCount++;
 
-                // 同一次計分雙方都達標時分高者勝，相等判平手；比分不截在 1000。
+                // E15（v0.10.0）：PacedScoringEnabled 時走整數餘數制（每塊每秒 1 單位，7 單位 1 分），
+                // 全程整數運算不會有 float32 累加誤差；否則沿用 v0.8.0 的直接乘法。
+                if (_spec.PacedScoringEnabled)
+                {
+                    _units[BlueFactionId] += blueTiles * _tuning.PacedScoreUnitsPerTilePerTick;
+                    _units[RedFactionId] += redTiles * _tuning.PacedScoreUnitsPerTilePerTick;
+                    BlueScore += _units[BlueFactionId] / _tuning.PacedScoreUnitsPerPoint;
+                    RedScore += _units[RedFactionId] / _tuning.PacedScoreUnitsPerPoint;
+                    _units[BlueFactionId] %= _tuning.PacedScoreUnitsPerPoint;
+                    _units[RedFactionId] %= _tuning.PacedScoreUnitsPerPoint;
+                }
+                else
+                {
+                    BlueScore += blueTiles * _tuning.ScorePerTilePerTick;
+                    RedScore += redTiles * _tuning.ScorePerTilePerTick;
+                }
+
+                // ⑥ 同一次計分雙方都達標時分高者勝，相等判平手；比分不截在 1000。
                 bool blueWon = BlueScore >= _tuning.WinScore;
                 bool redWon = RedScore >= _tuning.WinScore;
                 if (blueWon || redWon)
                 {
-                    State = CaptureMatchState.Ended;
-                    if (blueWon && redWon)
-                    {
-                        Result = BlueScore > RedScore ? CaptureMatchResult.BlueWins
-                                : RedScore > BlueScore ? CaptureMatchResult.RedWins
-                                : CaptureMatchResult.Draw;
-                    }
-                    else
-                    {
-                        Result = blueWon ? CaptureMatchResult.BlueWins : CaptureMatchResult.RedWins;
-                    }
-                    _endPauseRemaining = _tuning.EndPauseSeconds;
-                    // E15：進入 Ended 時雙方狂怒清為 0。
-                    _rageRemaining[BlueFactionId] = 0f;
-                    _rageRemaining[RedFactionId] = 0f;
+                    CaptureMatchResult result = blueWon && redWon
+                        ? (BlueScore > RedScore ? CaptureMatchResult.BlueWins
+                          : RedScore > BlueScore ? CaptureMatchResult.RedWins
+                          : CaptureMatchResult.Draw)
+                        : (blueWon ? CaptureMatchResult.BlueWins : CaptureMatchResult.RedWins);
+                    EndMatch(result, endedByTime: false);
                 }
             }
+
+            // ⑦（v0.10.0 E13）：⑥ 判完後仍是 Active 才判時間到；只在 TimeLimitEnabled 時運作。
+            if (_spec.TimeLimitEnabled && State == CaptureMatchState.Active && MatchElapsed >= _tuning.MatchTimeLimitSeconds)
+            {
+                CaptureMatchResult result = BlueScore > RedScore ? CaptureMatchResult.BlueWins
+                    : RedScore > BlueScore ? CaptureMatchResult.RedWins
+                    : CaptureMatchResult.Draw;
+                EndMatch(result, endedByTime: true);
+            }
+        }
+
+        // ⑥／⑦ 共用的結束處理：進入 Ended、記結果、開始 3 秒結算、清雙方狂怒（E15：進入 Ended 時雙方狂怒清為 0，
+        // ⑥⑦ 都要清——N15 驗的就是這個）。
+        private void EndMatch(CaptureMatchResult result, bool endedByTime)
+        {
+            State = CaptureMatchState.Ended;
+            Result = result;
+            EndedByTime = endedByTime;
+            _endPauseRemaining = _tuning.EndPauseSeconds;
+            _rageRemaining[BlueFactionId] = 0f;
+            _rageRemaining[RedFactionId] = 0f;
         }
 
         // ProcessChannels 對單一方套用的狀態機（不必先中立化，E9/V-A10）。
@@ -468,13 +568,98 @@ namespace Vow.Core.Logic
                 progress = 0f;
             }
             progress += dt;
-            if (progress >= _tuning.CaptureSeconds)
+            if (progress >= RequiredCaptureSeconds(factionId, circle))
             {
                 _ownership[circle] = factionId;
                 progress = 0f;
                 tile = -1;
                 FlipCount++;
             }
+        }
+
+        // E6（v0.10.0）：某方引導的光圈是自己的母板塊時，門檻＝ReclaimCaptureSeconds（1.8），否則 CaptureSeconds（3.5）。
+        // 只在 SanctuaryEnabled 時生效；V090Nineteen／V080Seven（SanctuaryEnabled=false）一律用 CaptureSeconds
+        // （V10-A05(g) 明白要求舊夾具維持 3.5，不隨新功能縮短）。
+        private float RequiredCaptureSeconds(int side, int tile)
+        {
+            return _spec.SanctuaryEnabled && IsMotherTile(side, tile) ? _tuning.ReclaimCaptureSeconds : _tuning.CaptureSeconds;
+        }
+
+        // 某塊是否為該方自己的母板塊（不管目前歸屬）；用於 E2 聖所判定與 E6 奪回門檻。
+        private bool IsMotherTile(int side, int tile)
+        {
+            for (int rank = 0; rank < _spec.MotherCount(side); rank++)
+            {
+                if (_spec.MotherTile(side, rank) == tile) return true;
+            }
+            return false;
+        }
+
+        // ③c（v0.10.0，E2、E9～E11）：圍城時鐘、聖所強度、在聖所判定。每個 Active tick 都跑。
+        // 用本 tick 的位置（heroX/heroZ/opponentX/opponentZ，② 取樣的同一組座標，Tick 期間不會變動）
+        // 與 ③b 之後的歸屬（_ownership 已是本 tick 最新狀態）。
+        private void ProcessSanctuaryAndSiege(float dt, float heroX, float heroZ, float opponentX, float opponentZ)
+        {
+            // E2／E3：在聖所判定，只在 SanctuaryEnabled 時生效；否則恆為 false（DamageTakenPercent 恆 100）。
+            if (_spec.SanctuaryEnabled)
+            {
+                int blueTileIdx = _blueKnockedOut ? -1 : _spec.TileAt(heroX, heroZ);
+                int redTileIdx = _redKnockedOut ? -1 : _spec.TileAt(opponentX, opponentZ);
+                _inSanctuary[BlueFactionId] = blueTileIdx != -1 && IsMotherTile(BlueFactionId, blueTileIdx)
+                    && _ownership[blueTileIdx] == BlueFactionId;
+                _inSanctuary[RedFactionId] = redTileIdx != -1 && IsMotherTile(RedFactionId, redTileIdx)
+                    && _ownership[redTileIdx] == RedFactionId;
+            }
+            else
+            {
+                _inSanctuary[BlueFactionId] = false;
+                _inSanctuary[RedFactionId] = false;
+            }
+
+            // E9～E11：圍城衰減，只在 SiegeEnabled 時運作；否則 pct 維持 TryStart 設定的值不變。
+            if (_spec.SiegeEnabled)
+            {
+                int blueTileCount = 0, redTileCount = 0;
+                for (int i = 0; i < _ownership.Length; i++)
+                {
+                    if (_ownership[i] == BlueFactionId) blueTileCount++;
+                    else if (_ownership[i] == RedFactionId) redTileCount++;
+                }
+                // E9：A 方圍城 B 方 ⇔ 10·(A 方持有塊數) ≥ 7·19（≥14 塊）。B 方進入被圍狀態。
+                bool blueBesieged = _tuning.SiegeTileDenominator * redTileCount >= _tuning.SiegeTileNumerator * _spec.TileCount;
+                bool redBesieged = _tuning.SiegeTileDenominator * blueTileCount >= _tuning.SiegeTileNumerator * _spec.TileCount;
+                StepSiege(BlueFactionId, blueBesieged, dt);
+                StepSiege(RedFactionId, redBesieged, dt);
+            }
+        }
+
+        // E10／E11：先依本 tick 條件更新被圍時間，再用更新後的值算 target；target 改變本 tick 不累加步進時鐘，
+        // 不變且 pct≠target 才累加，每滿 SiegeStepSeconds 秒 pct 朝 target 移動 1；pct＝target 步進時鐘歸零。
+        private void StepSiege(int side, bool besieged, float dt)
+        {
+            if (besieged) _siegeTime[side] += dt;
+            else _siegeTime[side] = 0f;
+
+            int target = besieged && _siegeTime[side] >= _tuning.SiegeSeconds ? 0 : _tuning.SanctuaryPercent;
+            if (target != _previousSiegeTarget[side])
+            {
+                _siegeStepClock[side] = 0f;
+            }
+            else if (_sanctuaryPercent[side] != target)
+            {
+                _siegeStepClock[side] += dt;
+                while (_siegeStepClock[side] >= _tuning.SiegeStepSeconds)
+                {
+                    _siegeStepClock[side] -= _tuning.SiegeStepSeconds;
+                    if (_sanctuaryPercent[side] < target) _sanctuaryPercent[side]++;
+                    else if (_sanctuaryPercent[side] > target) _sanctuaryPercent[side]--;
+                }
+            }
+            else
+            {
+                _siegeStepClock[side] = 0f;
+            }
+            _previousSiegeTarget[side] = target;
         }
     }
 }

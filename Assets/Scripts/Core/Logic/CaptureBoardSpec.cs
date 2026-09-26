@@ -31,13 +31,21 @@ namespace Vow.Core.Logic
         public bool EncircleEnabled { get; }
         public bool RageEnabled { get; }
 
+        // ── v0.10.0（V0100_SANCTUARY_PLAN.md E1）：4 個新旗標。V0100Sanctuary 全 true；
+        // V090Nineteen／V080Seven 全 false，行為與 v0.9.1 逐位相同（純邏輯回歸夾具）。
+        public bool SanctuaryEnabled { get; }
+        public bool SiegeEnabled { get; }
+        public bool TimeLimitEnabled { get; }
+        public bool PacedScoringEnabled { get; }
+
         private CaptureBoardSpec(
             float circumRadius, float inRadius,
             float[] centerXs, float[] centerZs, int[][] adjacency,
             int[] blueMothers, float[] blueMotherRespawnXs, float[] blueMotherRespawnZs,
             int[] redMothers, float[] redMotherRespawnXs, float[] redMotherRespawnZs,
             float blueEdgeRespawnX, float blueEdgeRespawnZ, float redEdgeRespawnX, float redEdgeRespawnZ,
-            bool encircleEnabled, bool rageEnabled)
+            bool encircleEnabled, bool rageEnabled,
+            bool sanctuaryEnabled, bool siegeEnabled, bool timeLimitEnabled, bool pacedScoringEnabled)
         {
             TileCount = centerXs.Length;
             CircumRadius = circumRadius;
@@ -71,6 +79,10 @@ namespace Vow.Core.Logic
             _redEdgeRespawnZ = redEdgeRespawnZ;
             EncircleEnabled = encircleEnabled;
             RageEnabled = rageEnabled;
+            SanctuaryEnabled = sanctuaryEnabled;
+            SiegeEnabled = siegeEnabled;
+            TimeLimitEnabled = timeLimitEnabled;
+            PacedScoringEnabled = pacedScoringEnabled;
         }
 
         public float CenterX(int tile) => _centerXs[tile];
@@ -133,8 +145,15 @@ namespace Vow.Core.Logic
         // ── v0.8.0 七塊夾具（E27）：包夾與狂怒關閉 ──
         public static readonly CaptureBoardSpec V080Seven = BuildV080Seven();
 
-        // ── v0.9.0 十九塊（E1～E6、E20） ──
-        public static readonly CaptureBoardSpec V090Nineteen = new CaptureBoardSpec(
+        // ── v0.9.0 十九塊（E1～E6、E20）／v0.10.0 母板塊聖所（V0100_SANCTUARY_PLAN.md E1）：
+        // 兩者共用同一份幾何字面值，只有 4 個新旗標不同（V10-A02：兩者逐值相等，容差 0）。
+        public static readonly CaptureBoardSpec V090Nineteen = BuildNineteenVariant(false, false, false, false);
+        public static readonly CaptureBoardSpec V0100Sanctuary = BuildNineteenVariant(true, true, true, true);
+
+        private static CaptureBoardSpec BuildNineteenVariant(
+            bool sanctuaryEnabled, bool siegeEnabled, bool timeLimitEnabled, bool pacedScoringEnabled)
+        {
+            return new CaptureBoardSpec(
             4.375f, 3.7890625f,
             // E3：0 中央；1～6 中圈北起順時針；7～18 外圈北起順時針。x＝6.5625·q、z＝3.7890625·(q＋2r)
             new[] { 0f, 0f, 6.5625f, 6.5625f, 0f, -6.5625f, -6.5625f,
@@ -173,7 +192,9 @@ namespace Vow.Core.Logic
             new[] { 0f, -6.5625f, 6.5625f },
             new[] { 16.65625f, 12.8671875f, 12.8671875f },
             -17f, -17f, 17f, 17f,
-            true, true);
+            true, true,
+            sanctuaryEnabled, siegeEnabled, timeLimitEnabled, pacedScoringEnabled);
+        }
 
         private static CaptureBoardSpec BuildV080Seven()
         {
@@ -205,7 +226,8 @@ namespace Vow.Core.Logic
                 new[] { tuning.RedHomeRespawnX },
                 new[] { tuning.RedHomeRespawnZ },
                 tuning.BlueEdgeRespawnX, tuning.BlueEdgeRespawnZ, tuning.RedEdgeRespawnX, tuning.RedEdgeRespawnZ,
-                false, false);
+                false, false,
+                false, false, false, false);
         }
     }
 }
