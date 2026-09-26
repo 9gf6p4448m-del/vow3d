@@ -582,10 +582,10 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 
 **瀏覽器實測**（Playwright；Chromium 844×390、DPR 2、觸控、swiftshader；截圖在 `../vow-toolchain/browser-screenshots/`；腳本 `../vow-toolchain/v090-online-check.py`、`v090-webkit-check.py`、`v090-d10-rage-online.py`，座標推導 `v090_coords.py`：CAPTURE (786,90)、待機對手 (321,20)、英雄在出生點時 4 號引導點 (0,−9.578125) 地面 (422,55)）：
 - 線上版本列：`v0.9.0 · build 2026-09-26 03:04 UTC · 5b7bab3`（sha7＝建置來源）。
-- V9-D04～D07 截圖：`v090-online-01-lobby`、`02-active`、`03-tower4`、`04-red-wins`、`05-second-match`（本機預演同名 `v090-local-*`）。畫面判讀由主對話執行，結果：**待主對話判讀**。
+- V9-D04～D07 截圖：`v090-online-01-lobby`、`02-active`、`03-tower4`、`04-red-wins`、`05-second-match`（本機預演同名 `v090-local-*`）。畫面判讀由主對話執行，結果：v0.9.0 線上 D05 紅（低幀率走過頭，計畫修-10），其餘見 §20 的 v0.9.1 重驗。
 - V9-D08：線上 D02～D07 一場、D10 一場，`pageerror`＝0、`console.error`＝0（`v090-online-check.log`、`browser-screenshots/v090-d10-raw/d10-times.json`）。
 - V9-D03 WebKit `iPhone 13 landscape`：8.5 秒內 `vowUnityInstance` 為真、`#vow-loading` 為 `display:none`、`pageerror`＝0、`console.error`＝0（`v090-webkit-check.log`、`v090-webkit-loaded.png`）。
-- V9-D10 線上狂怒畫面：依 `v090-rage-script.json` 送出開局＋16 下點地，全部送出，每下比預定秒數晚 0.008～0.093 秒；中途不截圖。點地 CSS 座標取 V9-C07 dt＝1/6 那一跑的鏡頭姿態換成 844×390（1/6 與 1/60 兩組共 34 點都不在左側面板、右上面板、CAPTURE 鈕、符印鈕內，離畫面邊 ≥19.6px；`v090-coords-check.json`）。截圖 8 張（開局前 2 張＋t_r＝47.5 起的 6 張）在 `browser-screenshots/v090-d10-raw/`；每張截圖約 4 秒，所以 t_r 之後的 5 張實際在開局後 49.0、53.2、57.0、60.9、65.0 秒開始（t_r−3 那張在 44.5 秒）。判定結果：**待主對話盲判**。
+- V9-D10 線上狂怒畫面：依 `v090-rage-script.json` 送出開局＋16 下點地，全部送出，每下比預定秒數晚 0.008～0.093 秒；中途不截圖。點地 CSS 座標取 V9-C07 dt＝1/6 那一跑的鏡頭姿態換成 844×390（1/6 與 1/60 兩組共 34 點都不在左側面板、右上面板、CAPTURE 鈕、符印鈕內，離畫面邊 ≥19.6px；`v090-coords-check.json`）。截圖 8 張（開局前 2 張＋t_r＝47.5 起的 6 張）在 `browser-screenshots/v090-d10-raw/`；每張截圖約 4 秒，所以 t_r 之後的 5 張實際在開局後 49.0、53.2、57.0、60.9、65.0 秒開始（t_r−3 那張在 44.5 秒）。判定結果：**作廢**——線上點擊落點隨鏡頭偏差放大，劇本無法重播（計畫修-10）；使用者 2026-09-26 同意 V9-D10 改為使用者手機實玩觸發狂怒並截圖（見 §20）。
 
 **已知限制**：
 - WebGL 只供日常試玩與看畫面；瀏覽器的輸入延遲、幀率與觸控取樣與原生 App 不同。
@@ -599,3 +599,26 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 4. 0.3mm 不等距下對手第二個以後目標的實際表現：只有 PlayMode 證據。
 5. WebKit 只驗載入，沒有在 WebKit 上跑佔領流程。
 6. 舊版快取：PWA 若仍顯示 v0.8.0，關閉分頁重開或強制重新整理。
+
+## 20. v0.9.1：低幀率點地走過頭修正（2026-09-26）
+
+**這一版在解決什麼**：v0.9.0 線上 V9-D05 不通過。瀏覽器／手機每幀 0.2～0.33 秒時，`HeroLocomotion.Step` 一步走 1.4～1.8m、衝過目的地約 1m，走出 4 號光圈、引導歸零（計畫修-10，診斷 `../vow-toolchain/v090-d-diagnosis.md`）。修法：每幀位移夾在到目的地的水平直線距離內；速度、加速度等手感數值不變。英雄與紅方對手共用這段，一併修正。
+
+**工程驗證**（WebGL 來源 `f90cb13`＝修復 `718f649`＋版本字串，分支 `v090-encircle`）：
+- 新增 PlayMode `LowFrameRateArrivalPlayTests`（dt＝1/3、1/4，點地 7.81m）：修前紅「越過目的地 1.356417m／0.4397492m」，修後綠，還原修復再紅同數字（`../vow-toolchain/v091-red-prefix-kept.xml`、`v091-green.xml`、`v091-revert-red.xml`）。
+- verify 純邏輯 251 通過／1 略過、`RESULT: ALL PASS`（`v091-verify.log`）；EditMode 252 項 246 通過／6 略過／0 失敗（`v091-edit.xml`）；PlayMode 149／149 同批（`v091-play-149.xml`）＋狂怒劇本 18／18（`v091-rage-b1～b5.xml`）。
+- WebGL 本機預演 V9-D05：4 號藍、BLUE 86（`v090-diag/v091-local-d05-03-tower4.png`），0 error。
+- `SKIP_BUILD=1 bash Tools/deploy-webgl.sh` 部署同一份產物 → `origin/gh-pages 1b69ad1`（2026-09-26 17:23:52 +0800）；線上版本列讀回 `v0.9.1 · build 2026-09-26 07:05 UTC · f90cb13`。
+
+**線上實測**（Chromium 844×390、DPR 2、觸控，`v090-online-check.py`，截圖 `browser-screenshots/v091-online-*`；主對話判讀）：
+- V9-D04 過：待機 `CAPTURE: ON`、`CAPTURE: TAP RED`，灰色六角與塔影可見（對比偏淡）；開局 `CAPTURE ACTIVE`、0／0、腳下與左右 3 塊藍。
+- V9-D05 過：4 號藍、BLUE 94 ≥ 8。
+- V9-D06 過：`LAST: RED WINS`、RED 1002、英雄在畫面中央。
+- V9-D07 過：第二局 `CAPTURE ACTIVE`、0／0、3 塊藍。
+- V9-D08 過：`pageerror`＝0、`console.error`＝0（`v091-online-check.log`）。
+- V9-D03 過：WebKit `iPhone 13 landscape` 載入 v0.9.1、`vowUnityInstance` 真、0 error（`v091-webkit-loaded.png`）；前兩次在 `Page.goto` 連線階段失敗（SSL connect error／逾時，同時段 curl 200），頁面未開始載入，第三次起成功。
+
+**V9-D10（修-10 後）＝使用者手機實玩觸發狂怒並截圖**：狀態**待使用者**。步驟：① 手機開網址、確認首頁版本列 `v0.9.1`；② 按 `CAPTURE`→點紅色對手開局；③ 先搶北邊幾塊讓藍方塊往前延伸，但**別站著顧**，讓紅方分數領先；④ 等紅方翻掉你和母板塊之間的某一塊——前方孤立的藍塊當場變灰；若此時藍方落後超過 15%，英雄身上出現狂怒光環、HUD 出現 `RAGE n`（12 秒）；⑤ 看到就截圖。
+
+**未驗證**：同 §19 第 1～6 項；另加 7. 手機上走到點是否仍有「滑過頭」感（本版只在 swiftshader 低幀率驗過）。
+
