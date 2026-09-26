@@ -1,4 +1,4 @@
-# VOW 誓約 — Codex 接手紀錄（2026-09-24 更新）
+# VOW 誓約 — Codex 接手紀錄（2026-09-26 更新）
 
 ## 目前狀態
 
@@ -6,7 +6,7 @@
 - Claude Code 交接基線為 `e6e9d30`；Codex 入口與本紀錄於 `d652ce4` 加入。開始工作時以實際 `git status` 與 `git log` 為準；`e6e9d30` 記錄 v0.6.1 驗收與線上試玩結果。
 - v0.6.1 新增五種元素反應飄字、英雄受困 `ROOTED` 飄字與 HUD `ROOTED`／`SLOWED`。規格與凍結驗收見 `docs/V061_FEEDBACK_PLAN.md`；結果見驗收指南 §15。
 - 驗收指南記錄：`verify.sh` 195 通過、1 略過；Unity EditMode 0 紅、PlayMode 99 全綠；突變 114／114 CAUGHT。這是 2026-09-21 的既有紀錄；2026-09-23 的重新驗證見下節。
-- `origin/gh-pages` 為 `d232ee6`（2026-09-25 12:41:51 +0800），部署 v0.8.0（七塊板塊佔領迴圈），建置來源 `96e143f`（分支 `v080-capture`）；線上首頁顯示 `v0.8.0 · build 2026-09-25 04:27 UTC · 96e143f`。驗收指南 §18 記有實測結果。可回退送達點：v0.7.0 的 `f9d0d12`（來源 `e18c0b4`）。
+- `origin/gh-pages` 為 `f22519c`（2026-09-26 11:10:32 +0800），部署 v0.9.0（19 塊棋盤＋包夾斷能＋劣勢狂怒），建置來源 `5b7bab3`（分支 `v090-encircle`，尚未併入 main）；線上首頁顯示 `v0.9.0 · build 2026-09-26 03:04 UTC · 5b7bab3`。驗收指南 §19 記有實測結果。可回退送達點：v0.8.0 的 `d232ee6`（來源 `96e143f`）。
 
 ## 未決事項與下一步
 
@@ -17,6 +17,14 @@
 ## 交接檢查
 
 開始工作時重新執行 `git status --short --branch`、`git log -5 --oneline`、`git log origin/gh-pages -1`；以當下結果為準。若要宣告新版本完成，附改動檔案、實跑指令與輸出，以及部署後的送達證明。
+
+## 2026-09-26 v0.9.0 送達（19 塊棋盤＋包夾斷能＋劣勢狂怒）
+
+- 分支 `v090-encircle`：步驟 A～C 到 `e9a2554`（計畫修-9：verify ALL PASS、EditMode 0 敗、PlayMode 167／167、突變 152／152），版本號 `5b7bab3`（建置來源）。規格與凍結驗收見 `docs/V090_ENCIRCLE_PLAN.md`。
+- `5b7bab3` 重跑：verify 純邏輯 251 通過／1 略過、`RESULT: ALL PASS`；Unity EditMode 246 通過／6 略過／0 失敗。
+- WebGL 10.6 MB（batchmode `VOWWebGLBuilder.Build`，Unity 自報 469 秒），本機 `python -m http.server` 預演 0 error 後以 `SKIP_BUILD=1 bash Tools/deploy-webgl.sh` 部署同一份產物 → `origin/gh-pages f22519c`（2026-09-26 11:10:32 +0800）；線上版本列讀回 `v0.9.0 · build 2026-09-26 03:04 UTC · 5b7bab3`。
+- 線上實測（Chromium 844×390、DPR 2、觸控）：CAPTURE→開局→翻 4 號→放置 300 秒→第二局，另一場依 V9-C07 劇本送 16 下點地並截狂怒時段 8 張；兩場 `pageerror`／`console.error` 皆 0。WebKit `iPhone 13 landscape` 載入成功、0 error。D04～D07 截圖判讀與 D10 盲判由主對話執行，結果待補（驗收指南 §19）。
+- 下一步：① 主對話判讀 D04～D07、盲判 D10，通過後併入 main；② 手機試玩 v0.9.0（斷能與狂怒是否看得懂）；③ 原生裝置手感。
 
 ## 2026-09-25 v0.8.0 送達（七塊板塊佔領迴圈）
 

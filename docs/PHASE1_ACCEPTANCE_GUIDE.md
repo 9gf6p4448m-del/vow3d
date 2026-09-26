@@ -565,3 +565,37 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 4. 線上畫面中 1 號開局為紅（鏡頭外，見已知限制）。
 5. WebKit 只驗載入，沒有在 WebKit 上跑佔領流程。
 6. 舊版快取：PWA 若仍顯示 v0.7.0，關閉分頁重開或強制重新整理。
+
+## 19. v0.9.0：19 塊棋盤＋包夾斷能＋劣勢狂怒（2026-09-26）
+
+規格與凍結驗收見 `docs/V090_ENCIRCLE_PLAN.md`（§1 規則與數值、§3 V9 條文、§6 修-1～修-9）。
+
+**規則摘要**：棋盤改為 19 塊平頂六角（中央 1＋中圈 6＋外圈 12，外接半徑 4.375m），晶塔光圈仍是 2.5m、引導 3.5 秒、爭奪凍結、每塊每秒 +2、1000 分勝、倒地 5 秒、結算 3 秒，全部沿用 v0.8.0。v0.8.0 的單一基地塊改成每隊 3 塊「母板塊」：藍方（英雄、鏡頭近側）13、12、14，紅方（對手）在北側對稱的 3 塊。每次翻塊後沿己方相鄰塊做 BFS，連不回任何一塊己方母板塊的己方塊當場中立化（斷能）；母板塊全失時該隊其餘塊全部斷能。斷能那一刻若該隊落後超過 15%（20·(領先分−自身分) > 3·領先分），該隊英雄進入狂怒：移速 +15%、12 秒（再觸發重設為 12 秒），身上出現狂怒光環，藍方狂怒時 HUD 顯示 `RAGE n`。雙方都適用。對手 AI 不看包夾，照舊去最近的非紅塊。開局雙方傳送到第一優先母板塊的復活點：英雄 (0,−16.65625)、對手 (0,16.65625)。
+
+**試玩步驟**：① 按右上 `CAPTURE`：`CAPTURE: ON`、`CAPTURE: TAP RED`，地板出現 19 塊灰色六角（比 v0.8.0 小）；② 點紅色對手開局：`CAPTURE ACTIVE`、比分 0／0，英雄腳下與左右兩側 3 塊藍（13、12、14）；③ 往北點地走進 4 號光圈站 3.5 秒看它翻藍；④ 想看斷能：讓對手翻掉你和母板塊之間的那一塊，孤立的藍塊會當場變灰；落後超過 15% 時英雄身上會出現狂怒光環與 `RAGE n`；⑤ 放著不動約 60～90 秒遊戲時間紅方到 1000，`LAST: RED WINS` 後回待機；⑥ 再點紅色對手開第二局；⑦ 待機時再按 `CAPTURE` 回單挑模式。
+
+**工程驗證**（WebGL 來源 `5b7bab3`，分支 `v090-encircle`）：
+- 步驟 A～C 的完整回歸在 `e9a2554` 之前完成（計畫修-9）：verify `RESULT: ALL PASS`、EditMode 0 敗、PlayMode 167／167、突變 152／152。
+- `5b7bab3`（只改版本字串 `VowVersion.cs:6` 與 `bundleVersion`）重跑：`UNITY_REFS_DIR=<絕對路徑> bash Tools/DotnetCheck/verify.sh` 純邏輯 251 通過／1 略過、`RESULT: ALL PASS`（`../vow-toolchain/v090d-verify.log`）；Unity EditMode 252 項 246 通過／6 略過／0 失敗（`v090d-edit.xml`）。PlayMode 沒有在版本 commit 上重跑（只改常數字串）。
+- `grep -n "SeedCapture" Assets/Scripts`：`Phase1Bootstrap.cs:183,190` 在 `:181` 的 `#if UNITY_EDITOR`～`:194 #endif` 內；`:210` 與 `PlayerInputService.cs:133` 是註解，也都在 `#if UNITY_EDITOR` 區塊內。
+- WebGL：batchmode `VOWWebGLBuilder.Build` 成功，10.6 MB、Unity 自報耗時 469 秒（含等待整體 843 秒，`../vow-toolchain/v090-D-webgl-build.log`）；本機 `python -m http.server` 預演（`v090-local-check.log`：`pageerror`＝0、`console.error`＝0）後，以 `SKIP_BUILD=1 bash Tools/deploy-webgl.sh` 部署同一份產物 → `origin/gh-pages f22519c`（2026-09-26 11:10:32 +0800）。
+
+**瀏覽器實測**（Playwright；Chromium 844×390、DPR 2、觸控、swiftshader；截圖在 `../vow-toolchain/browser-screenshots/`；腳本 `../vow-toolchain/v090-online-check.py`、`v090-webkit-check.py`、`v090-d10-rage-online.py`，座標推導 `v090_coords.py`：CAPTURE (786,90)、待機對手 (321,20)、英雄在出生點時 4 號引導點 (0,−9.578125) 地面 (422,55)）：
+- 線上版本列：`v0.9.0 · build 2026-09-26 03:04 UTC · 5b7bab3`（sha7＝建置來源）。
+- V9-D04～D07 截圖：`v090-online-01-lobby`、`02-active`、`03-tower4`、`04-red-wins`、`05-second-match`（本機預演同名 `v090-local-*`）。畫面判讀由主對話執行，結果：**待主對話判讀**。
+- V9-D08：線上 D02～D07 一場、D10 一場，`pageerror`＝0、`console.error`＝0（`v090-online-check.log`、`browser-screenshots/v090-d10-raw/d10-times.json`）。
+- V9-D03 WebKit `iPhone 13 landscape`：8.5 秒內 `vowUnityInstance` 為真、`#vow-loading` 為 `display:none`、`pageerror`＝0、`console.error`＝0（`v090-webkit-check.log`、`v090-webkit-loaded.png`）。
+- V9-D10 線上狂怒畫面：依 `v090-rage-script.json` 送出開局＋16 下點地，全部送出，每下比預定秒數晚 0.008～0.093 秒；中途不截圖。點地 CSS 座標取 V9-C07 dt＝1/6 那一跑的鏡頭姿態換成 844×390（1/6 與 1/60 兩組共 34 點都不在左側面板、右上面板、CAPTURE 鈕、符印鈕內，離畫面邊 ≥19.6px；`v090-coords-check.json`）。截圖 8 張（開局前 2 張＋t_r＝47.5 起的 6 張）在 `browser-screenshots/v090-d10-raw/`；每張截圖約 4 秒，所以 t_r 之後的 5 張實際在開局後 49.0、53.2、57.0、60.9、65.0 秒開始（t_r−3 那張在 44.5 秒）。判定結果：**待主對話盲判**。
+
+**已知限制**：
+- WebGL 只供日常試玩與看畫面；瀏覽器的輸入延遲、幀率與觸控取樣與原生 App 不同。
+- 軟體渲染下截一張圖約 4 秒，截圖期間遊戲時間落後牆鐘（計畫 R12、修-5）。
+- 既有 `ZeroAllocationTests.Combat` 單跑或排在前段跑恆紅 164 bytes（v0.7.0 起即如此，計畫修-9）。
+
+**未驗證**：
+1. 原生 Android／iOS 的 120Hz、震動、50／80 ms 延遲注入下的手感。
+2. 線上包夾中立化瞬間的畫面（只截了狂怒時段，沒有對準中立化那一幀；狂怒畫面改由 V9-D10 驗）。
+3. 對手在孤島上「翻塊→當場中立化→再翻」循環（R9）的實際頻率：只有 PlayMode 證據（V9-B20 只守不卡住）。
+4. 0.3mm 不等距下對手第二個以後目標的實際表現：只有 PlayMode 證據。
+5. WebKit 只驗載入，沒有在 WebKit 上跑佔領流程。
+6. 舊版快取：PWA 若仍顯示 v0.8.0，關閉分頁重開或強制重新整理。
