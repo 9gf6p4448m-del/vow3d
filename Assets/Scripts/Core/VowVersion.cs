@@ -4,7 +4,7 @@ namespace Vow.Core
     // 每次部署前改這一個常數，就能從首頁那一行判斷「手機上看到的是不是剛推上去的那一版」。
     public static class VowVersion
     {
-        public const string Version = "0.8.0";
+        public const string Version = "0.9.0";
         public const string Label = "VOW Phase 1 Greybox v" + Version;
     }
 }
