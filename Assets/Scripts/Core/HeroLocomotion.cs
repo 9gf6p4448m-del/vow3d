@@ -287,7 +287,20 @@ namespace Vow.Core
                 if (_navigator != null) velocity = SteerAroundWalls(velocity);
                 if (velocity.sqrMagnitude > 1e-6f)
                 {
-                    ApplyDisplacement(velocity * dt);
+                    Vector3 step = velocity * dt;
+                    // v0.9.1（計畫修-10）：每幀位移夾在「到 agent 目的地的水平直線距離」內。
+                    // 低幀率（瀏覽器／手機每幀 0.2～0.33s）時 速度×dt 可達 1.4～1.8m，不夾的話會衝過目的地約 1m
+                    // 再掉頭（線上 V9-D05 因此衝出 4 號光圈）。只縮短最後那一步，速度與加速度等手感數值不變；
+                    // 1/60 下每步 0.09m，只有最後一幀可能被夾。
+                    if (_agent.enabled && _agent.isOnNavMesh)
+                    {
+                        Vector3 toGoal = _agent.destination - _self.position;
+                        toGoal.y = 0f;
+                        float remaining = toGoal.magnitude;
+                        float length = step.magnitude;
+                        if (length > remaining) step *= remaining / length;
+                    }
+                    ApplyDisplacement(step);
                     Quaternion look = Quaternion.LookRotation(velocity, Vector3.up);
                     _self.rotation = Quaternion.RotateTowards(_self.rotation, look, _turnSpeed * dt);
                 }
