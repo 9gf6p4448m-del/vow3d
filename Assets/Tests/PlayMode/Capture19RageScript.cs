@@ -17,14 +17,17 @@ namespace Vow.Tests.PlayMode
     // 時間 0＝開局點擊那一幀（真實點 CAPTURE，再真實點對手）。之後每一步都是「開局後第幾秒、真實點一次地面的世界座標」，
     // 全部走 WorldTapInput.SendScreenTap；本檔整份（劇本＋測試）不得出現任何測試入口，條文 (e) 的 grep 對整檔執行。
     //
-    // 劇本在做什麼（實測過程見 vow-toolchain/v090c07-explore.md）：
+    // 劇本在做什麼（實測過程見 vow-toolchain/v090c07-explore.md；v0.10.0 重新實測見 vow-toolchain/v0100-C07-explore.md）：
     //   ① 0.5～5.5s：英雄往北走到 (2.5, 1.2) 當誘餌；對手約 5.2s 翻下 1 號後轉頭追打。
-    //   ② 7.0～11.5s：英雄分段往南，把對手一路帶到母板塊 12 的東南外側站定，被打到倒地（約 21s）。對手停在 12 號光圈內，
+    //   ② 7.0～11.5s：英雄分段往南，把對手一路帶到母板塊 12 的東南外側站定，被打到倒地（v0.10.0 1/60 約 21.8s）。對手停在 12 號光圈內，
     //      先把 12 翻掉（紅方孤島 → 立刻中立，藍只剩 13、14），之後因為人在 12 光圈內、最近的非紅塊永遠是 12，就原地停車。
-    //   ③ 27.0～28.3s：英雄復活（13 號復活點）後走到 5 號光圈，約 32.7s 翻藍（5 號只經母板塊 14 連回）。
-    //   ④ 33.5～39.0s：繞到 12 號附近讓停車的對手轉頭，再往南、往西北繞到 14 號塔心站定；對手跟到 1.8m 外、也在 14 號
+    //      v0.10.0：12 號翻掉前英雄站在自己的母板塊上（聖所），那幾刀只扣 17，倒地晚一刀——1/60 21.78s 倒地、26.78s 復活；
+    //      1/6 23.17s 倒地、28.33s 復活（舊劇本第 7 步 27.0s 在 1/6 點到倒地的英雄）。所以第 7～15 步整段延後 2.0 秒
+    //      （整數秒，計分相位不變；點擊座標與相對時序不動）。
+    //   ③ 29.0～30.3s：英雄復活（13 號復活點）後走到 5 號光圈，約 34.7s 翻藍（5 號只經母板塊 14 連回）。
+    //   ④ 35.5～41.0s：繞到 12 號附近讓停車的對手轉頭，再往南、往西北繞到 14 號塔心站定；對手跟到 1.8m 外、也在 14 號
     //      光圈內 → 爭奪凍結，兩種幀率的對手都在這裡對齊。
-    //   ⑤ 43.5s：英雄往西北跨出光圈；對手跟上仍在 14 號光圈內，從這一刻開始引導 → 約 47.5s 紅翻 14 號，
+    //   ⑤ 45.5s：英雄往西北跨出光圈；對手跟上仍在 14 號光圈內，從這一刻開始引導 → 約 49.5s 紅翻 14 號，
     //      藍 5 號連不回任何母板塊而中立化（斷能）；藍方落後 >15% → 藍方狂怒。
     //   設計原則：翻完 1 號之後「對手自己挑下一塊」幾乎都是等距平手，結果跟幀率與 0.5m 的點擊誤差有關，所以劇本只靠
     //   「停車」與「爭奪同步」決定時序。往西南的點擊會落進左側除錯面板，往東南要避開右下符印鈕，所以路線是分段繞的。
@@ -47,15 +50,15 @@ namespace Vow.Tests.PlayMode
             new Step(8.5f, 5.5f, -8.2f, "lead south"),
             new Step(10.0f, 6.5f, -11.0f, "lead south"),
             new Step(11.5f, 7.43f, -14.13f, "stand SE of circle 12 until knocked out"),
-            new Step(27.0f, -3.5f, -10.0f, "after respawn: walk north-west"),
-            new Step(28.3f, -7.2f, -3.2f, "stand in circle 5 until it flips blue"),
-            new Step(33.5f, -5.7f, -8.0f, "walk south"),
-            new Step(34.5f, -4.2f, -12.8f, "walk south"),
-            new Step(35.5f, 2.5f, -13.0f, "bait again near 12"),
-            new Step(36.9f, 2.5f, -17.0f, "walk south"),
-            new Step(37.8f, -2.5f, -15.0f, "walk north-west"),
-            new Step(39.0f, -6.5625f, -11.3671875f, "stand on tower 14 centre (contested)"),
-            new Step(43.5f, -9.0625f, -8.8671875f, "step out north-west of circle 14"),
+            new Step(29.0f, -3.5f, -10.0f, "after respawn: walk north-west"),
+            new Step(30.3f, -7.2f, -3.2f, "stand in circle 5 until it flips blue"),
+            new Step(35.5f, -5.7f, -8.0f, "walk south"),
+            new Step(36.5f, -4.2f, -12.8f, "walk south"),
+            new Step(37.5f, 2.5f, -13.0f, "bait again near 12"),
+            new Step(38.9f, 2.5f, -17.0f, "walk south"),
+            new Step(39.8f, -2.5f, -15.0f, "walk north-west"),
+            new Step(41.0f, -6.5625f, -11.3671875f, "stand on tower 14 centre (contested)"),
+            new Step(45.5f, -9.0625f, -8.8671875f, "step out north-west of circle 14"),
         };
 
         public static string ToJson()
