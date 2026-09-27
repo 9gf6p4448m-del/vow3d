@@ -1447,7 +1447,8 @@ namespace Vow.Tests.PlayMode
                 yield return null;
                 f++;
             }
-            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "種子 (0, 996) 後 126 幀內應結束");
+            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "種子 (0, 999) 後 186 幀內應結束");
+            Assert.GreaterOrEqual(f, 174, "結束太早：第 " + f + " 幀"); // v0.10.0 計畫 §6 修-1：補 §2.6 T2 窗口下界（加嚴）
             Assert.AreEqual(CaptureMatchResult.RedWins, _bootstrap.CaptureView.Result);
             Assert.AreEqual("RED WINS", _bootstrap.MatchStatusLabel);
 
@@ -1462,12 +1463,13 @@ namespace Vow.Tests.PlayMode
                 yield return null;
                 f++;
             }
-            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "第 66 幀前應結束");
-            Assert.GreaterOrEqual(f, 60, "結束太早：第 " + f + " 幀");
+            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "第 186 幀前應結束");
+            // v0.10.0 計畫 §6 修-1（使用者 2026-09-27 同意）：下界 60 → 174、比分 1004 → 1000（慢計分每次最多 +1）。
+            Assert.GreaterOrEqual(f, 174, "結束太早：第 " + f + " 幀");
             Assert.AreEqual(CaptureMatchResult.Draw, _bootstrap.CaptureView.Result);
             Assert.AreEqual("DRAW", _bootstrap.MatchStatusLabel);
-            Assert.AreEqual(1004, _bootstrap.CaptureView.BlueScore);
-            Assert.AreEqual(1004, _bootstrap.CaptureView.RedScore);
+            Assert.AreEqual(1000, _bootstrap.CaptureView.BlueScore);
+            Assert.AreEqual(1000, _bootstrap.CaptureView.RedScore);
         }
 
         // ═════════════════════════ V9-C03 佔領對局零配置（含 BFS 與狂怒）═════════════════════════
