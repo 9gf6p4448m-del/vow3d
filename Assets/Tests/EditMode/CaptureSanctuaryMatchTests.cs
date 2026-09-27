@@ -174,14 +174,14 @@ namespace Vow.Tests.EditMode
             var c = CaptureSanctuaryKit.NewSeeded0100(new[] { 12, 13, 14 }, new[] { 7, 8, 18, 1, 0 });
             for (int t = 1; t <= 223; t++) c.Tick(dt, t4x, t4z, farX, farZ);
             Assert.AreEqual(3.5f, c.BlueChannelRequiredSeconds, "(c) t223 門檻 3.5");
-            Assert.AreNotEqual(Blue, c.OwnerOf(4), "(c) t223 尚未翻");
+            Assert.AreEqual(Capture19Kit.Neutral, c.OwnerOf(4), "(c) t223 仍中立");
             c.Tick(dt, t4x, t4z, farX, farZ); // t224
             Assert.AreEqual(Blue, c.OwnerOf(4), "活性：(c) t224 翻藍");
 
             // (d) 紅方：藍{12,13,14,4,0,1,7}、紅{18,8}，對手在塔心 7（紅方自己的母板塊）：同樣 1.8 秒。
             var d = CaptureSanctuaryKit.NewSeeded0100(new[] { 12, 13, 14, 4, 0, 1, 7 }, new[] { 18, 8 });
             for (int t = 1; t <= 115; t++) d.Tick(dt, farX, farZ, t7x, t7z);
-            Assert.AreNotEqual(Red, d.OwnerOf(7), "(d) t115 尚未翻");
+            Assert.AreEqual(Blue, d.OwnerOf(7), "(d) t115 仍藍、尚未翻");
             d.Tick(dt, farX, farZ, t7x, t7z); // t116
             Assert.AreEqual(Red, d.OwnerOf(7), "活性：(d) t116 翻紅");
 

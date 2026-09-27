@@ -93,9 +93,13 @@ namespace Vow.Tests.EditMode
             Assert.AreEqual("SIEGE 14%", CaptureHudLabels.Siege(14));
             Assert.AreEqual("SIEGE 0%", CaptureHudLabels.Siege(0));
 
-            Assert.IsTrue(ReferenceEquals(CaptureHudLabels.Clock(899.75f), CaptureHudLabels.Clock(899.75f)));
+            // 條文「每個兩次查表 ReferenceEquals」：上面列的每一個輸入都要驗。
+            float[] clockInputs = { 900f, 899.75f, 899f, 60f, 59.5f, 0.25f, 0f, -1f };
+            foreach (float seconds in clockInputs)
+                Assert.IsTrue(ReferenceEquals(CaptureHudLabels.Clock(seconds), CaptureHudLabels.Clock(seconds)), "Clock(" + seconds + ") 兩次查表不是同一個字串");
             Assert.IsTrue(ReferenceEquals(CaptureHudLabels.Sanctuary(), CaptureHudLabels.Sanctuary()));
             Assert.IsTrue(ReferenceEquals(CaptureHudLabels.Siege(14), CaptureHudLabels.Siege(14)));
+            Assert.IsTrue(ReferenceEquals(CaptureHudLabels.Siege(0), CaptureHudLabels.Siege(0)));
         }
 
         // ── V10-A12 HUD 版面：640×480@dpi0 精確矩形；VA24 全部裝置＋844×390@dpi0＋1688×780@dpi320 都在畫面內
