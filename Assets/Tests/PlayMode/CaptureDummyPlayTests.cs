@@ -100,9 +100,9 @@ namespace Vow.Tests.PlayMode
             for (int i = 0; i < 30; i++) yield return null;
             AssertDummy(dummy, overhead, false, "Active");
 
-            _bootstrap.SeedCaptureScoresForTest(998, 0);
+            _bootstrap.SeedCaptureScoresForTest(999, 0); // v0.10.0 §2.6 T7：(998, 0) → (999, 0)（慢計分）
             int f = 0;
-            while (_bootstrap.CaptureState != CaptureMatchState.Ended && f < 66)
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && f < 186) // v0.10.0 §2.6 T7：窗口 66 → 186 幀
             {
                 yield return null;
                 f++;

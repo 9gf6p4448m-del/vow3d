@@ -183,7 +183,7 @@ public interface ICaptureMatchView
     int RedScore { get; }
 
     int BlueChannelingTile { get; }           // -1＝沒有在引導
-    float BlueChannelProgress { get; }        // 秒，滿 3.5 翻塊
+    float BlueChannelProgress { get; }        // 秒，滿本次門檻（見 BlueChannelRequiredSeconds）翻塊
     int RedChannelingTile { get; }
     float RedChannelProgress { get; }
 
@@ -195,16 +195,29 @@ public interface ICaptureMatchView
     float BlueRageRemaining { get; }          // 秒，劣勢狂怒剩餘（觸發設為 12.0）；> 0 即生效
     float RedRageRemaining { get; }
 
+    // v0.10.0 母板塊聖所／圍城衰減／15 分鐘倒數（docs/V0100_SANCTUARY_PLAN.md E18）
+    float MatchRemainingSeconds { get; }      // 秒，15 分鐘倒數剩餘（900 起算，夾在 0）
+    bool EndedByTime { get; }                 // 本局是否因時間到結束（分高者勝、同分平手）
+    bool BlueInSanctuary { get; }             // 站在自己持有的己方母板塊上（只在 Active 時可能為 true）
+    bool RedInSanctuary { get; }
+    int BlueSanctuaryPercent { get; }         // 聖所強度 0～15（被圍城 ≥14 塊連續超過 120 秒後每秒 −1）
+    int RedSanctuaryPercent { get; }
+    int BlueDamageTakenPercent { get; }       // 受傷百分比 85～100；非 Active 一律 100
+    int RedDamageTakenPercent { get; }
+    float BlueChannelRequiredSeconds { get; } // 本次引導門檻：奪回自己的母板塊 1.8、其餘 3.5；沒有在引導時 0
+    float RedChannelRequiredSeconds { get; }
+
     CaptureMatchResult Result { get; }        // 本局結果（Ended 時有值）
     CaptureMatchResult LastResult { get; }    // 上一局結果（回待機後保留顯示）
 }
 ```
 
-**契約約束**（`docs/V080_CAPTURE_PLAN.md` §2.1-2；v0.9.0 擴充見 `docs/V090_ENCIRCLE_PLAN.md` §2.1-2）：
+**契約約束**（`docs/V080_CAPTURE_PLAN.md` §2.1-2；v0.9.0 擴充見 `docs/V090_ENCIRCLE_PLAN.md` §2.1-2；v0.10.0 擴充見 `docs/V0100_SANCTUARY_PLAN.md` E18）：
 * 唯一的事實來源是 `Vow.Core.Logic.CaptureMatchLogic`（零 UnityEngine 的純邏輯）；本介面**唯讀**，所有寫入（`Tick`、受傷、倒地、開局）只經組裝根 `Phase1Bootstrap`。
 * HUD（Vow.UI）、板塊顯示（Vow.Combat 的 `CaptureBoardView`）、輸入路由（Vow.Input 的 `DuelInputRouter`）**只依賴這個介面**，不直接碰 `CaptureMatchLogic`。
 * 純邏輯用 int 陣營代碼（Blue=0、Red=1、Neutral=2）；轉成 `Faction` 的轉接在 Bootstrap 層（`Vow.Bootstrap.CaptureMatchView`）——`CaptureMatchLogic` 不得引用定義在含 `using UnityEngine` 檔案裡的 `Faction`。第一次開局之前 `OwnerOf` 一律回 `Neutral`。
 * `ICombatTarget`、`ISkillTelegraphService`、`IPlayerInputService` 的簽章不因佔領模式改動。
+* v0.10.0 聖所減傷的受傷百分比由組裝根每幀照抄本介面的 `Blue/RedDamageTakenPercent` 寫進英雄（`HeroController.TakeDuelDamage`）與對手（`CombatTargetBehaviour.ScaleIncomingDamage` 鉤子，只有 `TrainingOpponent` 覆寫）；非 Active 與開局點擊當幀一律 100。
 
 ---
 

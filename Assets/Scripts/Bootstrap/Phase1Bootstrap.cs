@@ -130,7 +130,9 @@ namespace Vow.Bootstrap
         [SerializeField] private RageAuraView _rageAuras;   // v0.9.0 E18：兩個獨立根物件的狂怒光環
         private readonly CaptureTuning _captureTuning = new CaptureTuning();
         // v0.9.0（V090_ENCIRCLE_PLAN.md §2.1-3、E27）：正式版一律 19 塊；7 塊只留在純邏輯回歸夾具。
-        private readonly CaptureBoardSpec _captureSpec = CaptureBoardSpec.V090Nineteen;
+        // v0.10.0（V0100_SANCTUARY_PLAN.md E1、§2.1-3）：正式版改用 V0100Sanctuary（幾何與 V090Nineteen 逐值相同，
+        // 另開聖所／圍城／倒數／慢計分）；V090Nineteen 只留作純邏輯回歸夾具。
+        private readonly CaptureBoardSpec _captureSpec = CaptureBoardSpec.V0100Sanctuary;
         private CaptureMatchLogic _capture;
         private CaptureMatchView _captureView;
         private CombatTargetBehaviour[] _navBlockers = new CombatTargetBehaviour[0]; // 復活傳送後逐一推出（R10）
@@ -177,9 +179,15 @@ namespace Vow.Bootstrap
         public int CaptureRespawnLabelRecomputeCount => _hud != null ? _hud.CaptureRespawnLabelRecomputeCount : 0;
         public string CaptureRageLabel => _hud != null ? _hud.CaptureRageLabel : null;
         public int CaptureRageLabelRecomputeCount => _hud != null ? _hud.CaptureRageLabelRecomputeCount : 0;
+        // v0.10.0 E16／E17：上方正中的倒數與聖所／圍城列（Lobby／Off 為 null）。
+        public string CaptureClockLabel => _hud != null ? _hud.CaptureClockLabel : null;
+        public string CaptureSanctuaryLabel => _hud != null ? _hud.CaptureSanctuaryLabel : null;
+        public int CaptureClockLabelRecomputeCount => _hud != null ? _hud.CaptureClockLabelRecomputeCount : 0;
+        public int CaptureSanctuaryLabelRecomputeCount => _hud != null ? _hud.CaptureSanctuaryLabelRecomputeCount : 0;
 
 #if UNITY_EDITOR
         // PlayMode 終局用的比分種子入口（R12）：只寫兩個比分整數，不動計分時鐘、歸屬、進度。正式建置不編進去（V-D01）。
+        // v0.10.0：邏輯端另外清雙方慢計分餘數（E15）。
         public void SeedCaptureScoresForTest(int blueScore, int redScore)
         {
             if (_capture != null) _capture.SeedScoresForTest(blueScore, redScore);
@@ -190,6 +198,19 @@ namespace Vow.Bootstrap
         public void SeedCaptureOwnershipForTest(int[] owners)
         {
             if (_capture != null) _capture.SeedOwnershipForTest(owners);
+        }
+
+        // v0.10.0 E19：倒數種子入口。只寫已過時間（MatchElapsed），不動圍城、歸屬、比分。正式建置不編進去。
+        public void SeedCaptureMatchElapsedForTest(float matchElapsed)
+        {
+            if (_capture != null) _capture.SeedMatchElapsedForTest(matchElapsed);
+        }
+
+        // v0.10.0 E19：圍城種子入口。只寫該方（陣營代碼：藍 0、紅 1）的被圍時間，不動聖所強度、步進時鐘、歸屬、比分。
+        // 正式建置不編進去。
+        public void SeedCaptureSiegeForTest(int side, float seconds)
+        {
+            if (_capture != null) _capture.SeedSiegeForTest(side, seconds);
         }
 #endif
 
@@ -369,6 +390,8 @@ namespace Vow.Bootstrap
         {
             // v0.8.0（R15）：佔領 Tick 必須排在單挑的提早 return 之前，否則永遠跑不到。
             TickCapture(Time.deltaTime);
+            // v0.10.0 E5：聖所受傷百分比每幀寫入，放在 TickCapture 之外——它在 Off 會提早 return，Off 也要寫 100（R2）。
+            ApplySanctuary();
             if (_duelRound == null || !_duelRound.Tick(Time.deltaTime)) return;
             _latency?.CancelPendingForRound();
             _input?.CancelActiveGesturesForRound();
@@ -521,6 +544,16 @@ namespace Vow.Bootstrap
                 _opponentLocomotion.SetSpeedMultiplier(_capture.RedRageRemaining > 0f ? multiplier : 1f);
         }
 
+        // v0.10.0 E5：雙方聖所受傷百分比每幀照抄 CaptureMatchLogic（位置每幀在變，只寫一次會失效）。組裝根不自己算：
+        // 邏輯在非 Active（Off／Lobby／Ended）一律回 100，TryStart 又把在聖所旗標清掉、要到第一個 Active tick 的 ③c 才判定，
+        // 所以 Off 的單挑不會被殘留的 85 縮小（R2），開局點擊當幀、第一個 Active tick 之前也是 100（Q13、R6）。
+        private void ApplySanctuary()
+        {
+            if (_capture == null) return;
+            _hero.SetDamageTakenPercent(_capture.BlueDamageTakenPercent);
+            _opponent.SetDamageTakenPercent(_capture.RedDamageTakenPercent);
+        }
+
         // 佔領開局（E18）：清場規則直接沿用 v0.7.0 的 StartDuel；另外雙方傳送到各自基地復活點並補滿血。
         // 敵方牆一併收掉（E28：待機時可用的測試設施「開局時清掉」）。
         private void StartCapture()
@@ -666,6 +699,7 @@ namespace Vow.Bootstrap
                 SetDummiesSuppressed(false);
                 SetTestWallsSuppressed(false);
             }
+            ApplySanctuary(); // E5：進出佔領模式的當下就寫一次（非 Active，一律 100）
         }
 
         // ───────────────────── Phase 2 批 2：阻擋格點的組裝 ─────────────────────

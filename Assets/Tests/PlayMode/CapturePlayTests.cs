@@ -183,13 +183,13 @@ namespace Vow.Tests.PlayMode
             yield return null;
             PressAllTestButtonsAndAssertLocked("佔領 Active");
 
-            _hero.TakeDuelDamage(100f);
+            _hero.TakeDuelDamage(200f); // v0.10.0 §2.6 T5②：100 → 200（英雄在 13 號聖所內 100 只受 85、不倒地）
             yield return null;
             PressAllTestButtonsAndAssertLocked("英雄倒地");
 
-            _bootstrap.SeedCaptureScoresForTest(998, 0);
+            _bootstrap.SeedCaptureScoresForTest(999, 0); // v0.10.0 §2.6 T5①：(998, 0) → (999, 0)（慢計分）
             int f = 0;
-            while (_bootstrap.CaptureState != CaptureMatchState.Ended && f < 66)
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && f < 186) // v0.10.0 §2.6 T5①：窗口 66 → 186 幀
             {
                 yield return null;
                 f++;
@@ -286,9 +286,9 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(DuelRoundState.Dormant, _bootstrap.DuelState);
 
             // 下一局：先把這局結束並回 Lobby
-            _bootstrap.SeedCaptureScoresForTest(998, 0);
+            _bootstrap.SeedCaptureScoresForTest(999, 0); // v0.10.0 §2.6 T6：(998, 0) → (999, 0)（慢計分）
             int f = 0;
-            while (_bootstrap.CaptureState != CaptureMatchState.Lobby && f < 300)
+            while (_bootstrap.CaptureState != CaptureMatchState.Lobby && f < 372) // v0.10.0 §2.6 T6：窗口 300 → 372 幀
             {
                 yield return null;
                 f++;

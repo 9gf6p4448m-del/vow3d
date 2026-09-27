@@ -42,6 +42,17 @@ namespace Vow.Bootstrap
         public float BlueRageRemaining => _logic.BlueRageRemaining;
         public float RedRageRemaining => _logic.RedRageRemaining;
 
+        public float MatchRemainingSeconds => _logic.MatchRemainingSeconds;
+        public bool EndedByTime => _logic.EndedByTime;
+        public bool BlueInSanctuary => _logic.BlueInSanctuary;
+        public bool RedInSanctuary => _logic.RedInSanctuary;
+        public int BlueSanctuaryPercent => _logic.BlueSanctuaryPercent;
+        public int RedSanctuaryPercent => _logic.RedSanctuaryPercent;
+        public int BlueDamageTakenPercent => _logic.BlueDamageTakenPercent;
+        public int RedDamageTakenPercent => _logic.RedDamageTakenPercent;
+        public float BlueChannelRequiredSeconds => _logic.BlueChannelRequiredSeconds;
+        public float RedChannelRequiredSeconds => _logic.RedChannelRequiredSeconds;
+
         public CaptureMatchResult Result => _logic.Result;
         public CaptureMatchResult LastResult => _logic.LastResult;
     }

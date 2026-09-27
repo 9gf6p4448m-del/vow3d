@@ -87,6 +87,9 @@ namespace Vow.Combat
         {
             if (!IsAlive || amount <= 0f || !CanReceiveDamage()) return;
 
+            // v0.10.0（V0100_SANCTUARY_PLAN.md E4）：受傷縮放掛在這個唯一的受擊入口，檢查之後、扣血之前；
+            // OnDamaged 送出的是縮放後實際扣掉的量（聖所下 60 → 飄字 51）。
+            amount = ScaleIncomingDamage(amount);
             float applied = ConsumeDamage(amount);
             // Phase 2 批 4（GDD 圍欄九）：霧內目標「受傷後顯影 1.5s」。掛在這個唯一的受擊入口上，
             // 不掛在近戰／子彈／元素各自的呼叫端——三條路徑全部收斂在這裡（分母歸一）。
@@ -99,6 +102,10 @@ namespace Vow.Combat
 
         // 待機對手的無敵狀態在唯一受傷入口擋住，不觸發飄字、顯影與事件。
         protected virtual bool CanReceiveDamage() { return true; }
+
+        // v0.10.0 E4：受傷量的縮放鉤子（預設原值回傳）。只有 TrainingOpponent 覆寫成聖所減傷；
+        // 木樁、測試牆、石牆不得覆寫（行為與 v0.9.1 相同）。
+        protected virtual float ScaleIncomingDamage(float amount) { return amount; }
 
         // ───────────────────── Phase 2 批 4：受擊顯影（IConcealable）─────────────────────
         // 倒數由 ElementField 每幀統一推進（它本來就要走一遍名冊）：這個類別的三個子類別各自有

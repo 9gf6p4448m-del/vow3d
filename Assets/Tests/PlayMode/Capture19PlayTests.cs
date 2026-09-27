@@ -881,7 +881,7 @@ namespace Vow.Tests.PlayMode
             yield return Setup();
             EnterLobbyAndStart();
             yield return null;
-            _hero.TakeDuelDamage(100f); // f0
+            _hero.TakeDuelDamage(200f); // f0（v0.10.0 §2.6 T8：100 → 200，英雄在 13 號聖所內 100 只受 85、不倒地）
             Assert.IsFalse(_hero.IsAlive);
             yield return null;
             AssertBody(_hero.gameObject, false, "倒地的英雄");
@@ -1045,7 +1045,7 @@ namespace Vow.Tests.PlayMode
             yield return Setup();
             EnterLobbyAndStart();
             for (int i = 0; i < 30; i++) yield return null;
-            _hero.TakeDuelDamage(100f); // f0
+            _hero.TakeDuelDamage(200f); // f0（v0.10.0 §2.6 T9①：100 → 200，聖所內 100 只受 85）
             for (int f = 1; f <= 60; f++) yield return null;
             Vector3 corpse = _hero.transform.position;
             TapWorld(corpse + Vector3.right * 3f, "倒地時的點地");
@@ -1080,7 +1080,7 @@ namespace Vow.Tests.PlayMode
             EnterLobbyAndStart();
             for (int i = 0; i < 30; i++) yield return null;
             _bootstrap.SetDuelLatencyPreset(80);
-            _hero.TakeDuelDamage(100f); // f0
+            _hero.TakeDuelDamage(200f); // f0（v0.10.0 §2.6 T9②：100 → 200，聖所內 100 只受 85）
             for (int f = 1; f <= 296; f++) yield return null;
             Assert.IsFalse(_hero.IsAlive, "② 送出時英雄應仍倒地");
             corpse = _hero.transform.position;
@@ -1109,7 +1109,7 @@ namespace Vow.Tests.PlayMode
             _bootstrap.BeginScreenHold(runeX, runeY);
             _bootstrap.MoveScreenHold(runeX, runeY + 150f);
             yield return null;
-            _hero.TakeDuelDamage(100f); // f0：手指還按著
+            _hero.TakeDuelDamage(200f); // f0：手指還按著（v0.10.0 §2.6 T9③：100 → 200，聖所內 100 只受 85）
             frame = 0;
             while (!_hero.IsAlive && frame < 306)
             {
@@ -1375,9 +1375,9 @@ namespace Vow.Tests.PlayMode
             // 終局：種子前藍方 ≥ 2 塊、紅分 < 962 → 種子 (996, 目前紅分) → 126 幀內 Ended、藍勝
             Assert.GreaterOrEqual(CountOwned(Faction.BlueTeam), 2, "種子前藍方應至少有 2 塊");
             Assert.Less(_bootstrap.CaptureView.RedScore, 962, "種子前紅分應 < 962");
-            _bootstrap.SeedCaptureScoresForTest(996, _bootstrap.CaptureView.RedScore);
+            _bootstrap.SeedCaptureScoresForTest(999, _bootstrap.CaptureView.RedScore); // v0.10.0 §2.6 T1：996 → 999（慢計分）
             g = 0;
-            while (_bootstrap.CaptureState != CaptureMatchState.Ended && g < 126)
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && g < 300) // v0.10.0 §2.6 T1：窗口 126 → 300 幀
             {
                 yield return null;
                 g++;
@@ -1440,9 +1440,9 @@ namespace Vow.Tests.PlayMode
             yield return Setup();
             EnterLobbyAndStart();
             Assert.GreaterOrEqual(CountOwned(Faction.RedTeam), 1, "開局後紅方應至少有 1 塊");
-            _bootstrap.SeedCaptureScoresForTest(0, 996);
+            _bootstrap.SeedCaptureScoresForTest(0, 999); // v0.10.0 §2.6 T2：(0, 996) → (0, 999)（慢計分）
             int f = 0;
-            while (_bootstrap.CaptureState != CaptureMatchState.Ended && f < 126)
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && f < 186) // v0.10.0 §2.6 T2：窗口 126 → 186 幀
             {
                 yield return null;
                 f++;
@@ -1455,9 +1455,9 @@ namespace Vow.Tests.PlayMode
             EnterLobbyAndStart();
             for (f = 1; f <= 30; f++) yield return null;
             AssertOpeningOwners("第 30 幀");
-            _bootstrap.SeedCaptureScoresForTest(998, 998);
+            _bootstrap.SeedCaptureScoresForTest(999, 999); // v0.10.0 §2.6 T3：(998, 998) → (999, 999)（慢計分）
             f = 30;
-            while (_bootstrap.CaptureState != CaptureMatchState.Ended && f < 66)
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && f < 186) // v0.10.0 §2.6 T3：窗口上界 66 → 186 幀（自開局起算）
             {
                 yield return null;
                 f++;
@@ -1494,7 +1494,7 @@ namespace Vow.Tests.PlayMode
             Assert.Greater(_bootstrap.CaptureView.RedRageRemaining, 0f, "暖機局：紅方狂怒（活性）");
             yield return null;
             _hero.TakeDuelDamage(100f);
-            _bootstrap.SeedCaptureScoresForTest(998, 0);
+            _bootstrap.SeedCaptureScoresForTest(999, 0); // v0.10.0 §2.6 T4：(998, 0) → (999, 0)（6 塊時 2 次計分）；窗口 300 維持
             warm = 0;
             while (_bootstrap.CaptureState != CaptureMatchState.Lobby && warm < 300)
             {

@@ -121,6 +121,18 @@ namespace Vow.Combat
 
         protected override bool CanReceiveDamage() { return _active; }
 
+        // v0.10.0（V0100_SANCTUARY_PLAN.md E3～E5）：聖所受傷百分比（85～100），由組裝根每幀依 CaptureMatchLogic 寫入；
+        // 非 Active（Off／Lobby／Ended）與開局點擊當幀一律是 100。單挑恆為 100。
+        private int _damageTakenPercent = 100;
+        public int DamageTakenPercent => _damageTakenPercent;
+        public void SetDamageTakenPercent(int percent) { _damageTakenPercent = percent; }
+
+        // E4：先乘整數再除 100（60 在 P＝85 時精確得 51）；P＝100 原值回傳，傷害與 v0.9.1 逐位相同。
+        protected override float ScaleIncomingDamage(float amount)
+        {
+            return _damageTakenPercent == 100 ? amount : amount * _damageTakenPercent / 100f;
+        }
+
         public void StartRound()
         {
             if (!IsAlive || _hero == null) return;

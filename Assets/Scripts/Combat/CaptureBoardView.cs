@@ -109,22 +109,27 @@ namespace Vow.Combat
             }
         }
 
-        // 進度盤半徑＝光圈半徑 × 進度 ÷ 引導秒數；引導中的一方用自己的顏色（E30）。
+        // 進度盤半徑＝光圈半徑 × 進度 ÷ 本次門檻；引導中的一方用自己的顏色（E30）。
+        // v0.10.0 E8：門檻讀 view（奪回自己的母板塊 1.8 秒、其餘 3.5 秒），Unity 端不另寫秒數——
+        // 否則奪回時進度盤只長到一半就翻色（R3）。
         private void RefreshDisc(int tile)
         {
             Renderer disc = _progressDiscs[tile];
             if (disc == null) return;
 
             float progress = 0f;
+            float required = 0f;
             Material material = null;
             if (_view.BlueChannelingTile == tile && _view.BlueChannelProgress > 0f)
             {
                 progress = _view.BlueChannelProgress;
+                required = _view.BlueChannelRequiredSeconds;
                 material = _blueMaterial;
             }
             else if (_view.RedChannelingTile == tile && _view.RedChannelProgress > 0f)
             {
                 progress = _view.RedChannelProgress;
+                required = _view.RedChannelRequiredSeconds;
                 material = _redMaterial;
             }
 
@@ -134,7 +139,7 @@ namespace Vow.Combat
                 return;
             }
 
-            float radius = _tuning.CircleRadius * progress / _tuning.CaptureSeconds;
+            float radius = _tuning.CircleRadius * progress / required;
             if (radius > _tuning.CircleRadius) radius = _tuning.CircleRadius;
             _discTransforms[tile].localScale = new Vector3(radius * 2f, DiscHeightScale, radius * 2f);
             if (disc.sharedMaterial != material) disc.sharedMaterial = material;

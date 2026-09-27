@@ -105,10 +105,23 @@ namespace Vow.UI
         private int _rageSecondsShown = -1;
         private string _rageLabel;
 
+        // ── v0.10.0：上方正中兩列（V0100_SANCTUARY_PLAN.md E16、E17、§2.4）──
+        // 第一列 15 分鐘倒數 M:SS；第二列只看藍方：強度 < 15 → SIEGE n%，否則在聖所 → SANCT 15%，否則不顯示。
+        private const int SanctuaryRowHidden = -1;   // 第二列代碼：-1＝不顯示；0～14＝SIEGE n%；SanctuaryRowSanct＝SANCT 15%
+        private const int SanctuaryRowSanct = 15;
+        private Rect _matchClockRect;
+        private Rect _sanctuaryRowRect;
+        private int _clockSecondsShown = -1;
+        private string _clockLabel;
+        private int _sanctuaryRowShown = SanctuaryRowHidden;
+        private string _sanctuaryLabel;
+
         // 比分／復活字串被重算過幾次（零配置量測的活性，V-C03）。
         public int CaptureScoreLabelRecomputeCount { get; private set; }
         public int CaptureRespawnLabelRecomputeCount { get; private set; }
         public int CaptureRageLabelRecomputeCount { get; private set; }
+        public int CaptureClockLabelRecomputeCount { get; private set; }
+        public int CaptureSanctuaryLabelRecomputeCount { get; private set; }
 
         public void ConfigureCapture(ICaptureMatchView view, Action pressCapture)
         {
@@ -169,6 +182,14 @@ namespace Vow.UI
         public string CaptureRageLabel => _captureView != null && _captureView.State == CaptureMatchState.Active
                                           && _captureView.BlueRageRemaining > 0f ? _rageLabel : null;
 
+        // v0.10.0 E17：上方正中兩列只在 Active 與 Ended 顯示（Ended 停在當時的值，時間到就是 0:00）；Lobby／Off 一律 null。
+        // 紅方的聖所不上 HUD，只靠對手頭頂的傷害飄字（E22）。
+        public string CaptureClockLabel => CaptureTopRowsVisible ? _clockLabel : null;
+        public string CaptureSanctuaryLabel => CaptureTopRowsVisible ? _sanctuaryLabel : null;
+
+        private bool CaptureTopRowsVisible => _captureView != null
+            && (_captureView.State == CaptureMatchState.Active || _captureView.State == CaptureMatchState.Ended);
+
         private static string ResultLabel(CaptureMatchResult result, bool last)
         {
             switch (result)
@@ -213,6 +234,8 @@ namespace Vow.UI
                 }
             }
 
+            if (CaptureTopRowsVisible) RefreshCaptureTopRows();
+
             if (!_captureView.BlueKnockedOut) return;
             float remaining = _captureView.BlueRespawnRemaining;
             int whole = (int)remaining;
@@ -221,6 +244,35 @@ namespace Vow.UI
             _respawnSecondsShown = seconds;
             _respawnLabel = CaptureHudLabels.Respawn(remaining);
             CaptureRespawnLabelRecomputeCount++;
+        }
+
+        // v0.10.0 E16／E17：倒數與第二列只在整數秒或顯示內容真的變了才查表（預建字串表，零配置）。
+        // 倒數讀邏輯的剩餘秒數（view），Unity 端不另外計時。
+        private void RefreshCaptureTopRows()
+        {
+            float remaining = _captureView.MatchRemainingSeconds;
+            int whole = (int)remaining;
+            int seconds = remaining > whole ? whole + 1 : whole;
+            if (seconds != _clockSecondsShown || _clockLabel == null)
+            {
+                _clockSecondsShown = seconds;
+                _clockLabel = CaptureHudLabels.Clock(remaining);
+                CaptureClockLabelRecomputeCount++;
+            }
+
+            // 優先序：衰減中（強度 0～14）一律顯示 SIEGE n%，不論英雄站哪（隊伍層級的警告）；滿 15 才看在不在聖所。
+            int percent = _captureView.BlueSanctuaryPercent;
+            int row = percent <= CaptureHudLabels.MaxSiegePercent ? percent
+                    : _captureView.BlueInSanctuary ? SanctuaryRowSanct : SanctuaryRowHidden;
+            if (row == _sanctuaryRowShown) return;
+            _sanctuaryRowShown = row;
+            if (row == SanctuaryRowHidden)
+            {
+                _sanctuaryLabel = null;
+                return;
+            }
+            _sanctuaryLabel = row == SanctuaryRowSanct ? CaptureHudLabels.Sanctuary() : CaptureHudLabels.Siege(row);
+            CaptureSanctuaryLabelRecomputeCount++;
         }
 
         // 零配置字串表：冷卻標籤一律查表，**不得字串串接**。索引＝ElementCastCooldowns.RemainingLabelIndex
@@ -545,6 +597,9 @@ namespace Vow.UI
             // v0.8.0：右上面板與 CAPTURE 鈕同樣向 DebugHudLayout 要（§2.4／R14）。Off 時面板高 72，佔領模式另取 116 那一份。
             _matchPanelRect = ToRect(layout.MatchPanel);
             _captureRect = ToRect(layout.Capture);
+            // v0.10.0 E17：上方正中兩列同樣向 DebugHudLayout 要（算式獨立，不影響上面任何矩形）。
+            _matchClockRect = ToRect(layout.MatchClock);
+            _sanctuaryRowRect = ToRect(layout.SanctuaryRow);
             _matchPanelCaptureHeight = DebugHudLayout.Compute(Screen.width, Screen.height, dpi,
                 _latency != null, _gridVisible != null, _toggleTurret != null || _spawnEnemyWall != null, true).MatchPanel.Height;
 
@@ -698,6 +753,7 @@ namespace Vow.UI
             }
 
             DrawDuelPanel();
+            DrawCaptureTopRows();
 
             GUI.matrix = previous;
 
@@ -737,6 +793,20 @@ namespace Vow.UI
             bool captureInvalid = CurrentGate().CaptureButton == CaptureButtonAction.Invalid;
             Fill(_captureRect, captureInvalid ? ButtonCooldownColor : captureMode ? ButtonOnColor : ButtonColor);
             GUI.Label(_captureRect, CaptureButtonLabel, _buttonLabel);
+        }
+
+        // v0.10.0 E17：上方正中第一列倒數、第二列 SANCT 15%／SIEGE n%（字串查表，見 RefreshCaptureTopRows）。
+        // 只畫、不登記觸控區域：點到這裡照樣是點地／點對手（與右上面板相同）。
+        private void DrawCaptureTopRows()
+        {
+            string clock = CaptureClockLabel;
+            if (clock == null) return;
+            Fill(_matchClockRect, PanelColor);
+            GUI.Label(_matchClockRect, clock, _buttonLabel);
+            string row = CaptureSanctuaryLabel;
+            if (row == null) return;
+            Fill(_sanctuaryRowRect, PanelColor);
+            GUI.Label(_sanctuaryRowRect, row, _buttonLabel);
         }
 
         private void DrawPips(float x, float y)

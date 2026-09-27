@@ -111,6 +111,9 @@ namespace Vow.Core
         {
             if (!IsAlive || amount <= 0f) return;
             OnDuelDamaged?.Invoke();
+            // v0.10.0（V0100_SANCTUARY_PLAN.md E3／E4、Q14）：聖所減傷排在打斷之後、護盾之前——護盾吸收的是減傷後的量。
+            // 先乘整數再除 100（20／60／100 在 P＝85 時精確得 17／51／85）；P＝100 時不做乘除，傷害與 v0.9.1 逐位相同。
+            if (_damageTakenPercent != 100) amount = amount * _damageTakenPercent / 100f;
             if (_shield != null) amount = _shield.Absorb(amount);
             if (!_vitality.TakeDamage(amount)) return;
             CancelCombatForDuel();
@@ -169,6 +172,12 @@ namespace Vow.Core
         private float _rageMultiplier = 1f;
         public float RageSpeedMultiplier => _rageMultiplier;
         public void SetRageSpeedMultiplier(float multiplier) { _rageMultiplier = multiplier; }
+
+        // v0.10.0（V0100_SANCTUARY_PLAN.md E3～E5）：聖所受傷百分比（85～100），在 TakeDuelDamage 內套用。
+        // 由組裝根每幀依 CaptureMatchLogic 寫入；非 Active（Off／Lobby／Ended）與開局點擊當幀一律是 100。單挑恆為 100。
+        private int _damageTakenPercent = 100;
+        public int DamageTakenPercent => _damageTakenPercent;
+        public void SetDamageTakenPercent(int percent) { _damageTakenPercent = percent; }
 
         // 由 Phase1Bootstrap 注入依賴（不在這裡 Find，任何一項都可以換成測試替身）。
         public void Initialize(IPlayerInputService input, ICombatFeedbackService feedback, Camera viewCamera,
