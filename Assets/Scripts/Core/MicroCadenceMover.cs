@@ -11,6 +11,7 @@ namespace Vow.Core
     public sealed class MicroCadenceMover : MonoBehaviour, ICadenceMover
     {
         private HeroLocomotion _locomotion;
+        private CombatTuning _baseTuning;
         private CombatTuning _tuning;
         private CadenceSimState _state;
 
@@ -26,10 +27,41 @@ namespace Vow.Core
 
         public void Configure(CombatTuning tuning)
         {
-            _tuning = tuning ?? throw new ArgumentNullException(nameof(tuning));
+            _baseTuning = tuning ?? throw new ArgumentNullException(nameof(tuning));
+            // 僅複製 mover 真正讀取的欄位；天賦覆寫留在本元件，不污染 ScriptableObject 或 HeroCombatBrain。
+            _tuning = new CombatTuning
+            {
+                MaxCharges = tuning.MaxCharges,
+                ChargeRecoverySeconds = tuning.ChargeRecoverySeconds,
+                ChainWindowSeconds = tuning.ChainWindowSeconds,
+                DashDistances = tuning.DashDistances != null ? (float[])tuning.DashDistances.Clone() : null,
+                DashDurationSeconds = tuning.DashDurationSeconds,
+            };
             _locomotion = GetComponent<HeroLocomotion>();
-            _state = CadenceSimState.CreateFull(tuning);
+            _state = CadenceSimState.CreateFull(_tuning);
             OnChargesChanged?.Invoke(_state.Charges);
+        }
+
+        public void SetPactCadenceModifiers(bool swiftStep, bool extremeOverclock)
+        {
+            if (_tuning == null || _baseTuning == null) return;
+            _tuning.MaxCharges = extremeOverclock ? 4 : _baseTuning.MaxCharges;
+            if (_baseTuning.DashDistances != null && _tuning.DashDistances != null)
+            {
+                for (int i = 0; i < _baseTuning.DashDistances.Length; i++)
+                    _tuning.DashDistances[i] = _baseTuning.DashDistances[i];
+                if (swiftStep && _tuning.DashDistances.Length >= 3)
+                {
+                    _tuning.DashDistances[0] = 1.4f;
+                    _tuning.DashDistances[1] = 1.0f;
+                    _tuning.DashDistances[2] = 0.7f;
+                }
+            }
+            if (_state.Charges > _tuning.MaxCharges)
+            {
+                _state.Charges = _tuning.MaxCharges;
+                OnChargesChanged?.Invoke(_state.Charges);
+            }
         }
 
         public void ResetForRound()

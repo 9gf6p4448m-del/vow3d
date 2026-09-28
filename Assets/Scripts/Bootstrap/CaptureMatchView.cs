@@ -52,6 +52,7 @@ namespace Vow.Bootstrap
         public int RedDamageTakenPercent => _logic.RedDamageTakenPercent;
         public float BlueChannelRequiredSeconds => _logic.BlueChannelRequiredSeconds;
         public float RedChannelRequiredSeconds => _logic.RedChannelRequiredSeconds;
+        public int BluePendingTalentTier => _logic.PendingTalentTier(CaptureMatchLogic.BlueFactionId);
 
         public CaptureMatchResult Result => _logic.Result;
         public CaptureMatchResult LastResult => _logic.LastResult;

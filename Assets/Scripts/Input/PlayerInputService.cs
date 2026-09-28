@@ -132,43 +132,53 @@ namespace Vow.Input
         // 所以按住期間由 Update 每幀補一筆 Stationary，走的仍是與真實手指一模一樣的分流與手勢狀態機。
         // 測試專用，正式建置不編進去（r1 對抗審查 L2；比照 Phase1Bootstrap.SeedCaptureScoresForTest）。
         private const int SimulatedHoldTouchIdBase = -3000;
-        private bool _simulatedHoldActive;
-        private int _simulatedHoldTouchId;
-        private float _simulatedHoldX;
-        private float _simulatedHoldY;
-        private double _simulatedHoldStartTime;
+        private const int SimulatedHoldSlots = 2;
+        private readonly bool[] _simulatedHoldActive = new bool[SimulatedHoldSlots];
+        private readonly int[] _simulatedHoldTouchId = new int[SimulatedHoldSlots];
+        private readonly float[] _simulatedHoldX = new float[SimulatedHoldSlots];
+        private readonly float[] _simulatedHoldY = new float[SimulatedHoldSlots];
+        private readonly double[] _simulatedHoldStartTime = new double[SimulatedHoldSlots];
         private int _simulatedHoldCount;
 
-        public bool IsSimulatedHoldActive => _simulatedHoldActive;
+        public bool IsSimulatedHoldActive => _simulatedHoldActive[0];
 
-        public void BeginSimulatedHold(float screenX, float screenY)
+        public void BeginSimulatedHold(float screenX, float screenY) => BeginSimulatedHold(0, screenX, screenY);
+
+        public void BeginSimulatedHold(int slot, float screenX, float screenY)
         {
-            if (_simulatedHoldActive) EndSimulatedHold();
+            if (slot < 0 || slot >= SimulatedHoldSlots) throw new ArgumentOutOfRangeException(nameof(slot));
+            if (_simulatedHoldActive[slot]) EndSimulatedHold(slot);
             double now = Time.unscaledTimeAsDouble;
-            _simulatedHoldTouchId = SimulatedHoldTouchIdBase - _simulatedHoldCount;
+            _simulatedHoldTouchId[slot] = SimulatedHoldTouchIdBase - _simulatedHoldCount;
             _simulatedHoldCount++;
-            _simulatedHoldActive = true;
-            _simulatedHoldX = screenX;
-            _simulatedHoldY = screenY;
-            _simulatedHoldStartTime = now;
-            Router.ProcessTouch(_simulatedHoldTouchId, TouchPhaseKind.Began, screenX, screenY, now, now);
+            _simulatedHoldActive[slot] = true;
+            _simulatedHoldX[slot] = screenX;
+            _simulatedHoldY[slot] = screenY;
+            _simulatedHoldStartTime[slot] = now;
+            Router.ProcessTouch(_simulatedHoldTouchId[slot], TouchPhaseKind.Began, screenX, screenY, now, now);
         }
 
-        public void MoveSimulatedHold(float screenX, float screenY)
+        public void MoveSimulatedHold(float screenX, float screenY) => MoveSimulatedHold(0, screenX, screenY);
+
+        public void MoveSimulatedHold(int slot, float screenX, float screenY)
         {
-            if (!_simulatedHoldActive) return;
-            _simulatedHoldX = screenX;
-            _simulatedHoldY = screenY;
-            Router.ProcessTouch(_simulatedHoldTouchId, TouchPhaseKind.Moved, screenX, screenY,
-                                Time.unscaledTimeAsDouble, _simulatedHoldStartTime);
+            if (slot < 0 || slot >= SimulatedHoldSlots) throw new ArgumentOutOfRangeException(nameof(slot));
+            if (!_simulatedHoldActive[slot]) return;
+            _simulatedHoldX[slot] = screenX;
+            _simulatedHoldY[slot] = screenY;
+            Router.ProcessTouch(_simulatedHoldTouchId[slot], TouchPhaseKind.Moved, screenX, screenY,
+                                Time.unscaledTimeAsDouble, _simulatedHoldStartTime[slot]);
         }
 
-        public void EndSimulatedHold()
+        public void EndSimulatedHold() => EndSimulatedHold(0);
+
+        public void EndSimulatedHold(int slot)
         {
-            if (!_simulatedHoldActive) return;
-            _simulatedHoldActive = false;
-            Router.ProcessTouch(_simulatedHoldTouchId, TouchPhaseKind.Ended, _simulatedHoldX, _simulatedHoldY,
-                                Time.unscaledTimeAsDouble, _simulatedHoldStartTime);
+            if (slot < 0 || slot >= SimulatedHoldSlots) throw new ArgumentOutOfRangeException(nameof(slot));
+            if (!_simulatedHoldActive[slot]) return;
+            _simulatedHoldActive[slot] = false;
+            Router.ProcessTouch(_simulatedHoldTouchId[slot], TouchPhaseKind.Ended, _simulatedHoldX[slot], _simulatedHoldY[slot],
+                                Time.unscaledTimeAsDouble, _simulatedHoldStartTime[slot]);
         }
 #endif
 
@@ -220,9 +230,10 @@ namespace Vow.Input
             if (touches.Count > 0) _lastRealTouchTime = now;
             FeedMouse(router, now);
 #if UNITY_EDITOR
-            if (_simulatedHoldActive)
-                router.ProcessTouch(_simulatedHoldTouchId, TouchPhaseKind.Stationary, _simulatedHoldX, _simulatedHoldY,
-                                    now, _simulatedHoldStartTime);
+            for (int slot = 0; slot < SimulatedHoldSlots; slot++)
+                if (_simulatedHoldActive[slot])
+                    router.ProcessTouch(_simulatedHoldTouchId[slot], TouchPhaseKind.Stationary,
+                                        _simulatedHoldX[slot], _simulatedHoldY[slot], now, _simulatedHoldStartTime[slot]);
 #endif
             router.EndFrame();
 

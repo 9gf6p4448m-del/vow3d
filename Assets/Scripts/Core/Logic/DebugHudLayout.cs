@@ -44,6 +44,7 @@ namespace Vow.Core.Logic
         public HudRect Water, Fire, Wind, Elem;
         public HudRect MatchPanel, Capture; // v0.8.0 佔領對局面板與 CAPTURE 鈕（V080_CAPTURE_PLAN.md §2.4）
         public HudRect MatchClock, SanctuaryRow; // v0.10.0 上方正中倒數與聖所/圍城列（V0100_SANCTUARY_PLAN.md E17）
+        public HudRect TalentPanel, TalentTitle, TalentFirst, TalentSecond, TalentThird; // v0.11.0 三選一盤
         public float Scale;
         public float PanelHeight;
 
@@ -51,7 +52,7 @@ namespace Vow.Core.Logic
         // （不影響左側面板與既有六個矩形，V-A24／既有 V4-o／V4-p 不受影響）。
         public static DebugHudLayout Compute(float screenWidth, float screenHeight, float dpi,
                                              bool hasLatencyRow, bool hasGridRow, bool hasWallOrTurretRow,
-                                             bool captureModeActive = false)
+                                             bool captureModeActive = false, bool captureMatchActive = false)
         {
             DebugHudLayout layout = default;
             layout.Scale = dpi > 0f ? (dpi / ReferenceDpi > 1f ? dpi / ReferenceDpi : 1f) : 1f;
@@ -91,6 +92,24 @@ namespace Vow.Core.Logic
             float matchPanelHeight = captureModeActive ? 116f : 72f;
             layout.MatchPanel = new HudRect(matchPanelX, Pad, 176f, matchPanelHeight);
             layout.Capture = new HudRect(matchPanelX, Pad + 116f + Pad, 176f, Row * 1.6f);
+
+            // 三選一盤靠右上面板左側，保留兩者間 20 單位；底部元素鈕只在正式對局 Active 重新定位。
+            float talentX = matchPanelX - 196f;
+            layout.TalentPanel = new HudRect(talentX, 60f, 176f, 150f);
+            layout.TalentTitle = new HudRect(talentX, 60f, 176f, 22f);
+            layout.TalentFirst = new HudRect(talentX, 84f, 176f, 38f);
+            layout.TalentSecond = new HudRect(talentX, 128f, 176f, 38f);
+            layout.TalentThird = new HudRect(talentX, 172f, 176f, 38f);
+            if (captureMatchActive)
+            {
+                float logicalHeight = screenHeight / layout.Scale;
+                float groupWidth = matchPanelX - 20f - 260f;
+                float elementWidth = (groupWidth - 16f) / 3f;
+                float elementY = logicalHeight - 56f;
+                layout.Water = new HudRect(260f, elementY, elementWidth, 40f);
+                layout.Fire = new HudRect(268f + elementWidth, elementY, elementWidth, 40f);
+                layout.Wind = new HudRect(276f + elementWidth * 2f, elementY, elementWidth, 40f);
+            }
 
             // v0.10.0：上方正中倒數／聖所列（E17）。與左側面板、右上面板的算式完全獨立，不讀不寫上面任何欄位。
             float clockX = screenWidth / layout.Scale / 2f - 44f;

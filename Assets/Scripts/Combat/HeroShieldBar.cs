@@ -92,7 +92,8 @@ namespace Vow.Combat
             }
 
             SetBarVisible(true);
-            float normalized = Mathf.Clamp01(amount / _fullAmount);
+            float grantAmount = _shield.GrantedAmount > 0f ? _shield.GrantedAmount : _fullAmount;
+            float normalized = Mathf.Clamp01(amount / grantAmount);
             _fill.localScale = new Vector3(Mathf.Max(0.0001f, _barWidth * normalized), _barThickness, 1f);
             _fill.localPosition = new Vector3(-_barWidth * (1f - normalized) * 0.5f, 0f, 0f); // 由右往左縮
         }

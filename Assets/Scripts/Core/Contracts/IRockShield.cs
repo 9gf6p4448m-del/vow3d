@@ -6,6 +6,7 @@ namespace Vow.Core
     public interface IRockShield
     {
         float Amount { get; }
+        float GrantedAmount { get; }
         float RemainingSeconds { get; }
         void Grant();
         float Absorb(float incomingDamage);

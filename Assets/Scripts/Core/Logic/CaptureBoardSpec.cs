@@ -37,6 +37,8 @@ namespace Vow.Core.Logic
         public bool SiegeEnabled { get; }
         public bool TimeLimitEnabled { get; }
         public bool PacedScoringEnabled { get; }
+        // v0.11.0：正式佔領規則集可開放天賦，舊兩套夾具保持原行為。
+        public bool TalentsEnabled { get; }
 
         private CaptureBoardSpec(
             float circumRadius, float inRadius,
@@ -45,7 +47,8 @@ namespace Vow.Core.Logic
             int[] redMothers, float[] redMotherRespawnXs, float[] redMotherRespawnZs,
             float blueEdgeRespawnX, float blueEdgeRespawnZ, float redEdgeRespawnX, float redEdgeRespawnZ,
             bool encircleEnabled, bool rageEnabled,
-            bool sanctuaryEnabled, bool siegeEnabled, bool timeLimitEnabled, bool pacedScoringEnabled)
+            bool sanctuaryEnabled, bool siegeEnabled, bool timeLimitEnabled, bool pacedScoringEnabled,
+            bool talentsEnabled)
         {
             TileCount = centerXs.Length;
             CircumRadius = circumRadius;
@@ -83,6 +86,7 @@ namespace Vow.Core.Logic
             SiegeEnabled = siegeEnabled;
             TimeLimitEnabled = timeLimitEnabled;
             PacedScoringEnabled = pacedScoringEnabled;
+            TalentsEnabled = talentsEnabled;
         }
 
         public float CenterX(int tile) => _centerXs[tile];
@@ -193,7 +197,8 @@ namespace Vow.Core.Logic
             new[] { 16.65625f, 12.8671875f, 12.8671875f },
             -17f, -17f, 17f, 17f,
             true, true,
-            sanctuaryEnabled, siegeEnabled, timeLimitEnabled, pacedScoringEnabled);
+            sanctuaryEnabled, siegeEnabled, timeLimitEnabled, pacedScoringEnabled,
+            sanctuaryEnabled);
         }
 
         private static CaptureBoardSpec BuildV080Seven()
@@ -227,7 +232,8 @@ namespace Vow.Core.Logic
                 new[] { tuning.RedHomeRespawnZ },
                 tuning.BlueEdgeRespawnX, tuning.BlueEdgeRespawnZ, tuning.RedEdgeRespawnX, tuning.RedEdgeRespawnZ,
                 false, false,
-                false, false, false, false);
+                false, false, false, false,
+                false);
         }
     }
 }

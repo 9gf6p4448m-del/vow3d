@@ -7,14 +7,16 @@ namespace Vow.Core.Logic
     public struct MatchGateDecision
     {
         public bool ElementsLocked;
+        public bool DebugToolsLocked;
         public bool HeroInputBlocked;
         public CaptureTapAction TapAction;
         public CaptureButtonAction CaptureButton;
 
-        public MatchGateDecision(bool elementsLocked, bool heroInputBlocked,
+        public MatchGateDecision(bool elementsLocked, bool debugToolsLocked, bool heroInputBlocked,
                                   CaptureTapAction tapAction, CaptureButtonAction captureButton)
         {
             ElementsLocked = elementsLocked;
+            DebugToolsLocked = debugToolsLocked;
             HeroInputBlocked = heroInputBlocked;
             TapAction = tapAction;
             CaptureButton = captureButton;
@@ -25,30 +27,32 @@ namespace Vow.Core.Logic
     // 元素/砲台/敵牆是否鎖住、英雄輸入是否封鎖、點對手時要開哪一種局、CAPTURE 鈕該做什麼。
     public static class MatchGate
     {
-        public static MatchGateDecision Evaluate(DuelRoundState duelState, CaptureMatchState captureState, bool heroAlive)
+        public static MatchGateDecision Evaluate(DuelRoundState duelState, CaptureMatchState captureState,
+                                                 bool heroAlive, bool captureElementsEnabled = false)
         {
             if (captureState == CaptureMatchState.Lobby)
             {
-                return new MatchGateDecision(false, false, CaptureTapAction.OpenCapture, CaptureButtonAction.ExitCaptureMode);
+                return new MatchGateDecision(false, false, false, CaptureTapAction.OpenCapture, CaptureButtonAction.ExitCaptureMode);
             }
             if (captureState == CaptureMatchState.Active)
             {
-                return new MatchGateDecision(true, !heroAlive, CaptureTapAction.None, CaptureButtonAction.Invalid);
+                return new MatchGateDecision(!captureElementsEnabled || !heroAlive, true, !heroAlive,
+                                             CaptureTapAction.None, CaptureButtonAction.Invalid);
             }
             if (captureState == CaptureMatchState.Ended)
             {
-                return new MatchGateDecision(true, true, CaptureTapAction.None, CaptureButtonAction.Invalid);
+                return new MatchGateDecision(true, true, true, CaptureTapAction.None, CaptureButtonAction.Invalid);
             }
 
             // captureState == Off：沿用 v0.7.0 單挑狀態的真值表（R1～R3 原樣）。
             switch (duelState)
             {
                 case DuelRoundState.Dormant:
-                    return new MatchGateDecision(false, false, CaptureTapAction.OpenDuel, CaptureButtonAction.EnterCaptureMode);
+                    return new MatchGateDecision(false, false, false, CaptureTapAction.OpenDuel, CaptureButtonAction.EnterCaptureMode);
                 case DuelRoundState.Active:
-                    return new MatchGateDecision(true, false, CaptureTapAction.None, CaptureButtonAction.Invalid);
+                    return new MatchGateDecision(true, true, false, CaptureTapAction.None, CaptureButtonAction.Invalid);
                 default: // KnockoutPause
-                    return new MatchGateDecision(true, true, CaptureTapAction.None, CaptureButtonAction.Invalid);
+                    return new MatchGateDecision(true, true, true, CaptureTapAction.None, CaptureButtonAction.Invalid);
             }
         }
     }

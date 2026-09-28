@@ -174,18 +174,23 @@ namespace Vow.Tests.PlayMode
             Assert.IsTrue(_opponent.IsAlive);
         }
 
-        // ───────────── V-B15 元素與測試設施在佔領對局中停用 ─────────────
+        // ───────────── V-B15：v0.11.0 佔領 Active 開元素，其餘測試設施仍鎖 ─────────────
         [UnityTest]
-        public IEnumerator V_B15_ElementsTurretAndEnemyWall_AreLockedInActiveKnockoutAndEnded_ThenUsableInLobby()
+        public IEnumerator V_B15_ActiveOpensElements_ButKnockoutAndEndedLockThem_AndDebugToolsStayLocked()
         {
             yield return Setup();
             EnterLobbyAndStart();
             yield return null;
-            PressAllTestButtonsAndAssertLocked("佔領 Active");
+            int windBefore = _bootstrap.SectorTelegraph.ShowCount;
+            _bootstrap.PressElementWindButton();
+            Assert.AreEqual(windBefore + 1, _bootstrap.SectorTelegraph.ShowCount,
+                "佔領 Active 應可施放 WIND（活性）");
+            PressDebugButtonsAndAssertLocked("佔領 Active");
 
             _hero.TakeDuelDamage(200f); // v0.10.0 §2.6 T5②：100 → 200（英雄在 13 號聖所內 100 只受 85、不倒地）
             yield return null;
-            PressAllTestButtonsAndAssertLocked("英雄倒地");
+            Assert.IsTrue(_bootstrap.CaptureView.BlueKnockedOut, "前提：英雄確實倒地");
+            PressWaterAndDebugButtonsAndAssertLocked("英雄倒地");
 
             _bootstrap.SeedCaptureScoresForTest(999, 0); // v0.10.0 §2.6 T5①：(998, 0) → (999, 0)（慢計分）
             int f = 0;
@@ -194,8 +199,8 @@ namespace Vow.Tests.PlayMode
                 yield return null;
                 f++;
             }
-            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "種子 998 後一次計分應結束");
-            PressAllTestButtonsAndAssertLocked("Ended");
+            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "種子 999 後一次計分應結束");
+            PressWaterAndDebugButtonsAndAssertLocked("Ended");
 
             f = 0;
             while (_bootstrap.CaptureState != CaptureMatchState.Lobby && f < 186)
@@ -208,14 +213,590 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(1, _bootstrap.ElementField.ActiveZoneCount, "回 Lobby 後 WATER 應可用（活性）");
         }
 
-        private void PressAllTestButtonsAndAssertLocked(string when)
+        private void PressWaterAndDebugButtonsAndAssertLocked(string when)
         {
+            int firesBefore = _bootstrap.ElementField.PlainFireCount;
             _bootstrap.PressElementWaterButton();
+            _bootstrap.PressElementFireButton();
+            Assert.AreEqual(0, _bootstrap.ElementField.ActiveZoneCount, when + "：WATER 不得施放");
+            Assert.AreEqual(firesBefore, _bootstrap.ElementField.PlainFireCount,
+                when + "：FIRE 不得施放");
+            PressDebugButtonsAndAssertLocked(when);
+        }
+
+        private void PressDebugButtonsAndAssertLocked(string when)
+        {
             _bootstrap.HudPanel.PressTurretButton();
             _bootstrap.HudPanel.PressEnemyWallButton();
-            Assert.AreEqual(0, _bootstrap.ElementField.ActiveZoneCount, when + "：WATER 不得施放");
             Assert.IsFalse(_bootstrap.Turret.IsFiring, when + "：TURRET 不得開火");
             Assert.AreEqual(0, _bootstrap.EnemyWalls.AliveCount(), when + "：ENEMY WALL 不得生牆");
+        }
+
+        // B0：施法、ELEM 與除錯鈕都走 HUD 實際矩形的真實觸控，不直接呼叫委派。
+        [UnityTest]
+        public IEnumerator V0110_B0_CaptureActive_RealHudTouchesCastAllThreeBlueElements_WithoutOpeningDebugToolsOrLeakingWorldInput()
+        {
+            yield return Setup();
+            DebugHudLayout layout = CurrentHudLayout();
+            yield return TapHudRect(layout, layout.Elem, "開局前 ELEM");
+            Assert.AreEqual(Faction.RedTeam, _bootstrap.ElementCastFaction, "前提：開局前 ELEM 已切紅");
+
+            EnterLobbyAndStart();
+            yield return null;
+            layout = CurrentHudLayout(true);
+            Assert.AreEqual(0, _bootstrap.ElementField.ActiveZoneCount, "開局應清除舊元素區");
+
+            int moves = 0;
+            int picks = 0;
+            _bootstrap.InputService.OnMoveDestinationSelected += _ => moves++;
+            _bootstrap.InputService.OnCombatTargetSelected += _ => picks++;
+
+            yield return TapHudRect(layout, layout.Water, "WATER");
+            Assert.AreEqual(1, _bootstrap.ElementField.CountZonesOfKind(ElementZoneKind.Water),
+                "Active 觸碰 WATER 應形成水域");
+            bool foundBlueWater = false;
+            for (int slot = 0; slot < _bootstrap.ElementField.ZoneCapacity; slot++)
+            {
+                if (!_bootstrap.ElementField.TryGetZoneBySlot(slot, out ElementZone zone)) continue;
+                if (zone.Kind != ElementZoneKind.Water) continue;
+                Assert.AreEqual((int)Faction.BlueTeam, zone.FactionId,
+                    "開局前即使 ELEM 切紅，佔領局也只能施放藍方元素");
+                foundBlueWater = true;
+            }
+            Assert.IsTrue(foundBlueWater);
+
+            _hero.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            yield return null; // 火的落點避開剛生成的水域，否則會變蒸氣而不留燃燒區。
+            int firesBefore = _bootstrap.ElementField.PlainFireCount;
+            yield return TapHudRect(layout, layout.Fire, "FIRE");
+            Assert.AreEqual(firesBefore + 1, _bootstrap.ElementField.PlainFireCount,
+                "Active 觸碰 FIRE 應施放空地火");
+
+            int windBefore = _bootstrap.SectorTelegraph.ShowCount;
+            yield return TapHudRect(layout, layout.Wind, "WIND");
+            Assert.AreEqual(windBefore + 1, _bootstrap.SectorTelegraph.ShowCount,
+                "Active 觸碰 WIND 應放出扇形預警");
+
+            Faction factionBefore = _bootstrap.ElementCastFaction;
+            yield return TapHudRect(layout, layout.Elem, "Active ELEM");
+            Assert.AreEqual(factionBefore, _bootstrap.ElementCastFaction,
+                "Active 觸碰 ELEM 不得切換除錯陣營");
+            yield return TapHudRect(layout, layout.EnemyWall, "ENEMY WALL");
+            yield return TapHudRect(layout, layout.Turret, "TURRET");
+            Assert.AreEqual(0, _bootstrap.EnemyWalls.AliveCount(), "Active 觸碰 ENEMY WALL 不得生牆");
+            Assert.IsFalse(_bootstrap.Turret.IsFiring, "Active 觸碰 TURRET 不得開火");
+            Assert.AreEqual(0, moves, "觸碰元素／除錯鈕不得漏成移動");
+            Assert.AreEqual(0, picks, "觸碰元素／除錯鈕不得漏成世界目標選取");
+
+            Assert.Greater(_bootstrap.ElementField.ActiveZoneCount, 0,
+                "結算清場的前提：Active 仍有元素區域");
+            _bootstrap.SeedCaptureScoresForTest(999, 0);
+            int frames = 0;
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && frames < 186)
+            {
+                yield return null;
+                frames++;
+            }
+            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "比分達 1000 後應結算");
+            Assert.AreEqual(0, _bootstrap.ElementField.ActiveZoneCount,
+                "結算時應清除 Active 留下的元素區域");
+            frames = 0;
+            while (_bootstrap.CaptureState != CaptureMatchState.Lobby && frames < 186)
+            {
+                yield return null;
+                frames++;
+            }
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState);
+            Assert.AreEqual(0, _bootstrap.ElementField.ActiveZoneCount,
+                "回 Lobby 不得沿用上一局的元素區域");
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_B0_DuelActive_RealWaterTouchRemainsLocked()
+        {
+            yield return Setup();
+            TapOpponent();
+            Assert.AreEqual(DuelRoundState.Active, _bootstrap.DuelState);
+            DebugHudLayout layout = CurrentHudLayout();
+            yield return TapHudRect(layout, layout.Water, "單挑 WATER");
+            Assert.AreEqual(0, _bootstrap.ElementField.ActiveZoneCount,
+                "單挑 Active 觸碰 WATER 仍不能新增元素區");
+        }
+
+        [Test]
+        public void V0110_B0_ElementButtonsRemainReachableAtTheLandscapeTrialViewport()
+        {
+            DebugHudLayout layout = DebugHudLayout.Compute(844f, 390f, 0f, true, true, true, true, true);
+            AssertInsideViewport(layout.Water, layout.Scale, 844f, 390f, "WATER");
+            AssertInsideViewport(layout.Fire, layout.Scale, 844f, 390f, "FIRE");
+            AssertInsideViewport(layout.Wind, layout.Scale, 844f, 390f, "WIND");
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_C01_TalentPanelShowsThreeChoicesAtEachScoreTier_ThenHidesInEndedAndLobby()
+        {
+            yield return Setup();
+            Assert.IsFalse(_bootstrap.TalentPanelVisible, "Off 不得顯示天賦盤");
+            TapCaptureButton();
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState);
+            yield return null;
+            Assert.IsFalse(_bootstrap.TalentPanelVisible, "Lobby 不得顯示天賦盤");
+            TapOpponent();
+            yield return null;
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState);
+            Assert.IsFalse(_bootstrap.TalentPanelVisible, "未達門檻不得顯示天賦盤");
+
+            _bootstrap.SeedCaptureScoresForTest(250, 0);
+            yield return null;
+            AssertTalentChoices(1, "PACT TALENT 1", "SWIFT 1.4/1/.7", "STONE SHIELD 220", "FIRE CD -15%");
+            TapTalentOption(0);
+            Assert.IsFalse(_bootstrap.TalentPanelVisible, "放開同一鈕當幀應完成 Tier 1 選擇");
+            Assert.AreEqual(0, _bootstrap.CaptureView.BluePendingTalentTier);
+
+            _bootstrap.SeedCaptureScoresForTest(750, 0);
+            yield return null;
+            AssertTalentChoices(2, "PACT TALENT 2", "PIERCE NEXT HIT", "WATER RADIUS +2", "LUNGE STUN 0.5S");
+            TapTalentOption(1);
+            AssertTalentChoices(3, "PACT TALENT 3", "OWN TILE DMG +15%", "DASH CHARGES 4", "COMBO MAX HP +8%");
+            TapTalentOption(1);
+            Assert.IsFalse(_bootstrap.TalentPanelVisible, "三階選完應收起選擇盤");
+            Assert.AreEqual(4, _hero.Mover.MaxCharges, "極限超頻應在觸控放開當幀套用");
+
+            _bootstrap.SeedCaptureScoresForTest(999, 0);
+            int frames = 0;
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && frames < 186)
+            {
+                yield return null;
+                frames++;
+            }
+            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState);
+            Assert.IsFalse(_bootstrap.TalentPanelVisible, "Ended 不得顯示天賦盤");
+            frames = 0;
+            while (_bootstrap.CaptureState != CaptureMatchState.Lobby && frames < 186)
+            {
+                yield return null;
+                frames++;
+            }
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState);
+            Assert.IsFalse(_bootstrap.TalentPanelVisible, "回 Lobby 不得殘留天賦盤");
+            Assert.AreEqual(3, _hero.Mover.MaxCharges, "結算後極限超頻不得殘留");
+            TapCaptureButton();
+            Assert.AreEqual(CaptureMatchState.Off, _bootstrap.CaptureState);
+            Assert.IsFalse(_bootstrap.TalentPanelVisible);
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_C04_CrossButtonOrPanelReleaseDoesNotChooseOrLeak_ButSameButtonReleaseChoosesImmediately()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _bootstrap.SeedCaptureScoresForTest(250, 0);
+            yield return null;
+            Assert.AreEqual(1, _bootstrap.TalentPendingTier, "前提：Tier 1 有待選項");
+            Assert.IsTrue(_bootstrap.TryGetTalentButtonScreenPoint(0, out float firstX, out float firstY));
+            Assert.IsTrue(_bootstrap.TryGetTalentButtonScreenPoint(1, out float secondX, out float secondY));
+
+            int moves = 0, picks = 0, flicks = 0, runes = 0;
+            _bootstrap.InputService.OnMoveDestinationSelected += _ => moves++;
+            _bootstrap.InputService.OnCombatTargetSelected += _ => picks++;
+            _bootstrap.InputService.OnCadenceVectorFlicked += _ => flicks++;
+            _bootstrap.InputService.OnRuneQuickCastTriggered += () => runes++;
+
+            _bootstrap.BeginScreenHold(firstX, firstY);
+            yield return null;
+            Assert.AreEqual(1, _bootstrap.TalentPendingTier, "按下未放開不能先選");
+            _bootstrap.MoveScreenHold(secondX, secondY);
+            _bootstrap.EndScreenHold();
+            Assert.AreEqual(1, _bootstrap.TalentPendingTier, "第一鈕按下、第二鈕放開不得選");
+
+            DebugHudLayout layout = CurrentHudLayout(true);
+            float outsideX = (layout.TalentPanel.XMax + 10f) * layout.Scale;
+            _bootstrap.BeginScreenHold(firstX, firstY);
+            _bootstrap.MoveScreenHold(outsideX, firstY);
+            _bootstrap.EndScreenHold();
+            Assert.AreEqual(1, _bootstrap.TalentPendingTier, "從鈕移到盤外放開不得選");
+
+            yield return TapHudRect(layout, layout.TalentTitle, "天賦標題");
+            Assert.AreEqual(1, _bootstrap.TalentPendingTier, "點標題不得選天賦");
+            yield return TapHudRect(layout, new HudRect(layout.TalentPanel.X, 123f, 176f, 4f), "天賦鈕間隙");
+            Assert.AreEqual(1, _bootstrap.TalentPendingTier, "點鈕間隙不得選天賦");
+
+            _bootstrap.BeginScreenHold(firstX, firstY);
+            yield return null;
+            _bootstrap.EndScreenHold();
+            Assert.AreEqual(0, _bootstrap.TalentPendingTier, "同一鈕放開當幀應選入天賦");
+            Assert.IsFalse(_bootstrap.TalentPanelVisible);
+            _bootstrap.PressTalentButton(1);
+            Assert.AreEqual(0, _bootstrap.TalentPendingTier, "選後再按處理器不得重選");
+            Assert.AreEqual(0, moves, "天賦盤觸控不得漏成移動");
+            Assert.AreEqual(0, picks, "天賦盤觸控不得漏成普攻鎖定");
+            Assert.AreEqual(0, flicks, "天賦盤觸控不得漏成微滑步");
+            Assert.AreEqual(0, runes, "天賦盤觸控不得漏成符印");
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_C04_TwoFingersPressedOnTierOne_CannotChooseTierTwoWithTheStaleSecondRelease()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _bootstrap.SeedCaptureScoresForTest(750, 0); // 三階同時解鎖，才能重現跨階錯選。
+            yield return null;
+            Assert.AreEqual(1, _bootstrap.TalentPendingTier);
+            Assert.IsTrue(_bootstrap.TryGetTalentButtonScreenPoint(0, out float firstX, out float firstY));
+            Assert.IsTrue(_bootstrap.TryGetTalentButtonScreenPoint(1, out float secondX, out float secondY));
+
+            int moves = 0, picks = 0, flicks = 0, runes = 0;
+            _bootstrap.InputService.OnMoveDestinationSelected += _ => moves++;
+            _bootstrap.InputService.OnCombatTargetSelected += _ => picks++;
+            _bootstrap.InputService.OnCadenceVectorFlicked += _ => flicks++;
+            _bootstrap.InputService.OnRuneQuickCastTriggered += () => runes++;
+
+            _bootstrap.BeginScreenHold(0, firstX, firstY);
+            _bootstrap.BeginScreenHold(1, secondX, secondY);
+            yield return null;
+            Assert.AreEqual(1, _bootstrap.TalentPendingTier, "兩指僅按下時仍不得選");
+            _bootstrap.EndScreenHold(0);
+            Assert.AreEqual(2, _bootstrap.TalentPendingTier,
+                "第一指放開應只選 Tier 1，並立即顯示 Tier 2");
+            _bootstrap.EndScreenHold(1);
+            Assert.AreEqual(2, _bootstrap.TalentPendingTier,
+                "舊 Tier 1 上按下的第二指放開不得誤選同位置 Tier 2");
+            Assert.IsTrue(_bootstrap.TalentPanelVisible);
+
+            TapTalentOption(1); // 新的一次觸控仍可正常選 Tier 2。
+            Assert.AreEqual(3, _bootstrap.TalentPendingTier);
+            Assert.AreEqual(0, moves);
+            Assert.AreEqual(0, picks);
+            Assert.AreEqual(0, flicks);
+            Assert.AreEqual(0, runes);
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_B1_FireSurge_RealTalentChoiceGivesEachElementA425SecondCooldown()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _bootstrap.SeedCaptureScoresForTest(250, 0);
+            yield return null;
+            Assert.AreEqual(1, _bootstrap.TalentPendingTier);
+            TapTalentOption(2); // 熾火涌；不能直接呼叫冷卻邏輯跳過三選接線。
+            Assert.AreEqual(0, _bootstrap.TalentPendingTier);
+            Assert.AreEqual(5f, _bootstrap.ElementTuning.SkillCooldownSeconds, 0.001f,
+                "天賦不能改寫共享的元素 tuning");
+
+            float castAt = Time.time;
+            CastThreeElementButtons();
+            Assert.AreEqual(1, _bootstrap.ElementField.CountZonesOfKind(ElementZoneKind.Water));
+            Assert.AreEqual(1, _bootstrap.ElementField.PlainFireCount);
+            Assert.AreEqual(1, _bootstrap.SectorTelegraph.ShowCount);
+
+            while (Time.time - castAt < 4.23f) yield return null;
+            CastThreeElementButtons();
+            Assert.AreEqual(1, _bootstrap.ElementField.CountZonesOfKind(ElementZoneKind.Water),
+                "4.23 秒前 WATER 仍在冷卻");
+            Assert.AreEqual(1, _bootstrap.ElementField.PlainFireCount, "4.23 秒前 FIRE 仍在冷卻");
+            Assert.AreEqual(1, _bootstrap.SectorTelegraph.ShowCount, "4.23 秒前 WIND 仍在冷卻");
+
+            while (Time.time - castAt < 4.28f) yield return null;
+            CastThreeElementButtons();
+            Assert.AreEqual(2, _bootstrap.ElementField.CountZonesOfKind(ElementZoneKind.Water),
+                "4.28 秒後 WATER 應完成 4.25 秒冷卻");
+            Assert.AreEqual(2, _bootstrap.ElementField.PlainFireCount,
+                "4.28 秒後 FIRE 應完成 4.25 秒冷卻");
+            Assert.AreEqual(2, _bootstrap.SectorTelegraph.ShowCount,
+                "4.28 秒後 WIND 應完成 4.25 秒冷卻");
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_B1_TidalPull_OnlyNewWaterZonesGrowToFiveMeters_AndNextRoundReturnsToThree()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _hero.transform.rotation = Quaternion.identity;
+            float firstCastAt = Time.time;
+            _bootstrap.PressElementWaterButton();
+            ElementZone original = LatestWaterZone();
+            Assert.AreEqual(3f, original.Radius, 0.01f, "未選潮汐引時水域半徑為 3m");
+
+            _bootstrap.SeedCaptureScoresForTest(250, 0);
+            yield return null;
+            TapTalentOption(2); // 熾火涌：舊水冷卻不得被事後縮短。
+            _bootstrap.SeedCaptureScoresForTest(500, 0);
+            yield return null;
+            TapTalentOption(1); // 潮汐引。
+
+            while (Time.time - firstCastAt < 4.28f) yield return null;
+            _bootstrap.PressElementWaterButton();
+            Assert.AreEqual(1, _bootstrap.ElementField.CountZonesOfKind(ElementZoneKind.Water),
+                "選熾火涌後，選前已開始的 5 秒 WATER 冷卻不得回溯成 4.25 秒");
+            while (Time.time - firstCastAt < 5.03f) yield return null;
+            _hero.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            _bootstrap.PressElementWaterButton();
+            ElementZone enlarged = LatestWaterZone();
+            Assert.Greater(enlarged.Id, original.Id, "冷卻結束後應新生成水域");
+            Assert.AreEqual(5f, enlarged.Radius, 0.01f, "新水域半徑應為 5m");
+            Assert.IsTrue(_bootstrap.ElementField.TryGetZoneById(original.Id, out ElementZone stillOriginal),
+                "舊水域在 6 秒生命期內應仍存活，才能驗證不回溯改寫");
+            Assert.AreEqual(3f, stillOriginal.Radius, 0.01f, "選天賦前已存在的水域仍為 3m");
+
+            yield return EndCaptureAndReturnToLobby();
+            TapOpponent();
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState);
+            Assert.AreEqual(0, _bootstrap.TalentPendingTier, "新局未達門檻不能沿用天賦");
+            _bootstrap.PressElementWaterButton();
+            Assert.AreEqual(3f, LatestWaterZone().Radius, 0.01f,
+                "重開佔領局後新水域應回到 3m");
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_B1_StoneBody_RealMeleeBreaksAnEnemyWallFor220_ButOtherWallDeathsDoNot()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _bootstrap.SeedCaptureScoresForTest(250, 0);
+            yield return null;
+            TapTalentOption(1); // 堅磐體；後面的敵牆只由測試擺盤入口生成，不解鎖 Active 的除錯鈕。
+            Assert.AreEqual(0f, _bootstrap.Shield.Amount, 0.001f, "選天賦不能直接贈送護盾");
+            ScriptedInput meleeInput = new ScriptedInput();
+            _hero.Initialize(meleeInput, null, Camera.main); // 擺盤牆在 batchmode 鏡頭外；仍走大腦真實攻擊結算。
+
+            RuneWall enemy = _bootstrap.EnemyWalls.Spawn();
+            Assert.IsNotNull(enemy, "測試擺盤應生成紅方石牆");
+            Assert.AreEqual(Faction.RedTeam, enemy.OwnerFaction);
+            yield return MeleeBreakWall(enemy, meleeInput, "紅方牆");
+            Assert.AreEqual(220f, _bootstrap.Shield.Amount, 0.01f,
+                "選堅磐體後由英雄近戰擊碎敵牆應取得 220 護盾");
+            Assert.AreEqual(220f, _bootstrap.Shield.GrantedAmount, 0.01f,
+                "該次護盾滿值應為 220，不得改共用 150 tuning");
+            yield return null; // HeroShieldBar.LateUpdate／DebugHud.Update 追上當幀授予。
+            HeroShieldBar bar = Object.FindObjectOfType<HeroShieldBar>();
+            Assert.IsNotNull(bar, "場景缺少英雄頭頂護盾條");
+            Assert.IsTrue(bar.IsVisible, "取得護盾後頭頂條應顯示");
+            GameObject barRoot = GameObject.Find(_hero.name + "_ShieldBar");
+            Assert.IsNotNull(barRoot);
+            Transform fill = barRoot.transform.Find("ShieldBarFill");
+            Transform background = barRoot.transform.Find("ShieldBarBackground");
+            Assert.IsNotNull(fill);
+            Assert.IsNotNull(background);
+            Assert.AreEqual(1f, fill.localScale.x / (background.localScale.x - 0.06f), 0.001f,
+                "220 護盾應把頭頂條填滿");
+            Assert.AreEqual("220", _bootstrap.HudPanel.ShieldValueLabel,
+                "HUD 護盾值應顯示 220");
+
+            float grantedAt = Time.time;
+            while (Time.time - grantedAt < 2.43f) yield return null;
+            Assert.Greater(_bootstrap.Shield.Amount, 0f, "2.43 秒前護盾仍應存活");
+            while (Time.time - grantedAt < 2.57f) yield return null;
+            Assert.AreEqual(0f, _bootstrap.Shield.Amount, 0.01f,
+                "堅磐體不應延長原本 2.5 秒護盾時效");
+
+            RuneWall[] pool = _bootstrap.EnemyWalls.Pool;
+            Assert.GreaterOrEqual(pool.Length, 3, "需至少三面預建牆區分中立、彈擊與到期擺盤");
+            RuneWall neutral = pool[1];
+            Vector3 neutralPoint = _hero.transform.position + _hero.transform.forward * 4f;
+            neutralPoint.y = _hero.transform.position.y + 1f;
+            neutral.Activate(neutralPoint, _hero.transform.rotation, Faction.Neutral, null, -1);
+            yield return MeleeBreakWall(neutral, meleeInput, "中立牆");
+            Assert.AreEqual(150f, _bootstrap.Shield.Amount, 0.01f,
+                "選堅磐體後近戰擊碎中立牆仍給基本 150 護盾");
+            Assert.AreEqual(150f, _bootstrap.Shield.GrantedAmount, 0.01f);
+
+            _bootstrap.Shield.Clear();
+            RuneWall bulletWall = pool[2];
+            bulletWall.Activate(new Vector3(-6f, 1f, 6f), Quaternion.LookRotation(Vector3.right),
+                                Faction.RedTeam, null, -1);
+            bulletWall.ReceiveDamage(bulletWall.Health - 1f, DamageType.Physical, null);
+            int shotsBefore = _bootstrap.Turret.ShotsFired;
+            _bootstrap.Turret.SetFiring(true); // 測試設施直接擺盤，不經 Active 已鎖住的 HUD 鈕。
+            int frames = 0;
+            while (bulletWall.IsAlive && frames < 240)
+            {
+                yield return null;
+                frames++;
+            }
+            _bootstrap.Turret.SetFiring(false);
+            Assert.Greater(_bootstrap.Turret.ShotsFired, shotsBefore, "前提：砲台真的發射過子彈");
+            Assert.IsFalse(bulletWall.IsAlive, "紅方牆應被實際子彈擊碎");
+            Assert.AreEqual(0f, _bootstrap.Shield.Amount, 0.01f,
+                "子彈擊碎敵牆不能觸發近戰專屬護盾");
+
+            RuneWall timedWall = pool[1];
+            timedWall.Activate(new Vector3(10f, 1f, 10f), Quaternion.identity, Faction.RedTeam, null, -1);
+            yield return new WaitForSeconds(5.2f);
+            Assert.IsFalse(timedWall.IsAlive, "前提：敵牆應自然到期");
+            Assert.AreEqual(0f, _bootstrap.Shield.Amount, 0.01f,
+                "敵牆自然到期不能觸發近戰專屬護盾");
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_B1_SwiftAndOverclock_RealChoicesGiveFourChainedDashes_ThenResetForNextRoundAndDuel()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            Assert.AreEqual(3, _hero.Mover.MaxCharges);
+            Assert.AreEqual(3, _hero.Mover.CurrentCharges);
+            _bootstrap.SeedCaptureScoresForTest(750, 0);
+            yield return null;
+            TapTalentOption(0); // Tier1 迅影步。
+            TapTalentOption(1); // Tier2 潮汐引；此測試不使用元素。
+            TapTalentOption(1); // Tier3 極限超頻。
+            Assert.AreEqual(4, _hero.Mover.MaxCharges, "選超頻當幀上限應變 4");
+            Assert.AreEqual(3, _hero.Mover.CurrentCharges, "選超頻不能立即贈送第四格");
+
+            float selectedAt = Time.time;
+            while (Time.time - selectedAt < 2.45f) yield return null;
+            Assert.AreEqual(3, _hero.Mover.CurrentCharges, "第四格不得早於 2.5 秒回充");
+            while (Time.time - selectedAt < 2.55f) yield return null;
+            Assert.AreEqual(4, _hero.Mover.CurrentCharges, "第四格應照既有 2.5 秒節奏自然回充");
+
+            float[] distances = new float[4];
+            int dashCount = 0;
+            _hero.Mover.OnDashExecuted += distance =>
+            {
+                if (dashCount < distances.Length) distances[dashCount] = distance;
+                dashCount++;
+            };
+            for (int i = 0; i < 4; i++) yield return DashAndWait();
+            Assert.AreEqual(4, dashCount);
+            Assert.AreEqual(0, _hero.Mover.CurrentCharges, "四段連滑應消耗四格");
+            Assert.AreEqual(1.4f, distances[0], 0.01f);
+            Assert.AreEqual(1.0f, distances[1], 0.01f);
+            Assert.AreEqual(0.7f, distances[2], 0.01f);
+            Assert.AreEqual(0.7f, distances[3], 0.01f, "第四段應沿用迅影步最後一段距離");
+
+            yield return EndCaptureAndReturnToLobby();
+            Assert.AreEqual(3, _hero.Mover.MaxCharges, "結算後充能上限應回到 3");
+            TapOpponent();
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState);
+            Assert.AreEqual(3, _hero.Mover.MaxCharges, "新局不能沿用極限超頻");
+            Assert.AreEqual(3, _hero.Mover.CurrentCharges, "新局應補滿基本三格");
+            dashCount = 0;
+            yield return DashAndWait();
+            yield return DashAndWait();
+            Assert.AreEqual(2, dashCount);
+            Assert.AreEqual(1.4f, distances[0], 0.01f);
+            Assert.AreEqual(0.9f, distances[1], 0.01f,
+                "新局第二段應回到未選迅影步的 0.9m");
+
+            yield return EndCaptureAndReturnToLobby();
+            TapCaptureButton();
+            TapOpponent();
+            Assert.AreEqual(DuelRoundState.Active, _bootstrap.DuelState);
+            Assert.AreEqual(3, _hero.Mover.MaxCharges, "回單挑後仍是基本三格");
+            Assert.AreEqual(1.4f, _hero.Mover.NextDashDistance, 0.01f,
+                "單挑不能沿用上一局的連滑段數");
+        }
+
+        private void CastThreeElementButtons()
+        {
+            _hero.transform.rotation = Quaternion.identity;
+            _bootstrap.PressElementWaterButton();
+            _hero.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            _bootstrap.PressElementFireButton();
+            _hero.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+            _bootstrap.PressElementWindButton();
+        }
+
+        private ElementZone LatestWaterZone()
+        {
+            ElementZone latest = default;
+            for (int slot = 0; slot < _bootstrap.ElementField.ZoneCapacity; slot++)
+                if (_bootstrap.ElementField.TryGetZoneBySlot(slot, out ElementZone zone)
+                    && zone.Kind == ElementZoneKind.Water && zone.Id > latest.Id)
+                    latest = zone;
+            Assert.Greater(latest.Id, 0, "場上應有水域");
+            return latest;
+        }
+
+        private IEnumerator DashAndWait()
+        {
+            Assert.IsTrue(_hero.Mover.TryExecuteCadenceDash(Vector3.right), "微滑步應成功起手");
+            int frames = 0;
+            while (_hero.Mover.IsDashing && frames < 16)
+            {
+                yield return null;
+                frames++;
+            }
+            Assert.IsFalse(_hero.Mover.IsDashing, "16 幀內應完成滑步");
+        }
+
+        private IEnumerator MeleeBreakWall(RuneWall wall, ScriptedInput input, string who)
+        {
+            Assert.IsTrue(wall.IsAlive, who + " 應先存活");
+            wall.ReceiveDamage(wall.Health - 1f, DamageType.Physical, null);
+            Assert.AreEqual(1f, wall.Health, 0.01f, who + " 的前置血量應留到真實近戰最後一擊");
+            input.TapTarget(wall);
+            Assert.AreSame(wall, _hero.CurrentTarget, who + " 應由大腦鎖定，而非直接結算傷害");
+            int frames = 0;
+            while (wall.IsAlive && frames < 180)
+            {
+                yield return null;
+                frames++;
+            }
+            Assert.IsFalse(wall.IsAlive, who + " 應由英雄實際近戰擊碎，不能等 5 秒自然到期");
+            Assert.Less(frames, 180, who + " 不得靠壽命到期假綠");
+        }
+
+        private IEnumerator EndCaptureAndReturnToLobby()
+        {
+            _bootstrap.SeedCaptureScoresForTest(999, 0);
+            int frames = 0;
+            while (_bootstrap.CaptureState != CaptureMatchState.Ended && frames < 186)
+            {
+                yield return null;
+                frames++;
+            }
+            Assert.AreEqual(CaptureMatchState.Ended, _bootstrap.CaptureState, "應由 999 分種子結算對局");
+            frames = 0;
+            while (_bootstrap.CaptureState != CaptureMatchState.Lobby && frames < 186)
+            {
+                yield return null;
+                frames++;
+            }
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState, "結算後應回 Lobby");
+            for (int i = 0; i < 30; i++) yield return null; // 相機追上回出生點的英雄，再點紅方開下一局。
+        }
+
+        private void AssertTalentChoices(int tier, string title, string first, string second, string third)
+        {
+            Assert.IsTrue(_bootstrap.TalentPanelVisible, "Tier " + tier + " 應顯示三選盤");
+            Assert.AreEqual(tier, _bootstrap.TalentPendingTier);
+            Assert.AreEqual(title, _bootstrap.TalentTitleLabel);
+            Assert.AreEqual(first, _bootstrap.TalentOptionLabel(0));
+            Assert.AreEqual(second, _bootstrap.TalentOptionLabel(1));
+            Assert.AreEqual(third, _bootstrap.TalentOptionLabel(2));
+        }
+
+        private void TapTalentOption(int choice)
+        {
+            Assert.IsTrue(_bootstrap.TryGetTalentButtonScreenPoint(choice, out float x, out float y),
+                "拿不到天賦選項 " + choice + " 的觸控點");
+            _bootstrap.WorldTapInput.SendScreenTap(x, y);
+        }
+
+        private static DebugHudLayout CurrentHudLayout(bool captureModeActive = false)
+        {
+            return DebugHudLayout.Compute(Screen.width, Screen.height, Screen.dpi,
+                                          true, true, true, captureModeActive, captureModeActive);
+        }
+
+        private static void AssertInsideViewport(HudRect rect, float scale, float width, float height, string who)
+        {
+            Assert.GreaterOrEqual(rect.XMin * scale, 0f, who + " 左緣在畫面外");
+            Assert.GreaterOrEqual(rect.YMin * scale, 0f, who + " 上緣在畫面外");
+            Assert.LessOrEqual(rect.XMax * scale, width, who + " 右緣在畫面外");
+            Assert.LessOrEqual(rect.YMax * scale, height, who + " 下緣在畫面外");
+        }
+
+        private IEnumerator TapHudRect(DebugHudLayout layout, HudRect rect, string who)
+        {
+            float x = (rect.XMin + rect.XMax) * 0.5f * layout.Scale;
+            float y = Screen.height - (rect.YMin + rect.YMax) * 0.5f * layout.Scale;
+            Assert.IsTrue(x >= EdgeMarginPixels && x <= Screen.width - EdgeMarginPixels
+                          && y >= EdgeMarginPixels && y <= Screen.height - EdgeMarginPixels,
+                who + " 鈕中心無法觸碰（" + x + ", " + y + "，畫面 " + Screen.width + "x" + Screen.height + "）");
+            _bootstrap.WorldTapInput.SendScreenTap(x, y);
+            yield return null;
         }
 
         // ───────────── V-B16 佔領後回單挑不殘留 ─────────────

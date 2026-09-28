@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using Vow.Core;
 using Vow.Core.Logic;
 using Vow.Input;
 
@@ -133,6 +134,140 @@ namespace Vow.Tests.EditMode
             Assert.AreEqual(72f, off.MatchPanel.Height, 1e-4f);
             DebugHudLayout active = Compute(new[] { 844f, 390f, 0f }, true);
             Assert.AreEqual(116f, active.MatchPanel.Height, 1e-4f);
+        }
+
+        private static readonly float[][] TalentDeviceConfigs =
+        {
+            new[] { 640f, 360f, 0f },
+            new[] { 844f, 390f, 0f },
+            new[] { 1280f, 720f, 320f },
+        };
+
+        private static ScreenRegion ScreenRect(HudRect rect, float scale, float screenHeight)
+        {
+            return new ScreenRegion(rect.XMin * scale, screenHeight - rect.YMax * scale,
+                                    rect.XMax * scale, screenHeight - rect.YMin * scale);
+        }
+
+        [Test]
+        public void C02_TalentPanelHasFrozenPositionAndDoesNotOverlapExistingControls()
+        {
+            for (int i = 0; i < TalentDeviceConfigs.Length; i++)
+            {
+                float[] config = TalentDeviceConfigs[i];
+                DebugHudLayout layout = DebugHudLayout.Compute(config[0], config[1], config[2],
+                                                              true, true, true, true, true);
+                HudRect[] parts = { layout.TalentTitle, layout.TalentFirst, layout.TalentSecond, layout.TalentThird };
+                HudRect[] left = LeftPanelRects(layout);
+                HudRect rune = RuneButtonInGuiSpace(config, layout.Scale);
+
+                Assert.AreEqual(layout.MatchPanel.X - 196f, layout.TalentPanel.X, 1e-4f);
+                Assert.AreEqual(176f, layout.TalentPanel.Width, 1e-4f);
+                Assert.AreEqual(60f, layout.TalentTitle.Y, 1e-4f);
+                Assert.AreEqual(82f, layout.TalentTitle.YMax, 1e-4f);
+                Assert.AreEqual(84f, layout.TalentFirst.Y, 1e-4f);
+                Assert.AreEqual(122f, layout.TalentFirst.YMax, 1e-4f);
+                Assert.AreEqual(128f, layout.TalentSecond.Y, 1e-4f);
+                Assert.AreEqual(166f, layout.TalentSecond.YMax, 1e-4f);
+                Assert.AreEqual(172f, layout.TalentThird.Y, 1e-4f);
+                Assert.AreEqual(210f, layout.TalentThird.YMax, 1e-4f);
+                for (int p = 0; p < parts.Length; p++)
+                {
+                    HudRect part = parts[p];
+                    Assert.GreaterOrEqual(part.XMin, 0f);
+                    Assert.GreaterOrEqual(part.YMin, 0f);
+                    Assert.LessOrEqual(part.XMax * layout.Scale, config[0]);
+                    Assert.LessOrEqual(part.YMax * layout.Scale, config[1]);
+                    Assert.IsFalse(part.Overlaps(layout.MatchPanel));
+                    Assert.IsFalse(part.Overlaps(layout.Capture));
+                    Assert.IsFalse(part.Overlaps(layout.MatchClock));
+                    Assert.IsFalse(part.Overlaps(layout.SanctuaryRow));
+                    Assert.IsFalse(part.Overlaps(rune));
+                    for (int l = 0; l < left.Length; l++)
+                        Assert.IsFalse(part.Overlaps(left[l]), config[0] + "x" + config[1] + " part " + p + " left " + l);
+                }
+            }
+        }
+
+        [Test]
+        public void B0_ActiveElementButtonsFitAtBottomAndOffKeepsOriginalPositions()
+        {
+            for (int i = 0; i < TalentDeviceConfigs.Length; i++)
+            {
+                float[] config = TalentDeviceConfigs[i];
+                DebugHudLayout off = DebugHudLayout.Compute(config[0], config[1], config[2], true, true, true);
+                DebugHudLayout active = DebugHudLayout.Compute(config[0], config[1], config[2],
+                                                              true, true, true, true, true);
+                HudRect[] buttons = { active.Water, active.Fire, active.Wind };
+                HudRect rune = RuneButtonInGuiSpace(config, active.Scale);
+                float expectedRight = active.MatchPanel.X - 20f;
+                Assert.AreEqual(260f, active.Water.X, 1e-4f);
+                Assert.AreEqual(expectedRight, active.Wind.XMax, 1e-4f);
+                for (int b = 0; b < buttons.Length; b++)
+                {
+                    HudRect button = buttons[b];
+                    Assert.AreEqual(config[1] / active.Scale - 56f, button.Y, 1e-4f);
+                    Assert.AreEqual(40f, button.Height, 1e-4f);
+                    Assert.GreaterOrEqual(button.XMin, 0f);
+                    Assert.LessOrEqual(button.XMax * active.Scale, config[0]);
+                    Assert.LessOrEqual(button.YMax * active.Scale, config[1]);
+                    Assert.IsFalse(button.Overlaps(rune));
+                    Assert.IsFalse(button.Overlaps(active.TalentPanel));
+                }
+                Assert.AreEqual(8f, active.Fire.X - active.Water.XMax, 1e-4f);
+                Assert.AreEqual(8f, active.Wind.X - active.Fire.XMax, 1e-4f);
+                Assert.AreEqual(active.Water.Width, active.Fire.Width, 1e-4f);
+                Assert.AreEqual(active.Fire.Width, active.Wind.Width, 1e-4f);
+                Assert.AreEqual(off.Water.X, DebugHudLayout.Compute(config[0], config[1], config[2],
+                                                                   true, true, true, true, false).Water.X, 1e-4f);
+            }
+        }
+
+        [Test]
+        public void C03_TalentButtonsTakePriorityOverPanelAndHiddenPanelDoesNotStealInput()
+        {
+            for (int i = 0; i < TalentDeviceConfigs.Length; i++)
+            {
+                float[] config = TalentDeviceConfigs[i];
+                float screenWidth = config[0];
+                float screenHeight = config[1];
+                DebugHudLayout layout = DebugHudLayout.Compute(screenWidth, screenHeight, config[2],
+                                                              true, true, true, true, true);
+                InputRoutingManager routing = new InputRoutingManager { EdgeMarginPixels = 0f };
+                // 正式 HUD 在 ConfigureCapture 前有十區，加上 CAPTURE 一區；本盤四區是第 12～15 區。
+                for (int existing = 0; existing < 11; existing++)
+                    Assert.AreEqual(existing, routing.RegisterUiRegion(default));
+                int first = routing.RegisterUiRegion(ScreenRect(layout.TalentFirst, layout.Scale, screenHeight));
+                int second = routing.RegisterUiRegion(ScreenRect(layout.TalentSecond, layout.Scale, screenHeight));
+                int third = routing.RegisterUiRegion(ScreenRect(layout.TalentThird, layout.Scale, screenHeight));
+                int background = routing.RegisterUiRegion(ScreenRect(layout.TalentPanel, layout.Scale, screenHeight));
+                Assert.AreEqual(14, background);
+                HudRect rune = RuneButtonInGuiSpace(config, layout.Scale);
+                routing.SetRuneZone(ScreenRect(rune, layout.Scale, screenHeight));
+
+                float x = (layout.TalentFirst.XMin + layout.TalentFirst.XMax) * 0.5f * layout.Scale;
+                float y = screenHeight - (layout.TalentFirst.YMin + layout.TalentFirst.YMax) * 0.5f * layout.Scale;
+                Assert.AreEqual(TouchRoute.UiRegion, routing.Route(x, y, screenWidth, screenHeight,
+                                                                   ControlMode.ModeA_FullScreenFlick, out int hit));
+                Assert.AreEqual(first, hit);
+                Assert.AreEqual(TouchRoute.UiRegion, routing.Route(x, screenHeight - 125f * layout.Scale,
+                                                                   screenWidth, screenHeight, ControlMode.ModeA_FullScreenFlick, out hit));
+                Assert.AreEqual(background, hit); // 兩鈕間 122～128 的空隙
+                Assert.AreEqual(TouchRoute.UiRegion, routing.Route(x, screenHeight - 70f * layout.Scale,
+                                                                   screenWidth, screenHeight, ControlMode.ModeA_FullScreenFlick, out hit));
+                Assert.AreEqual(background, hit); // 標題
+                float runeX = (rune.XMin + rune.XMax) * 0.5f * layout.Scale;
+                float runeY = screenHeight - (rune.YMin + rune.YMax) * 0.5f * layout.Scale;
+                Assert.AreEqual(TouchRoute.Rune, routing.Route(runeX, runeY, screenWidth, screenHeight,
+                                                               ControlMode.ModeA_FullScreenFlick, out hit));
+                routing.SetUiRegionActive(first, false);
+                routing.SetUiRegionActive(second, false);
+                routing.SetUiRegionActive(third, false);
+                routing.SetUiRegionActive(background, false);
+                Assert.AreEqual(TouchRoute.World, routing.Route(x, y, screenWidth, screenHeight,
+                                                                ControlMode.ModeA_FullScreenFlick, out hit));
+                Assert.AreEqual(-1, hit);
+            }
         }
     }
 }

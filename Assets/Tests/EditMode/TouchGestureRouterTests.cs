@@ -242,6 +242,36 @@ namespace Vow.Tests
         }
 
         [Test]
+        public void UiRegionInvalidatedBetweenTwoReleases_RejectsTheOlderFinger()
+        {
+            InputRoutingManager routing = new InputRoutingManager();
+            int button = routing.RegisterUiRegion(new ScreenRegion(40f, 1100f, 300f, 1200f));
+            RecordingSink sink = new RecordingSink();
+            TouchGestureRouter router = new TouchGestureRouter(routing, sink, ControlMode.ModeA_FullScreenFlick)
+            {
+                ScreenWidth = W,
+                ScreenHeight = H
+            };
+
+            Frame(router, 0.00,
+                1, TouchPhaseKind.Began, 100f, 1150f, 0.0,
+                2, TouchPhaseKind.Began, 110f, 1150f, 0.0);
+            Frame(router, 0.05,
+                1, TouchPhaseKind.Ended, 100f, 1150f, 0.0,
+                2, TouchPhaseKind.Stationary, 110f, 1150f, 0.0);
+            Assert.AreEqual(1, sink.UiTaps);
+
+            routing.InvalidateUiRegionTouches(button);
+            Frame(router, 0.10, 2, TouchPhaseKind.Ended, 110f, 1150f, 0.0);
+            Assert.AreEqual(1, sink.UiTaps, "選盤換階前按下的另一根手指不得選到新階");
+            Assert.AreEqual(0, sink.WorldTaps);
+
+            Frame(router, 0.20, 3, TouchPhaseKind.Began, 100f, 1150f, 0.20);
+            Frame(router, 0.25, 3, TouchPhaseKind.Ended, 100f, 1150f, 0.20);
+            Assert.AreEqual(2, sink.UiTaps, "換階後新按下的手指仍可選擇");
+        }
+
+        [Test]
         public void EdgeDeadzoneTouch_ProducesNothing()
         {
             TouchGestureRouter router = NewRouter(ControlMode.ModeA_FullScreenFlick, out RecordingSink sink, out int _);

@@ -44,6 +44,7 @@ namespace Vow.Input
         private readonly int[] _slotTouchId = new int[MaxTouches];
         private readonly TouchRoute[] _slotRoute = new TouchRoute[MaxTouches];
         private readonly int[] _slotUiRegion = new int[MaxTouches];
+        private readonly int[] _slotUiRegionTouchVersion = new int[MaxTouches];
         private readonly FlickGestureTracker[] _trackers = new FlickGestureTracker[MaxTouches];
 
         // 最近結束的幾根手指（環形緩衝）：多指同一幀放開時每一根都要記得，不能只記最後一根
@@ -187,6 +188,7 @@ namespace Vow.Input
             TouchRoute route = _routing.Route(x, y, ScreenWidth, ScreenHeight, _activeMode, out int regionId);
             _slotRoute[slot] = route;
             _slotUiRegion[slot] = regionId;
+            _slotUiRegionTouchVersion[slot] = _routing.UiRegionTouchVersion(regionId);
 
             switch (route)
             {
@@ -249,7 +251,8 @@ namespace Vow.Input
                 case TouchRoute.UiRegion:
                     // 按下與放開都在同一區域內才算點擊
                     if (_routing.Route(x, y, ScreenWidth, ScreenHeight, _activeMode, out int regionId) == TouchRoute.UiRegion
-                        && regionId == _slotUiRegion[slot])
+                        && regionId == _slotUiRegion[slot]
+                        && _routing.UiRegionTouchVersion(regionId) == _slotUiRegionTouchVersion[slot])
                         _sink.OnUiRegionTapped(regionId);
                     break;
 

@@ -41,6 +41,9 @@ namespace Vow.Core
         float BlueChannelRequiredSeconds { get; }  // 本次引導門檻（奪回 1.8、其餘 3.5；沒有在引導時 0，E6／E8）
         float RedChannelRequiredSeconds { get; }
 
+        // v0.11.0：只供本機三選一盤讀取；0 表示目前沒有待選階。
+        int BluePendingTalentTier { get; }
+
         CaptureMatchResult Result { get; }
         CaptureMatchResult LastResult { get; }
     }

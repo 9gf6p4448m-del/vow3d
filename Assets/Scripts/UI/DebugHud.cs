@@ -90,11 +90,32 @@ namespace Vow.UI
         // ── v0.8.0：CAPTURE 鈕與右上面板的佔領兩列（V080_CAPTURE_PLAN.md §2.4、E27、E29）──
         // HUD 只依賴 ICaptureMatchView；按鈕的動作走 Phase1Bootstrap 交進來的委派（UI 不得反向依賴 Bootstrap）。
         private ICaptureMatchView _captureView;
+        private bool _captureElementsEnabled;
         private Action _pressCapture;
         private int _captureRegion = -1;
         private Rect _captureRect;
         private Rect _matchPanelRect;
         private float _matchPanelCaptureHeight = 116f;
+        private Action<PactTalent> _chooseBlueTalent;
+        private int _talentFirstRegion = -1;
+        private int _talentSecondRegion = -1;
+        private int _talentThirdRegion = -1;
+        private int _talentPanelRegion = -1;
+        private Rect _talentPanelRect;
+        private Rect _talentTitleRect;
+        private Rect _talentFirstRect;
+        private Rect _talentSecondRect;
+        private Rect _talentThirdRect;
+        private bool _talentRegionsVisible;
+        private CaptureMatchState _lastCaptureState = CaptureMatchState.Off;
+
+        private static readonly string[] TalentTierLabels = { null, "PACT TALENT 1", "PACT TALENT 2", "PACT TALENT 3" };
+        private static readonly string[,] TalentChoiceLabels =
+        {
+            { "SWIFT 1.4/1/.7", "STONE SHIELD 220", "FIRE CD -15%" },
+            { "PIERCE NEXT HIT", "WATER RADIUS +2", "LUNGE STUN 0.5S" },
+            { "OWN TILE DMG +15%", "DASH CHARGES 4", "COMBO MAX HP +8%" },
+        };
 
         private int _blueScoreShown = -1;
         private int _redScoreShown = -1;
@@ -123,12 +144,27 @@ namespace Vow.UI
         public int CaptureClockLabelRecomputeCount { get; private set; }
         public int CaptureSanctuaryLabelRecomputeCount { get; private set; }
 
-        public void ConfigureCapture(ICaptureMatchView view, Action pressCapture)
+        public void ConfigureCapture(ICaptureMatchView view, Action pressCapture, bool captureElementsEnabled = false,
+                                     Action<PactTalent> chooseBlueTalent = null)
         {
             _captureView = view;
+            _captureElementsEnabled = captureElementsEnabled;
             _pressCapture = pressCapture;
+            _chooseBlueTalent = chooseBlueTalent;
             if (_input != null && _pressCapture != null && _captureRegion < 0)
                 _captureRegion = _input.Routing.RegisterUiRegion(default);
+            if (_input != null && _chooseBlueTalent != null && _talentFirstRegion < 0)
+            {
+                // 路由採第一個命中的 UI 區；按鈕必須比覆蓋整盤的背景先登記。
+                _talentFirstRegion = _input.Routing.RegisterUiRegion(default);
+                _talentSecondRegion = _input.Routing.RegisterUiRegion(default);
+                _talentThirdRegion = _input.Routing.RegisterUiRegion(default);
+                _talentPanelRegion = _input.Routing.RegisterUiRegion(default);
+                _input.Routing.SetUiRegionActive(_talentFirstRegion, false);
+                _input.Routing.SetUiRegionActive(_talentSecondRegion, false);
+                _input.Routing.SetUiRegionActive(_talentThirdRegion, false);
+                _input.Routing.SetUiRegionActive(_talentPanelRegion, false);
+            }
             RecalculateLayout();
         }
 
@@ -139,17 +175,52 @@ namespace Vow.UI
             return TryGetButtonScreenPoint(_pressCapture != null && _captureRegion >= 0, _captureRect, out x, out y);
         }
 
+        public bool TalentPanelVisible => _chooseBlueTalent != null && _captureView != null
+                                          && _captureView.State == CaptureMatchState.Active
+                                          && _captureView.BluePendingTalentTier > 0;
+        public int TalentPendingTier => TalentPanelVisible ? _captureView.BluePendingTalentTier : 0;
+        public string TalentTitleLabel => TalentPanelVisible ? TalentTierLabels[TalentPendingTier] : null;
+
+        public string TalentOptionLabel(int choice)
+        {
+            int tier = TalentPendingTier;
+            return tier > 0 && choice >= 0 && choice < 3 ? TalentChoiceLabels[tier - 1, choice] : null;
+        }
+
+        public void PressTalentButton(int choice)
+        {
+            int tier = TalentPendingTier;
+            if (tier == 0 || choice < 0 || choice >= 3) return;
+            _chooseBlueTalent((PactTalent)((tier - 1) * 3 + choice + 1));
+            if (_input != null && TalentPendingTier != tier)
+            {
+                _input.Routing.InvalidateUiRegionTouches(_talentFirstRegion);
+                _input.Routing.InvalidateUiRegionTouches(_talentSecondRegion);
+                _input.Routing.InvalidateUiRegionTouches(_talentThirdRegion);
+                _input.Routing.InvalidateUiRegionTouches(_talentPanelRegion);
+            }
+            RefreshTalentRegions();
+        }
+
+        public bool TryGetTalentButtonScreenPoint(int choice, out float x, out float y)
+        {
+            Rect rect = choice == 0 ? _talentFirstRect : choice == 1 ? _talentSecondRect : _talentThirdRect;
+            return TryGetButtonScreenPoint(TalentPanelVisible && choice >= 0 && choice < 3, rect, out x, out y);
+        }
+
         private bool InCaptureMode => _captureView != null && _captureView.State != CaptureMatchState.Off;
 
         private MatchGateDecision CurrentGate()
         {
             CaptureMatchState captureState = _captureView != null ? _captureView.State : CaptureMatchState.Off;
             bool heroAlive = _captureView == null || !_captureView.BlueKnockedOut;
-            return MatchGate.Evaluate(_duelRound != null ? _duelRound.State : DuelRoundState.Dormant, captureState, heroAlive);
+            return MatchGate.Evaluate(_duelRound != null ? _duelRound.State : DuelRoundState.Dormant,
+                                      captureState, heroAlive, _captureElementsEnabled);
         }
 
         // 元素／砲台／敵牆鈕反灰：Off 模式與 v0.7.0 的「DuelState != Dormant」逐列相同（V-A20）。
         private bool ElementsLocked => _duelRound != null && CurrentGate().ElementsLocked;
+        private bool DebugToolsLocked => _duelRound != null && CurrentGate().DebugToolsLocked;
 
         public string CaptureButtonLabel => InCaptureMode ? CaptureHudLabels.CaptureButtonLabelOn : CaptureHudLabels.CaptureButtonLabelOff;
 
@@ -460,7 +531,10 @@ namespace Vow.UI
                 _fpsTimer = 0f;
             }
 
-            if (Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight) RecalculateLayout();
+            CaptureMatchState captureState = _captureView != null ? _captureView.State : CaptureMatchState.Off;
+            if (Screen.width != _lastScreenWidth || Screen.height != _lastScreenHeight
+                || captureState != _lastCaptureState) RecalculateLayout();
+            RefreshTalentRegions();
 
             RefreshElementLabels();
             RefreshCaptureLabels();
@@ -565,12 +639,17 @@ namespace Vow.UI
             {
                 PressCaptureButton();
             }
+            else if (regionId == _talentFirstRegion) PressTalentButton(0);
+            else if (regionId == _talentSecondRegion) PressTalentButton(1);
+            else if (regionId == _talentThirdRegion) PressTalentButton(2);
+            // _talentPanelRegion 只攔截標題與按鈕間隙；放開不觸發世界操作。
         }
 
         private void RecalculateLayout()
         {
             _lastScreenWidth = Screen.width;
             _lastScreenHeight = Screen.height;
+            _lastCaptureState = _captureView != null ? _captureView.State : CaptureMatchState.Off;
 
             float dpi = Screen.dpi;
 
@@ -581,7 +660,8 @@ namespace Vow.UI
             // 批 4 V4-o：版面計算搬到 Core/Logic 的可注入入口（batchmode 改不了 Screen.*），
             // 既有六個 rect 的算式逐字搬移，這裡只負責把結果抄回 UnityEngine.Rect。
             DebugHudLayout layout = DebugHudLayout.Compute(Screen.width, Screen.height, dpi,
-                _latency != null, _gridVisible != null, _toggleTurret != null || _spawnEnemyWall != null);
+                _latency != null, _gridVisible != null, _toggleTurret != null || _spawnEnemyWall != null,
+                InCaptureMode, _lastCaptureState == CaptureMatchState.Active);
             _scale = layout.Scale;
             _modeRect = ToRect(layout.Mode);
             _hitboxRect = ToRect(layout.Hitbox);
@@ -600,6 +680,11 @@ namespace Vow.UI
             // v0.10.0 E17：上方正中兩列同樣向 DebugHudLayout 要（算式獨立，不影響上面任何矩形）。
             _matchClockRect = ToRect(layout.MatchClock);
             _sanctuaryRowRect = ToRect(layout.SanctuaryRow);
+            _talentPanelRect = ToRect(layout.TalentPanel);
+            _talentTitleRect = ToRect(layout.TalentTitle);
+            _talentFirstRect = ToRect(layout.TalentFirst);
+            _talentSecondRect = ToRect(layout.TalentSecond);
+            _talentThirdRect = ToRect(layout.TalentThird);
             _matchPanelCaptureHeight = DebugHudLayout.Compute(Screen.width, Screen.height, dpi,
                 _latency != null, _gridVisible != null, _toggleTurret != null || _spawnEnemyWall != null, true).MatchPanel.Height;
 
@@ -615,6 +700,23 @@ namespace Vow.UI
             _input.Routing.UpdateUiRegion(_windRegion, ToScreenRegion(_windRect));
             _input.Routing.UpdateUiRegion(_elemRegion, ToScreenRegion(_elemRect));
             _input.Routing.UpdateUiRegion(_captureRegion, ToScreenRegion(_captureRect));
+            _input.Routing.UpdateUiRegion(_talentFirstRegion, ToScreenRegion(_talentFirstRect));
+            _input.Routing.UpdateUiRegion(_talentSecondRegion, ToScreenRegion(_talentSecondRect));
+            _input.Routing.UpdateUiRegion(_talentThirdRegion, ToScreenRegion(_talentThirdRect));
+            _input.Routing.UpdateUiRegion(_talentPanelRegion, ToScreenRegion(_talentPanelRect));
+            RefreshTalentRegions();
+        }
+
+        private void RefreshTalentRegions()
+        {
+            if (_input == null || _talentPanelRegion < 0) return;
+            bool visible = TalentPanelVisible;
+            if (visible == _talentRegionsVisible) return;
+            _talentRegionsVisible = visible;
+            _input.Routing.SetUiRegionActive(_talentFirstRegion, visible);
+            _input.Routing.SetUiRegionActive(_talentSecondRegion, visible);
+            _input.Routing.SetUiRegionActive(_talentThirdRegion, visible);
+            _input.Routing.SetUiRegionActive(_talentPanelRegion, visible);
         }
 
         private static Rect ToRect(HudRect rect)
@@ -715,14 +817,14 @@ namespace Vow.UI
 
             if (_spawnEnemyWall != null)
             {
-                Fill(_enemyWallRect, ButtonColor);
+                Fill(_enemyWallRect, DebugToolsLocked ? ButtonCooldownColor : ButtonColor);
                 GUI.Label(_enemyWallRect, EnemyWallButtonLabel, _buttonLabel);
             }
 
             if (_toggleTurret != null)
             {
                 bool turretOn = _turretFiring != null && _turretFiring();
-                Fill(_turretRect, turretOn ? ButtonOnColor : ButtonColor);
+                Fill(_turretRect, DebugToolsLocked ? ButtonCooldownColor : turretOn ? ButtonOnColor : ButtonColor);
                 GUI.Label(_turretRect, TurretButtonLabel, _buttonLabel);
             }
 
@@ -747,13 +849,14 @@ namespace Vow.UI
             }
             if (_toggleElementFaction != null)
             {
-                Fill(_elemRect, ElementsLocked
+                Fill(_elemRect, DebugToolsLocked
                     ? ButtonCooldownColor : _elemBlueShown == 1 ? ElemBlueColor : ElemRedColor);
                 GUI.Label(_elemRect, _elemLabel, _buttonLabel);
             }
 
             DrawDuelPanel();
             DrawCaptureTopRows();
+            DrawTalentPanel();
 
             GUI.matrix = previous;
 
@@ -807,6 +910,19 @@ namespace Vow.UI
             if (row == null) return;
             Fill(_sanctuaryRowRect, PanelColor);
             GUI.Label(_sanctuaryRowRect, row, _buttonLabel);
+        }
+
+        private void DrawTalentPanel()
+        {
+            if (!TalentPanelVisible) return;
+            Fill(_talentPanelRect, PanelColor);
+            GUI.Label(_talentTitleRect, TalentTitleLabel, _buttonLabel);
+            Fill(_talentFirstRect, ButtonColor);
+            GUI.Label(_talentFirstRect, TalentOptionLabel(0), _buttonLabel);
+            Fill(_talentSecondRect, ButtonColor);
+            GUI.Label(_talentSecondRect, TalentOptionLabel(1), _buttonLabel);
+            Fill(_talentThirdRect, ButtonColor);
+            GUI.Label(_talentThirdRect, TalentOptionLabel(2), _buttonLabel);
         }
 
         private void DrawPips(float x, float y)

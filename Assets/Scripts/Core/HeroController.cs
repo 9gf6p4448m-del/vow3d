@@ -51,6 +51,10 @@ namespace Vow.Core
         public float Health => _vitality != null ? _vitality.Health : 100f;
         public float MaxHealth => _vitality != null ? _vitality.MaxHealth : 100f;
         public bool IsAlive => _vitality == null || _vitality.IsAlive;
+        public void SetPactCadenceModifiers(bool swiftStep, bool extremeOverclock)
+        {
+            _mover?.SetPactCadenceModifiers(swiftStep, extremeOverclock);
+        }
         public event Action OnKnockedOut;
 
         // v0.8.0（V080_CAPTURE_PLAN.md R13／E11）：被打中就發，發在扣護盾**之前**——護盾全額吸收也算受傷，

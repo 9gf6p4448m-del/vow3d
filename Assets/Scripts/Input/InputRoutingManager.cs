@@ -40,6 +40,7 @@ namespace Vow.Input
 
         private readonly ScreenRegion[] _regions = new ScreenRegion[MaxUiRegions];
         private readonly bool[] _regionActive = new bool[MaxUiRegions];
+        private readonly int[] _regionTouchVersion = new int[MaxUiRegions];
         private int _regionCount;
 
         private ScreenRegion _pipZone;
@@ -70,6 +71,17 @@ namespace Vow.Input
         {
             if (id < 0 || id >= _regionCount) return;
             _regionActive[id] = active;
+        }
+
+        public int UiRegionTouchVersion(int id)
+        {
+            return id >= 0 && id < _regionCount ? _regionTouchVersion[id] : -1;
+        }
+
+        public void InvalidateUiRegionTouches(int id)
+        {
+            if (id < 0 || id >= _regionCount) return;
+            unchecked { _regionTouchVersion[id]++; }
         }
 
         public void SetPipZone(ScreenRegion zone)

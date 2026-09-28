@@ -40,6 +40,30 @@ namespace Vow.Tests.EditMode
                 true, true, CaptureTapAction.None, CaptureButtonAction.Invalid, "Ended");
         }
 
+        [Test]
+        public void V11B0_CaptureElementsOpenWithoutOpeningDebugToolsOrDuel()
+        {
+            var captureAlive = MatchGate.Evaluate(DuelRoundState.Dormant, CaptureMatchState.Active, true, true);
+            Assert.IsFalse(captureAlive.ElementsLocked);
+            Assert.IsTrue(captureAlive.DebugToolsLocked);
+            Assert.IsFalse(captureAlive.HeroInputBlocked);
+
+            var captureKo = MatchGate.Evaluate(DuelRoundState.Dormant, CaptureMatchState.Active, false, true);
+            Assert.IsTrue(captureKo.ElementsLocked);
+            Assert.IsTrue(captureKo.DebugToolsLocked);
+            Assert.IsTrue(captureKo.HeroInputBlocked);
+
+            var ended = MatchGate.Evaluate(DuelRoundState.Dormant, CaptureMatchState.Ended, true, true);
+            Assert.IsTrue(ended.ElementsLocked);
+            Assert.IsTrue(ended.DebugToolsLocked);
+
+            var duel = MatchGate.Evaluate(DuelRoundState.Active, CaptureMatchState.Off, true, true);
+            Assert.IsTrue(duel.ElementsLocked);
+            Assert.IsTrue(duel.DebugToolsLocked);
+            Assert.IsTrue(MatchGate.Evaluate(DuelRoundState.Dormant, CaptureMatchState.Active, true, false).ElementsLocked,
+                "舊規則不開放元素");
+        }
+
         private static int[] DefaultOwnership()
         {
             var o = new int[HexBoardLayout.TileCount];

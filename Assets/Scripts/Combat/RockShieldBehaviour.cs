@@ -14,11 +14,14 @@ namespace Vow.Combat
         private RockShieldLogic _logic;
         private HeroController _hero;
         private int _attackerFactionId;
+        private bool _stoneBodyEnabled;
         private bool _subscribed;
 
         public float Amount => _logic != null ? _logic.Amount : 0f;
+        public float GrantedAmount => _logic != null ? _logic.GrantedAmount : 0f;
         public float RemainingSeconds => _logic != null ? _logic.RemainingSeconds : 0f;
         public bool IsActive => _logic != null && _logic.IsActive;
+        public void SetStoneBodyEnabled(bool enabled) { _stoneBodyEnabled = enabled; }
 
         // 活性計數（V5 的量測窗口用）。
         public int GrantCount { get; private set; }
@@ -30,6 +33,7 @@ namespace Vow.Combat
             _logic = new RockShieldLogic(tuning);
             _hero = hero;
             GrantCount = 0;
+            _stoneBodyEnabled = false;
             if (_hero == null) return;
 
             _attackerFactionId = (int)_hero.HeroFaction;
@@ -79,7 +83,12 @@ namespace Vow.Combat
                                                         ownerKnown, ownerFactionId, _attackerFactionId))
                 return;
 
-            Grant();
+            if (_stoneBodyEnabled && ownerFactionId == (int)Faction.RedTeam)
+            {
+                _logic.Grant(220f);
+                GrantCount++;
+            }
+            else Grant();
         }
 
         private void Update()

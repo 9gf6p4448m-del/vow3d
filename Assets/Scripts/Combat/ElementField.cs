@@ -196,9 +196,15 @@ namespace Vow.Combat
         // 水域沒有反應（`ElementReactionLogic.Resolve` 的 Water 分支回 None）：直接生一個水域。
         public int CastWater(Vector3 groundPoint, int factionId)
         {
+            return CastWater(groundPoint, factionId, _tuning.WaterRadius);
+        }
+
+        // 潮汐引只影響新水域，既有區域半徑留在 ElementZoneField 中不回溯改寫。
+        public int CastWater(Vector3 groundPoint, int factionId, float radiusMeters)
+        {
             if (_field == null) return -1;
             return _field.Spawn(ElementZoneKind.Water, groundPoint.x, groundPoint.z,
-                                _tuning.WaterRadius, _tuning.WaterDurationSeconds, factionId);
+                                radiusMeters, _tuning.WaterDurationSeconds, factionId);
         }
 
         public ElementReaction CastFire(Vector3 groundPoint, int factionId)

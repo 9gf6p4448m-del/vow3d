@@ -29,6 +29,7 @@ namespace Vow.Core.Logic
 
         private readonly CaptureTuning _tuning;
         private readonly CaptureBoardSpec _spec;
+        private readonly PactTalentLogic _talents = new PactTalentLogic();
         private readonly int[] _ownership;
 
         // BFS 暫存（建構時配置，Tick 內零配置）。
@@ -89,6 +90,14 @@ namespace Vow.Core.Logic
 
         public int BlueScore { get; private set; }
         public int RedScore { get; private set; }
+
+        public int UnlockedTalentTier => State == CaptureMatchState.Active ? _talents.UnlockedTier : 0;
+        public int PendingTalentTier(int side) => State == CaptureMatchState.Active ? _talents.PendingTier(side) : 0;
+        public PactTalent SelectedTalent(int side, int tier) => State == CaptureMatchState.Active ? _talents.Selected(side, tier) : PactTalent.None;
+        public bool TryChooseTalent(int side, PactTalent talent)
+        {
+            return State == CaptureMatchState.Active && _spec.TalentsEnabled && _talents.TryChoose(side, talent);
+        }
 
         public CaptureMatchResult Result { get; private set; } = CaptureMatchResult.None;
         public CaptureMatchResult LastResult { get; private set; } = CaptureMatchResult.None;
@@ -160,6 +169,7 @@ namespace Vow.Core.Logic
         {
             if (State != CaptureMatchState.Lobby) return false;
             State = CaptureMatchState.Off;
+            _talents.Reset();
             return true;
         }
 
@@ -175,6 +185,7 @@ namespace Vow.Core.Logic
             for (int k = 0; k < _spec.MotherCount(RedFactionId); k++) _ownership[_spec.MotherTile(RedFactionId, k)] = RedFactionId;
             _rageRemaining[BlueFactionId] = 0f;
             _rageRemaining[RedFactionId] = 0f;
+            _talents.Reset();
             BlueScore = 0;
             RedScore = 0;
             _scoreClock = 0f;
@@ -342,6 +353,8 @@ namespace Vow.Core.Logic
             ProcessKnockouts(dt);   // ④ 倒地倒數與復活地點
 
             ProcessScoring(dt);   // ⑤ 計分時鐘、MatchElapsed ⑥ 勝負 ⑦ 時間到
+            if (_spec.TalentsEnabled && State == CaptureMatchState.Active)
+                _talents.Refresh(MatchElapsed, BlueScore, RedScore);
         }
 
         private void TickRage(float dt)
@@ -548,6 +561,7 @@ namespace Vow.Core.Logic
             _endPauseRemaining = _tuning.EndPauseSeconds;
             _rageRemaining[BlueFactionId] = 0f;
             _rageRemaining[RedFactionId] = 0f;
+            _talents.Reset();
         }
 
         // ProcessChannels 對單一方套用的狀態機（不必先中立化，E9/V-A10）。

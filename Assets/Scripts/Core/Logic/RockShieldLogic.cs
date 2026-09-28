@@ -9,6 +9,7 @@ namespace Vow.Core.Logic
 
         private readonly ProjectileTuning _tuning;
         private float _amount;
+        private float _grantedAmount;
         private float _remainingSeconds;
 
         public RockShieldLogic(ProjectileTuning tuning)
@@ -17,19 +18,28 @@ namespace Vow.Core.Logic
         }
 
         public float Amount => _amount;
+        public float GrantedAmount => _grantedAmount;
         public float RemainingSeconds => _remainingSeconds;
         public bool IsActive => _amount > 0f && _remainingSeconds > 0f;
 
         // 重複取得＝刷新回滿值，不疊加（使用者裁定 3）。
         public void Grant()
         {
-            _amount = _tuning.ShieldAmount;
+            Grant(_tuning.ShieldAmount);
+        }
+
+        // 堅磐體只覆寫該次擊碎敵牆的護盾，不更動共用 ProjectileTuning。
+        public void Grant(float amount)
+        {
+            _amount = amount;
+            _grantedAmount = amount;
             _remainingSeconds = _tuning.ShieldDurationSeconds;
         }
 
         public void Clear()
         {
             _amount = 0f;
+            _grantedAmount = 0f;
             _remainingSeconds = 0f;
         }
 
@@ -42,6 +52,7 @@ namespace Vow.Core.Logic
 
             _remainingSeconds = 0f;
             _amount = 0f;
+            _grantedAmount = 0f;
         }
 
         // 回傳穿過護盾的殘餘傷害。護盾值歸零不代表倒數結束（倒數另外走 Tick）。

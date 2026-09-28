@@ -1,6 +1,13 @@
 # VOW 誓約 — Codex 接手紀錄（2026-09-29 更新）
 
-## 目前狀態：v0.10.0 已部署，線上 D02～D07 驗收通過
+## 目前狀態：v0.11.0 誓約天賦開工中，尚未部署
+
+- 工作分支 `v0110-pact-talents`，已知良好起點 `9341813601c38a8e59541557b3f46023c0965757`；規格與分步驗收在 `docs/V0110_PACT_TALENTS_PLAN.md`。使用者已裁定佔領 Active 開放元素、任一方先達 250／500／750 分則雙方同時開放該階。
+- A（雙方解鎖／選擇狀態）、B0（佔領局藍方元素與除錯隔離）、C（右側即時三選一）、B1 五項被動效果已接線。2026-09-29 的 `dotnet test Tools/DotnetCheck/PureLogic.Tests/PureLogic.Tests.csproj --no-restore` 為 284 通過／1 略過；Unity `run_unity.sh v0110-b1-stone-capture-play-r3 PlayMode Vow.Tests.PlayMode.CapturePlayTests` 的 XML 為 16／16 通過，含雙指跨階防誤選、五項天賦數值與堅磐體的實際近戰破牆／非近戰對照。完整 EditMode `v0110-a-b1-c-edit.xml` 為 278 通過／7 略過／0 失敗。全套 PlayMode 在舊狂怒多時序劇本重播中途主動中止，**未驗證**，待九項天賦接齊後重跑；日誌 `../vow-toolchain/v0110-a-b1-c-play.log` 不可當通過證據。獨立 reviewer 對雙指與 B1 修正均 APPROVE；`verify.sh` 純邏輯 284 通過／1 略過、Unity 編譯 0 error、靜態掃描全 PASS。完整九項與 WebGL／線上驗收未完成。
+- 待使用者答覆的玩法邊界：紅方 AI 選天賦／技能、裂風矢與碎岩震觸發、元素湮滅與地脈狂熱的傷害規則、正常佔領局敵方石牆來源。這些答覆前不定案 B2／B3／AI；`origin/gh-pages` 仍是已驗收的 v0.10.0。
+- v0.11 本機視覺驗證尚未完成。`C:\Program Files\Unity\Hub\Editor\2022.3.62f1` 沒裝 WebGLSupport，應使用 `C:\Users\shung\Unity\Hub\Editor\2022.3.62f1`（`Tools/deploy-webgl.sh` 已會自動選）。用後者建置本機預覽時，`../vow-toolchain/v0110-partial-webgl-build-r3.log` 到 `Link_WebGL_wasm` 持續約 15 分鐘仍未完成，已停止行程，沒有新產物可供截圖。`../vow-toolchain/v0110-local-ui-check.py` 已備妥且通過語法／格式／純函式檢查，尚未對新 WebGL 實跑；不能拿舊的 `Builds/WebGL` 當 v0.11 證據。
+
+## v0.10.0 已部署，線上 D02～D07 驗收通過
 
 - Unity 主專案在分支 `v0100-sanctuary`；來源 `bb090ed`（2026-09-28 21:17:47 +08:00），部署 `origin/gh-pages 74a2c35`（2026-09-28 22:09:02 +08:00）。[線上試玩](https://9gf6p4448m-del.github.io/vow3d/) 已讀回 `v0.10.0 · build 2026-09-28 13:39 UTC · bb090ed`。凍結規格 `docs/V0100_SANCTUARY_PLAN.md`；詳細證據與試玩步驟在驗收指南 §21。
 - 規則：母板塊聖所減傷 15%、奪回 1.8 秒、連續圍城 2 分鐘後聖所衰減、15 分鐘倒數、每塊每秒 1／7 分。A～C 已完成；`227ec63` 的 PlayMode 主組 162／162、C07 劇本 18／18，突變獨立重跑 172／172 CAUGHT、0 MISSED。`bb090ed` 上執行 `UNITY_REFS_DIR=<vow-toolchain/refs> bash Tools/DotnetCheck/verify.sh` 為 266 通過／1 略過、編譯 0 error、`RESULT: ALL PASS`；`run_unity.sh v0100-D-edit EditMode` 的 XML 為 260 通過／7 略過／0 失敗。WebGL 10.6 MB 建置成功。

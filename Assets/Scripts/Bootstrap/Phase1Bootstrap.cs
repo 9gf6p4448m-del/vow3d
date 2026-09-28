@@ -105,7 +105,8 @@ namespace Vow.Bootstrap
         public ElementTuning ElementTuning => _elementTuning;
         public CombatTargetRoster ElementRoster => _elementRoster;
         public SectorTelegraph SectorTelegraph => _sectorTelegraph;
-        public Faction ElementCastFaction => _elementFaction;
+        public Faction ElementCastFaction => CaptureState == CaptureMatchState.Active
+            ? Faction.BlueTeam : _elementFaction;
         public int ElementZoneViewPoolSize => _elementField != null ? _elementField.ViewPoolSize : 0;
 
         public void PressElementWaterButton() { if (_hud != null) _hud.PressWaterButton(); }
@@ -161,6 +162,38 @@ namespace Vow.Bootstrap
 
         // CAPTURE 鈕走與真實觸控同一個入口（DebugHud.PressCaptureButton）；螢幕點＝登記給 InputRoutingManager 的矩形中心。
         public void PressCaptureButton() { if (_hud != null) _hud.PressCaptureButton(); }
+
+        public bool TalentPanelVisible => _hud != null && _hud.TalentPanelVisible;
+        public int TalentPendingTier => _hud != null ? _hud.TalentPendingTier : 0;
+        public string TalentTitleLabel => _hud != null ? _hud.TalentTitleLabel : null;
+        public string TalentOptionLabel(int choice) => _hud != null ? _hud.TalentOptionLabel(choice) : null;
+        public void PressTalentButton(int choice) { if (_hud != null) _hud.PressTalentButton(choice); }
+        public bool TryGetTalentButtonScreenPoint(int choice, out float x, out float y)
+        {
+            x = 0f;
+            y = 0f;
+            return _hud != null && _hud.TryGetTalentButtonScreenPoint(choice, out x, out y);
+        }
+
+        private void ChooseBlueTalent(PactTalent talent)
+        {
+            if (_capture == null || !_capture.TryChooseTalent(CaptureMatchLogic.BlueFactionId, talent)) return;
+            RefreshBluePactModifiers();
+        }
+
+        private bool BlueHasTalent(int tier, PactTalent talent)
+        {
+            return _capture != null && _capture.SelectedTalent(CaptureMatchLogic.BlueFactionId, tier) == talent;
+        }
+
+        private void RefreshBluePactModifiers()
+        {
+            bool swift = BlueHasTalent(1, PactTalent.SwiftStep);
+            bool stone = BlueHasTalent(1, PactTalent.StoneBody);
+            bool overclock = BlueHasTalent(3, PactTalent.ExtremeOverclock);
+            _hero?.SetPactCadenceModifiers(swift, overclock);
+            _shield?.SetStoneBodyEnabled(stone);
+        }
 
         public bool TryGetCaptureButtonScreenPoint(out float x, out float y)
         {
@@ -232,6 +265,8 @@ namespace Vow.Bootstrap
         public void BeginScreenHold(float x, float y) { if (_input != null) _input.BeginSimulatedHold(x, y); }
         public void MoveScreenHold(float x, float y) { if (_input != null) _input.MoveSimulatedHold(x, y); }
         public void EndScreenHold() { if (_input != null) _input.EndSimulatedHold(); }
+        public void BeginScreenHold(int slot, float x, float y) { if (_input != null) _input.BeginSimulatedHold(slot, x, y); }
+        public void EndScreenHold(int slot) { if (_input != null) _input.EndSimulatedHold(slot); }
 #endif
 
         private void Awake()
@@ -365,7 +400,9 @@ namespace Vow.Bootstrap
                                 spawnEnemyWall, toggleTurret, turretFiring, _shield,
                                 castWater, castFire, castWind, toggleElement, elementBlue, _elementCooldowns);
                 if (_duelRound != null) _hud.ConfigureDuel(ReadOpponentHealth, _duelRound);
-                if (_captureView != null) _hud.ConfigureCapture(_captureView, HandleCaptureButton);
+                if (_captureView != null)
+                    _hud.ConfigureCapture(_captureView, HandleCaptureButton, _captureSpec.TalentsEnabled,
+                                          _captureSpec.TalentsEnabled ? (Action<PactTalent>)ChooseBlueTalent : null);
             }
             if (_aimPreview != null) _aimPreview.Initialize(_hero, _input, _telegraph, _camera);
         }
@@ -503,11 +540,15 @@ namespace Vow.Bootstrap
 
         private MatchGateDecision CurrentGate()
         {
-            return MatchGate.Evaluate(DuelState, CaptureState, _capture == null || !_capture.BlueKnockedOut);
+            return MatchGate.Evaluate(DuelState, CaptureState, _capture == null || !_capture.BlueKnockedOut,
+                                      _capture != null && _capture.Spec.TalentsEnabled);
         }
 
-        // 元素／砲台／敵牆的閘門（R3）：Off 時與 v0.7.0 的「DuelState != Dormant」逐列相同（V-A20）。
+        // v0.11.0：佔領 Active 只解鎖元素；除錯用敵牆／砲台／紅方元素切換仍封鎖。
         private bool ElementsLocked => CurrentGate().ElementsLocked;
+        private bool DebugToolsLocked => CurrentGate().DebugToolsLocked;
+        private int ElementCastFactionId => CaptureState == CaptureMatchState.Active
+            ? (int)Faction.BlueTeam : (int)_elementFaction;
 
         // Tick 內的順序凍結在 CaptureMatchLogic（§2.1-1）；這裡在它之後依序取出一次性事件：復活 → 結束 → 回待機。
         private void TickCapture(float dt)
@@ -559,6 +600,7 @@ namespace Vow.Bootstrap
         private void StartCapture()
         {
             if (_capture == null || !_capture.TryStart()) return;
+            RefreshBluePactModifiers();
             _hero.CancelCombatForDuel();
             _shield?.Clear();
             _elementField?.ClearZonesForDuel();
@@ -657,8 +699,10 @@ namespace Vow.Bootstrap
         // 結算停頓（E17）：凍結英雄輸入與對手 AI；計分、引導、復活由 CaptureMatchLogic 自己停住。
         private void EnterCaptureEndPause()
         {
+            RefreshBluePactModifiers();
             _hero.CancelCombatForDuel();
             _opponent.StopRound();
+            _elementField?.ClearZonesForDuel();
             _opponentTelegraph?.HideIndicator();
             _latency?.CancelPendingForRound();
             _input?.CancelActiveGesturesForRound();
@@ -911,35 +955,39 @@ namespace Vow.Bootstrap
         private void CastElementWater()
         {
             if (ElementsLocked) return;
-            if (!_elementCooldowns.TryBeginCast(ElementCast.Water, Time.time)) return;
-            _elementField.CastWater(ElementCastPoint(), (int)_elementFaction);
+            if (!_elementCooldowns.TryBeginCast(ElementCast.Water, Time.time, BlueElementCooldownSeconds)) return;
+            float radius = _elementTuning.WaterRadius + (BlueHasTalent(2, PactTalent.TidalPull) ? 2f : 0f);
+            _elementField.CastWater(ElementCastPoint(), ElementCastFactionId, radius);
         }
 
         private void CastElementFire()
         {
             if (ElementsLocked) return;
-            if (!_elementCooldowns.TryBeginCast(ElementCast.Fire, Time.time)) return;
-            _elementField.CastFire(ElementCastPoint(), (int)_elementFaction);
+            if (!_elementCooldowns.TryBeginCast(ElementCast.Fire, Time.time, BlueElementCooldownSeconds)) return;
+            _elementField.CastFire(ElementCastPoint(), ElementCastFactionId);
         }
 
         private void CastElementWind()
         {
             if (ElementsLocked) return;
-            if (!_elementCooldowns.TryBeginCast(ElementCast.Wind, Time.time)) return;
-            _elementField.CastWind(_hero.transform.position, _hero.transform.forward, (int)_elementFaction);
+            if (!_elementCooldowns.TryBeginCast(ElementCast.Wind, Time.time, BlueElementCooldownSeconds)) return;
+            _elementField.CastWind(_hero.transform.position, _hero.transform.forward, ElementCastFactionId);
         }
 
         // ELEM 鈕無冷卻；切換只影響**之後**施放的技能，已成形的區域陣營不變（§4-12）。
         private void ToggleElementFaction()
         {
-            if (ElementsLocked) return;
+            if (DebugToolsLocked) return;
             _elementFaction = _elementFaction == Faction.BlueTeam ? Faction.RedTeam : Faction.BlueTeam;
         }
 
         private bool IsElementFactionBlue()
         {
-            return _elementFaction == Faction.BlueTeam;
+            return CaptureState == CaptureMatchState.Active || _elementFaction == Faction.BlueTeam;
         }
+
+        private float BlueElementCooldownSeconds => BlueHasTalent(1, PactTalent.FireSurge)
+            ? _elementTuning.SkillCooldownSeconds * 0.85f : _elementTuning.SkillCooldownSeconds;
 
         // 從指定的父物件底下收石牆。引用掉了就明說——無聲退回 FindObjectsOfType 會把兩個池又混回一起。
         private RuneWall[] CollectWalls(Transform poolRoot, string expectedName)
@@ -953,13 +1001,13 @@ namespace Vow.Bootstrap
 
         private void SpawnEnemyWall()
         {
-            if (ElementsLocked) return;
+            if (DebugToolsLocked) return;
             if (_enemyWalls != null) _enemyWalls.Spawn();
         }
 
         private void ToggleTurret()
         {
-            if (ElementsLocked) return;
+            if (DebugToolsLocked) return;
             if (_turret != null) _turret.SetFiring(!_turret.IsFiring);
         }
 

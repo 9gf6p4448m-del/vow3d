@@ -21,10 +21,16 @@ namespace Vow.Core.Logic
         // 冷卻中 → false，不重置冷卻
         public bool TryBeginCast(ElementCast cast, float nowSeconds)
         {
+            return TryBeginCast(cast, nowSeconds, _tuning.SkillCooldownSeconds);
+        }
+
+        // 天賦只調整新施放技能的冷卻；既有 readyAt 不回溯改寫，tuning 也不被修改。
+        public bool TryBeginCast(ElementCast cast, float nowSeconds, float cooldownSeconds)
+        {
             int slot = (int)cast;
             if (nowSeconds < _readyAtSeconds[slot]) return false;
 
-            _readyAtSeconds[slot] = nowSeconds + _tuning.SkillCooldownSeconds;
+            _readyAtSeconds[slot] = nowSeconds + cooldownSeconds;
             return true;
         }
 
