@@ -622,3 +622,24 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 
 **未驗證**：同 §19 第 1～6 項；另加 7. 手機上走到點是否仍有「滑過頭」感（本版只在 swiftshader 低幀率驗過）。
 
+## 21. v0.10.0：聖所、圍城、15 分鐘倒數與慢計分（2026-09-28 試玩版）
+
+規格與凍結驗收見 `docs/V0100_SANCTUARY_PLAN.md`。開局雙方各有 3 塊母板塊；英雄站在己方持有的母板塊時受到傷害減少 15%，HUD 顯示 `SANCT 15%`。奪回自己的母板塊引導為 1.8 秒；敵方持有棋盤 19 塊中的至少 14 塊且持續 2 分鐘時，我方聖所強度每秒衰減 1 個百分點，HUD 改顯示 `SIEGE n%`，解除圍城後逐秒恢復。每局最多 15 分鐘；計分為每塊每秒 1／7 分，預期放置局約 403 秒遊戲時間，真人對局約 12 分鐘仍只是推導。
+
+**試玩步驟**：① 打開 [線上試玩](https://9gf6p4448m-del.github.io/vow3d/)，確認底部是 `v0.10.0 · build 2026-09-28 13:39 UTC · bb090ed`；② 按右上 `CAPTURE`，待機畫面沒有倒數；③ 點紅色對手開局，應看到上方 `15:00` 倒數、`SANCT 15%`、`CAPTURE ACTIVE`、比分 0／0，以及腳下與左右 3 塊藍色母板塊；④ 可先不輸入，觀察受擊 HP、圍城 HUD、比分與局長；⑤ 第一局結束後再點對手開第二局，走出母板塊到 4 號塔，觀察 `SANCT` 消失及 4 號翻藍。第④⑤步尚待依凍結條文正式驗證，不應用此試玩步驟代替判定。
+
+**工程與送達證據**：
+- 來源 `bb090ed`（2026-09-28 21:17:47 +08:00），`Assets/Scripts/Core/VowVersion.cs` 與 `ProjectSettings/ProjectSettings.asset` 的版本均為 `0.10.0`。來源前一提交 `227ec63` 的 PlayMode 主組 162／162、C07 劇本 18／18；獨立 worktree 於 `227ec63` 執行 `python Tools/DotnetCheck/mutation_check.py`，172／172 CAUGHT、0 SKIP、0 MISSED，還原後 267 項測試 0 失敗（`../vow-toolchain/v0100-C-resume-20260928-summary.md`）。
+- `bb090ed` 上執行 `UNITY_REFS_DIR=<vow-toolchain/refs 絕對路徑> bash Tools/DotnetCheck/verify.sh`：純邏輯 266 通過／1 略過、Unity 腳本編譯 0 錯、靜態紅線全過，`RESULT: ALL PASS`。Unity EditMode `run_unity.sh v0100-D-edit EditMode` 的 XML：267 項、260 通過／7 略過／0 失敗（`../vow-toolchain/v0100-D-edit.xml`）；外層 wrapper 因搜尋失敗案例的 `grep` 無符合而回傳 1，實際 XML 無紅。
+- Unity batchmode `Vow.EditorTools.VOWWebGLBuilder.Build`：WebGL 10.6 MB，建置耗時 1167 秒，首頁版本列 `v0.10.0 · build 2026-09-28 13:39 UTC · bb090ed`（`../vow-toolchain/v0100-D-webgl-build.log`）。執行 `SKIP_BUILD=1 bash Tools/deploy-webgl.sh` 送達同一份產物；`git log origin/gh-pages -1` 讀回 `74a2c35 2026-09-28T22:09:02+08:00 deploy: VOW v0.10.0 from bb090ed`，部署腳本讀回線上同版號與來源 SHA。
+
+**線上實測範圍**（Playwright Chromium 844×390、DPR 2、觸控；截圖在 `../vow-toolchain/browser-screenshots/v0100-online-trial-20260928-20260928T141732.475024Z-29952-475057100/`）：
+- V10-D02：線上 Chromium 版本列為 `v0.10.0 · build 2026-09-28 13:39 UTC · bb090ed`，與來源、部署輸出一致。
+- V10-D03：WebKit `iPhone 13 landscape` 在 12.996 秒載入 Unity、loading 隱藏，版本列一致；`pageerror`＝0、`console.error`＝0（`browser-screenshots/v0100-online-trial-20260928-webkit-20260928T141704.733037Z-17540-733064700/check.log` 與 `webkit-loaded.png`）。
+- V10-D04：主對話目視 `d04-01-lobby.png` 待機沒有倒數；`d04-02-active.png` 開局顯示 `15:00`、`SANCT 15%`、`CAPTURE ACTIVE`、0／0、3 塊藍色母板塊，倒數未壓到左右面板或按鈕。這一段 `pageerror`＝0、`console.error`＝0。第一張 D05 截圖的 Windows OCR 讀到倒數 896 秒（14:56），只證明正向讀鐘當次可用，**不構成 D05 通過**。
+
+**未驗證**：使用者 2026-09-28 裁定「先部署試玩，明確標記 D05 未驗證」；凍結判準沒有放寬。
+1. **V10-D05 放置整局**：減傷後 HP 序列、圍城衰減、1000～1002 分結束、計分上限與至少經過 240 秒，均尚無完整線上證據。本機約 3 FPS，截圖曾需 8～36 秒，OCR 曾逾 15 秒；線上只截到開局後第一張，未跑到結束。
+2. **V10-D06 第二局與 4 號塔**：依賴第一局結束，尚未線上驗證；**V10-D07 全程 console**：只有開局區段與 WebKit 載入 0 error，D02～D06 全程未驗證。
+3. 真人對局是否約 12 分鐘（目前僅模型推導）；線上「時間到」結束畫面（放置局會先達 1000，只有 PlayMode V10-B09）；線上奪回母板塊 1.8 秒（只有 PlayMode V10-B07）；紅方聖所線上畫面（開局時鏡頭外）。
+4. 原生 Android／iOS 的幀率、震動、延遲與觸控手感。PWA 若仍顯示舊版，關閉分頁重開或強制重新整理，再核對底部 `bb090ed`。
