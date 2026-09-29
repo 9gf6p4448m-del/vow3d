@@ -659,4 +659,6 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 - `PYTHONIOENCODING=utf-8 python ../vow-toolchain/v0110-local-ui-check.py http://127.0.0.1:8791/ local-6126f60-r2 --wall-timeout 1200`：`tier1_evidence_captured`，第一階盤面 OCR 確認，844×390／640×360／1280×720 截圖已逐張目視，三個選項與比分、倒數、元素列不互蓋；`pageerrors=0`、`console_errors=0`。`python ../vow-toolchain/v0110-local-interaction.py`：實際點選 SWIFT 後選盤消失，點 WATER 後出現藍色水域與 `WATER 3`，前／後三張 PNG 在 `../vow-toolchain/browser-screenshots/v0110-local-interaction-6126f60/`，兩種錯誤各 0。
 - 建置產物已推到 `origin/gh-pages fed88874f1850604862d38353de518fbd95afa3d`（2026-09-29 10:30:08 +08:00）。`git ls-remote origin refs/heads/gh-pages` 讀回同 SHA；`Invoke-WebRequest -UseBasicParsing 'https://9gf6p4448m-del.github.io/vow3d/?v=6126f60-20260929'` 先讀到 v0.10.0，待 Pages 傳播後再讀到 `VOW v0.11.0`／`build 2026-09-29 02:19 UTC · 6126f60`。`python ../vow-toolchain/v0110-online-smoke.py` 新瀏覽器 844×390／DPR2 載入與 CAPTURE 實際點擊成功，`capture-active.png` 同時可見 14:58、`SANCT 15%`、0／0、元素列及版本列；`pageerrors=0`、`console_errors=0`。PWA 舊快取需關閉分頁重開或強制重新整理，再核對底部 `6126f60`。
 
-**尚未驗證**：原生 Android／iOS 的幀率、震動、延遲與觸控手感，以及玩家對天賦搭配的主觀平衡感；WebGL 本機 FPS 偏低，不能代替原生手感驗收。
+**使用者人工驗收（2026-09-29）**：回報「試玩通過」，採記為 v0.11.0 線上試玩的整體回報；未逐項指明九個天賦搭配或原生裝置。
+
+**尚未驗證**：原生 Android／iOS 的幀率、震動、延遲與觸控手感，以及逐項天賦搭配的主觀平衡感；WebGL 本機 FPS 偏低，不能代替原生手感驗收。藍圖下一批依 `docs/V090_ENCIRCLE_PLAN.md` 裁定 1 為地脈共振迷霧，其後才是深淵先鋒與立體地貌。
