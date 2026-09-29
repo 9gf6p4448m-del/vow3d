@@ -7,6 +7,7 @@
 - 全套 PlayMode `v0110-final-play-r2.xml` 曾為 190／200，10 個舊 C07 狂怒劇本失敗；已隔離並修正 640×480 HUD 元素列遮住舊世界點擊，以及紅方 AI 放牆改變舊移動軌跡兩個原因。修正後 `v0110-engaged-wall-all-play.xml` **200／200 通過**（含舊 C07 與新版 AI）；`v0110-release-edit.xml` EditMode 283 通過／7 略過；`UNITY_REFS_DIR=<vow-toolchain/refs> bash Tools/DotnetCheck/verify.sh` 純邏輯 289 通過／1 略過、Unity 編譯 0 error、靜態紅線全 PASS。
 - 建置來源 commit `6126f60`（2026-09-29 10:15:59 +08:00）含 Unity bundleVersion 0.11.0；工作分支後續另補驗收文件。`Builds/v0110-release-build-r2.log` 記錄 WebGL 建置成功，10.6 MB／181 秒，首頁 `v0.11.0 · build 2026-09-29 02:19 UTC · 6126f60`。本機 `v0110-local-6126f60-r2` 的 844×390、640×360、1280×720 截圖已目視：天賦盤三選項與倒數、比分、元素鈕均可讀且不互蓋，頁面／console error 各 0；`v0110-local-interaction-6126f60` 真觸控選 SWIFT 後盤面消失，點 WATER 後出現藍色水域與冷卻。部署 `origin/gh-pages fed8887`（2026-09-29 10:30:08 +08:00）；無快取 HTTP 讀回與 `v0110-online-6126f60/capture-active.png` 均顯示 v0.11.0，同時可見 14:58、`SANCT 15%`、0／0 與元素列，線上頁面／console error 各 0。[線上試玩](https://9gf6p4448m-del.github.io/vow3d/)；PWA 若顯示舊版，關閉分頁重開或強制重新整理，核對底部 `6126f60`。
 - 使用者 2026-09-29 回報「試玩通過」，採記為 v0.11.0 線上試玩的人工驗收；未逐項指明九個天賦搭配或原生裝置。原生 Android／iOS 的幀率、震動、延遲與觸控手感仍未驗證；本機 WebGL 的低 FPS 不能作原生手感驗收。依 `docs/V090_ENCIRCLE_PLAN.md` 裁定 1，後續順序為地脈共振迷霧 → 深淵先鋒 → 立體地貌；下一批迷霧尚待定義視野與可點選邊界。
+- v0.12.0 地脈共振迷霧已從 v0.11 驗收點 `713166e` 開 `v0120-tectonic-fog` 分支，對齊草稿在 `docs/V0120_TECTONIC_FOG_PLAN.md`。局部視距／暗區呈現與紅方 AI 視野尚待使用者裁定；草稿未凍結，也尚未改遊戲程式。
 
 ## v0.10.0 已部署，線上 D02～D07 驗收通過
 
