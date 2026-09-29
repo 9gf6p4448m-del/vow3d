@@ -1,11 +1,13 @@
-# VOW 誓約 — Codex 接手紀錄（2026-09-29 更新）
+# VOW 誓約 — Codex 接手紀錄（2026-09-30 更新）
 
-## 目前狀態：v0.13.0 深淵先鋒已部署（線上現役），待使用者試玩
+## 目前狀態：v0.13.1 深淵先鋒已部署（線上現役），待使用者試玩
 
 - 分支 `v0130-abyssal-vanguard`（已推 origin；未併 main，main 仍在 `f5bda92`）。Codex 實作到一半撞額度中斷，Claude 接手收尾：`74c7e3b` 主體＋測試、`66ff098` 試玩捷徑 `?devvanguard`（開局跳到第 590 秒）、`e816036` HUD 讓位修正（建置來源）。規格 `docs/V0130_ABYSSAL_VANGUARD_PLAN.md`；玩法、試玩清單、證據在驗收指南 §24。
 - 驗證：verify 304／1、`RESULT: ALL PASS`；EditMode 298／7 略過／0 失敗；PlayMode 211／211；兩輪對抗審查（`vow-toolchain/REVIEW-v0130-r1.md`、`r2.md`）無未解 CRITICAL／HIGH；8 組 PlayMode 手動突變全抓到。突變全套 168／172、4 SKIP 為 v0.11／v0.12 起就過期的定義（S5、C16、N15、N17），先鋒邏輯尚未納入 `mutation_check.py`。
 - 送達：`origin/gh-pages b97bc78`（2026-09-29 20:19:43 +08:00），線上讀回 `v0.13.0 · build 2026-09-29 09:49 UTC · e816036`，新瀏覽器實測 `errors=[]`。
-- 未驗證／待裁：預警圈在手機上是否醒目；核心圈中心 (3,0) 不在正中心、巨獸傷害吃聖所減傷——兩項規格留白待使用者確認。下一批依藍圖是立體地貌，開工前先凍結規格。
+- **v0.13.1（2026-09-30，線上現役）**：兩項規格留白由使用者裁定（計畫修-1）——核心圈移到 0／2／3 號塊交會頂點 (4.375,0)、半徑 1.8m，不和任何佔塔圈重疊；巨獸在聖所內照樣吃減傷。程式 `227f0fd`、bundleVersion `eb3c164`；verify 305／1、EditMode 299／7／0、PlayMode 211／211；`origin/gh-pages e82603c`，線上讀回 v0.13.1。證據在驗收指南 §24 末。
+- 未驗證：預警圈在手機上是否醒目；核心圈新尺寸在畫面上的樣子（鏡頭外，未目視）。下一批依藍圖是立體地貌，開工前先凍結規格。
+- 建置注意：WebGL 模組只裝在 `C:\Users\shung\Unity\Hub\Editor\2022.3.62f1`（`deploy-webgl.sh` 預設用這份）；`C:\Program Files\Unity\...` 那份只能跑測試，拿去建 WebGL 會得到 `build target was unsupported`。
 
 ## v0.12.0 地脈共振迷霧（已部署，線上互動已核對）
 
