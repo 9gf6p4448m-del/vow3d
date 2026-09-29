@@ -677,4 +677,6 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 - `python -m http.server 8792 --directory Builds/WebGL` 與 `python ..\vow-toolchain\v0120-visual-check.py http://127.0.0.1:8792/ ..\vow-toolchain\browser-screenshots\v0120-local-a0c4e99`：Chromium 觸控模擬成功點選 CAPTURE、開局，844×390／640×360／1280×720 截圖已逐張目視，己方 3 塊亮藍，遠處暗區仍保留地面／塔輪廓，HUD 可讀；`errors=[]`。本機 FPS 約 2–10，不作原生手感判斷。
 - 同一份建置產物推送 `origin/gh-pages 8305ba8cdccfd6006e7cd5c15c45fd26e96ffca1`（2026-09-29 13:19:23 +08:00）；`git ls-remote origin refs/heads/gh-pages` 讀回同 SHA。無快取 HTTP 由舊 v0.11.0 轉為 `VOW v0.12.0`／`build 2026-09-29 05:16 UTC · a0c4e99`；`python ..\vow-toolchain\v0120-visual-check.py 'https://9gf6p4448m-del.github.io/vow3d/?v=a0c4e99-20260929' ..\vow-toolchain\browser-screenshots\v0120-online-a0c4e99` 在新瀏覽器實際點選 CAPTURE→開局，`active-844x390.png` 已目視迷霧、15 分鐘倒數、比分與版本列，`errors=[]`。[線上試玩](https://9gf6p4448m-del.github.io/vow3d/)；PWA 若顯示舊版，關閉分頁重開或強制重新整理，核對底部 `a0c4e99`。
 
-**尚未驗證**：使用者手機對 v0.12.0 的試玩回報，以及原生 Android／iOS 幀率、震動、延遲與觸控手感。下一批按藍圖是深淵先鋒，再後才是立體地貌；本版未提前加入。
+**使用者人工驗收（2026-09-29）**：回報「試玩通過」，採記為 v0.12.0 線上試玩的整體回報；未指明試玩裝置或逐項迷霧場景。
+
+**尚未驗證**：原生 Android／iOS 幀率、震動、延遲與觸控手感。下一批按藍圖是深淵先鋒，再後才是立體地貌；本版未提前加入。

@@ -6,7 +6,7 @@
 - 迷霧只在正式 19 塊佔領局 Active 生效。敵方英雄／牆的外觀、點選與持續鎖定共用視野判定；己方板塊真視野可揭露蒸氣目標，6m 局部視野仍受蒸氣限制；紅方失去視野即停止追擊。BFS 斷能當 tick 失去真視野，第二局歸屬與視野重置。舊 V9 測試以 Editor-only、每場獨立的迷霧關閉入口保留原測試前提，正式版預設開啟。
 - `UNITY_REFS_DIR=<vow-toolchain/refs 絕對路徑> bash Tools/DotnetCheck/verify.sh`：純邏輯 296 通過／1 略過，Unity 腳本編譯 0 錯，靜態掃描全 PASS。Unity `v0120-full-edit-r2.xml`：290 通過／7 略過／0 失敗；`v0120-full-play-r2.xml`：204／204 通過；後補定向 `v0120-fog-play-r5.xml`：5／5 通過（紅方 AI 追擊進出）；完整 EditMode 已包含 BFS 斷能與第二局測試。完整 PlayMode 後只新增兩項測試與版號，未改遊戲邏輯。獨立 code review 最終 APPROVE。
 - 正確的 WebGL Unity 安裝是 `C:\Users\shung\Unity\Hub\Editor\2022.3.62f1\Editor\Unity.exe`（含 WebGLSupport）。`Builds/v0120-release-build-r2.log`：WebGL 建置成功，10.6 MB／400 秒；首頁 `v0.12.0 · build 2026-09-29 05:16 UTC · a0c4e99`。本機 Chromium 844×390、640×360、1280×720 截圖已目視暗區、地形與塔輪廓、HUD；頁面／console error 各 0。線上 [試玩](https://9gf6p4448m-del.github.io/vow3d/) 部署 `origin/gh-pages 8305ba8cdccfd6006e7cd5c15c45fd26e96ffca1`（2026-09-29 13:19:23 +08:00），無快取 HTTP 及新瀏覽器實際點選 CAPTURE→開局讀回同一版號、迷霧畫面、0 error。細節在驗收指南 §23；PWA 若顯示舊版，關閉分頁重開或強制重新整理並核對底部 `a0c4e99`。
-- 尚未由使用者手機試玩 v0.12.0；原生 Android／iOS 的幀率、震動、延遲及觸控手感未驗證，本機 WebGL FPS 偏低不可代替。按 `docs/V090_ENCIRCLE_PLAN.md` 裁定 1，下一批是深淵先鋒，再來是立體地貌；改玩法前先凍結下一批規格。
+- 使用者 2026-09-29 回報 v0.12.0「試玩通過」，採記為本版線上試玩的人工驗收；未指明試玩裝置或逐項場景。原生 Android／iOS 的幀率、震動、延遲及觸控手感仍未驗證，本機 WebGL FPS 偏低不可代替。按 `docs/V090_ENCIRCLE_PLAN.md` 裁定 1，下一批是深淵先鋒，再來是立體地貌；改玩法前先凍結下一批規格。
 
 ## v0.11.0 誓約天賦歷史驗收
 
