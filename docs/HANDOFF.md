@@ -7,7 +7,7 @@
 - `UNITY_REFS_DIR=<vow-toolchain/refs 絕對路徑> bash Tools/DotnetCheck/verify.sh`：純邏輯 296 通過／1 略過，Unity 腳本編譯 0 錯，靜態掃描全 PASS。Unity `v0120-full-edit-r2.xml`：290 通過／7 略過／0 失敗；`v0120-full-play-r2.xml`：204／204 通過；後補定向 `v0120-fog-play-r5.xml`：5／5 通過（紅方 AI 追擊進出）；完整 EditMode 已包含 BFS 斷能與第二局測試。完整 PlayMode 後只新增兩項測試與版號，未改遊戲邏輯。獨立 code review 最終 APPROVE。
 - 正確的 WebGL Unity 安裝是 `C:\Users\shung\Unity\Hub\Editor\2022.3.62f1\Editor\Unity.exe`（含 WebGLSupport）。`Builds/v0120-release-build-r2.log`：WebGL 建置成功，10.6 MB／400 秒；首頁 `v0.12.0 · build 2026-09-29 05:16 UTC · a0c4e99`。本機 Chromium 844×390、640×360、1280×720 截圖已目視暗區、地形與塔輪廓、HUD；頁面／console error 各 0。線上 [試玩](https://9gf6p4448m-del.github.io/vow3d/) 部署 `origin/gh-pages 8305ba8cdccfd6006e7cd5c15c45fd26e96ffca1`（2026-09-29 13:19:23 +08:00），無快取 HTTP 及新瀏覽器實際點選 CAPTURE→開局讀回同一版號、迷霧畫面、0 error。細節在驗收指南 §23；PWA 若顯示舊版，關閉分頁重開或強制重新整理並核對底部 `a0c4e99`。
 - 使用者 2026-09-29 回報 v0.12.0「試玩通過」，採記為本版線上試玩的人工驗收；未指明試玩裝置或逐項場景。原生 Android／iOS 的幀率、震動、延遲及觸控手感仍未驗證，本機 WebGL FPS 偏低不可代替。按 `docs/V090_ENCIRCLE_PLAN.md` 裁定 1，下一批是深淵先鋒，再來是立體地貌；改玩法前先凍結下一批規格。
-- 下一批已從 v0.12.0 人工驗收提交 `6151623` 開 `v0130-abyssal-vanguard` 分支；`docs/V0130_ABYSSAL_VANGUARD_PLAN.md` 是**待裁定草案**，沒有改遊戲程式。GDD 只定義第 10 分鐘先鋒甦醒、擊殺不直接翻塊與實體巨獸攻堅；中央出現、擊倒後公開引導歸屬、巨獸不自行佔領等為建議，需使用者裁定後才能凍結與實作。
+- 下一批已從 v0.12.0 人工驗收提交 `6151623` 開 `v0130-abyssal-vanguard` 分支；`docs/V0130_ABYSSAL_VANGUARD_PLAN.md` 仍是**部分待裁定草案**，沒有改遊戲程式。使用者已選：第 10 分鐘中央 0 號出現一次、雙方全圖可見且紅方 AI 參戰；擊倒後站圈引導 3.5 秒、受傷打斷才取得巨獸；巨獸沿棋盤攻向敵母板塊、攻擊敵英雄與牆，仍由玩家佔塔。先鋒／巨獸數值、AI 優先序、巨獸視野與生命週期尚待裁定，未凍結實作。
 
 ## v0.11.0 誓約天賦歷史驗收
 
