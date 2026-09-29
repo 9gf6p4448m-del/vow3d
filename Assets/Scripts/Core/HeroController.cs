@@ -284,6 +284,7 @@ namespace Vow.Core
         {
             if (target == null || !target.CanBeTargetedBy(_faction)) return false;
             if (target.TargetTransform == null) return !CaptureVisibilityLogic.AppliesTo(_captureVisibilityMatch);
+            if (target is IGlobalObjectiveVisibility objective && objective.IsGloballyVisibleTo(_faction)) return true;
             Vector3 targetPosition = target.TargetTransform.position;
             if (CaptureVisibilityLogic.AppliesTo(_captureVisibilityMatch))
             {

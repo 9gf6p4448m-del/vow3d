@@ -60,11 +60,12 @@ namespace Vow.EditorTools
             NavGridDebugView navGridDebug = CreateNavGridDebugView(materials.NavGrid);
             Transform elementZonePool = CreateElementZonePool(materials);
             CaptureBoardView captureBoard = CreateCaptureBoard(materials);
+            AbyssalVanguardTarget vanguardTarget = CreateAbyssalVanguard(materials);
             RageAuraView rageAuras = CreateRageAuras(materials.Rage);
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
             CreateSystems(hero, opponent, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform,
-                          runeWallPool, enemyWallPool, turret, elementZonePool, captureBoard, rageAuras);
+                          runeWallPool, enemyWallPool, turret, elementZonePool, captureBoard, rageAuras, vanguardTarget);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -83,6 +84,7 @@ namespace Vow.EditorTools
             public Material ZoneWater, ZoneBurning, ZoneQuicksand, ZoneSteam;
             public Material CaptureNeutral, CaptureBlue, CaptureRed;
             public Material Rage;
+            public Material Vanguard, BehemothBlue, BehemothRed, VanguardCore, VanguardWarning;
         }
 
         private static Materials CreateMaterials()
@@ -118,7 +120,12 @@ namespace Vow.EditorTools
                 CaptureBlue = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_CaptureBlue", new Color(0.2f, 0.48f, 1f, 0.45f), true, true),
                 CaptureRed = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_CaptureRed", new Color(1f, 0.22f, 0.18f, 0.45f), true, true),
                 // v0.9.0 E18：狂怒光環＝亮橘、不受光、不透明（與中灰半透明的棋盤、白色地板都拉得開）
-                Rage = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_Rage", new Color(1f, 0.5f, 0.05f, 1f), false, true)
+                Rage = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_Rage", new Color(1f, 0.5f, 0.05f, 1f), false, true),
+                Vanguard = GreyboxAssetFactory.EnsureLitMaterial("VOW_Vanguard", new Color(0.42f, 0.31f, 0.66f)),
+                BehemothBlue = GreyboxAssetFactory.EnsureLitMaterial("VOW_BehemothBlue", new Color(0.12f, 0.53f, 0.98f)),
+                BehemothRed = GreyboxAssetFactory.EnsureLitMaterial("VOW_BehemothRed", new Color(0.92f, 0.2f, 0.14f)),
+                VanguardCore = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_VanguardCore", new Color(0.98f, 0.78f, 0.22f, 0.66f), true, true),
+                VanguardWarning = GreyboxAssetFactory.EnsureUnlitMaterial("VOW_VanguardWarning", new Color(1f, 0.16f, 0.08f, 0.32f), true, true)
             };
         }
 
@@ -300,6 +307,70 @@ namespace Vow.EditorTools
             SetReference(overhead, "_barMaterial", barMaterial);
             SetFloat(overhead, "_height", 2f);
             return opponent;
+        }
+
+        // 根物件一直啟用，供 Bootstrap 的 FindObjectsOfType 與 collider registry 登記。
+        // 身體、核心圈、反擊預警都在 Editor 預建；核心圈沒有 Collider，點地射線可穿過。
+        private static AbyssalVanguardTarget CreateAbyssalVanguard(Materials materials)
+        {
+            GameObject root = new GameObject("AbyssalVanguard_Objective");
+            root.transform.position = new Vector3(3f, 0f, 0f);
+            CapsuleCollider capsule = root.AddComponent<CapsuleCollider>();
+            capsule.center = new Vector3(0f, 1.1f, 0f);
+            capsule.height = 2.2f;
+            capsule.radius = 0.8f;
+            capsule.enabled = false;
+
+            GameObject body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            body.name = "Vanguard_Body";
+            body.transform.SetParent(root.transform, false);
+            body.transform.localPosition = new Vector3(0f, 1.1f, 0f);
+            body.transform.localScale = new Vector3(1.6f, 1.1f, 1.6f);
+            Object.DestroyImmediate(body.GetComponent<Collider>());
+            Renderer bodyRenderer = body.GetComponent<Renderer>();
+            bodyRenderer.sharedMaterial = materials.Vanguard;
+            bodyRenderer.enabled = false;
+
+            GameObject core = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            core.name = "Vanguard_CoreCircle";
+            core.transform.SetParent(root.transform, false);
+            core.transform.localPosition = new Vector3(0f, 0.045f, 0f);
+            core.transform.localScale = new Vector3(5f, 0.015f, 5f);
+            Object.DestroyImmediate(core.GetComponent<Collider>());
+            core.layer = IgnoreRaycastLayer;
+            Renderer coreRenderer = core.GetComponent<Renderer>();
+            coreRenderer.sharedMaterial = materials.VanguardCore;
+            coreRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            coreRenderer.receiveShadows = false;
+            coreRenderer.enabled = false;
+
+            GameObject warning = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            warning.name = "Vanguard_CounterattackWarning";
+            warning.transform.SetParent(root.transform, false);
+            warning.transform.localPosition = new Vector3(0f, 0.065f, 0f);
+            warning.transform.localScale = new Vector3(10f, 0.012f, 10f);
+            Object.DestroyImmediate(warning.GetComponent<Collider>());
+            warning.layer = IgnoreRaycastLayer;
+            Renderer warningRenderer = warning.GetComponent<Renderer>();
+            warningRenderer.sharedMaterial = materials.VanguardWarning;
+            warningRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            warningRenderer.receiveShadows = false;
+            warningRenderer.enabled = false;
+
+            AbyssalVanguardTarget target = root.AddComponent<AbyssalVanguardTarget>();
+            SetReference(target, "_bodyRenderer", bodyRenderer);
+            SetReference(target, "_coreRenderer", coreRenderer);
+            SetReference(target, "_warningRenderer", warningRenderer);
+            SetReference(target, "_neutralMaterial", materials.Vanguard);
+            SetReference(target, "_blueMaterial", materials.BehemothBlue);
+            SetReference(target, "_redMaterial", materials.BehemothRed);
+            SetFloat(target, "_maxHealth", 0f);
+            SetEnum(target, "_faction", (int)Faction.Neutral);
+
+            TargetOverheadDisplay overhead = root.AddComponent<TargetOverheadDisplay>();
+            SetReference(overhead, "_barMaterial", materials.Bar);
+            SetFloat(overhead, "_height", 2.5f);
+            return target;
         }
 
         private static void CreateWall(string name, Vector3 position, float yawDegrees, Material material, Material barMaterial)
@@ -706,7 +777,8 @@ namespace Vow.EditorTools
         private static void CreateSystems(HeroController hero, TrainingOpponent opponent, Camera camera, FollowCameraRig rig, Transform shakePivot,
             Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug,
             Transform arenaBoundary, Transform runeWallPool, Transform enemyWallPool, TestTurret turret,
-            Transform elementZonePool, CaptureBoardView captureBoard, RageAuraView rageAuras)
+            Transform elementZonePool, CaptureBoardView captureBoard, RageAuraView rageAuras,
+            AbyssalVanguardTarget vanguardTarget)
         {
             GameObject systems = new GameObject("VOW_Systems");
 
@@ -772,6 +844,7 @@ namespace Vow.EditorTools
             SetReference(bootstrap, "_elementZonePool", elementZonePool);
             SetReference(bootstrap, "_captureBoard", captureBoard);
             SetReference(bootstrap, "_rageAuras", rageAuras);
+            SetReference(bootstrap, "_vanguardTarget", vanguardTarget);
         }
 
         // ───────────────────────── 專案設定 ─────────────────────────

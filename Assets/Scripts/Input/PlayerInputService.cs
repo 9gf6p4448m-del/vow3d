@@ -414,6 +414,7 @@ namespace Vow.Input
         {
             if (_targetResolver == null) return false;
             if (!_targetResolver.TryResolve(collider, out ICombatTarget target) || target == null) return false;
+            if (target is IGlobalObjectiveVisibility && target.TargetFaction == _localFaction) return true;
             if (target.TargetFaction != Faction.DestructibleWall) return false;
 
             IFactionOwned owned = target as IFactionOwned;
@@ -425,6 +426,7 @@ namespace Vow.Input
             if (!CaptureVisibilityLogic.AppliesTo(_captureFogMatch) || _captureFogViewer == null
                 || _targetResolver == null || !_targetResolver.TryResolve(collider, out ICombatTarget target)
                 || target == null || !target.IsAlive || target.TargetTransform == null) return false;
+            if (target is IGlobalObjectiveVisibility objective && objective.IsGloballyVisibleTo(_localFaction)) return false;
             Vector3 viewer = _captureFogViewer.transform.position;
             Vector3 position = target.TargetTransform.position;
             return !CaptureVisibilityLogic.CanSee(_captureFogMatch, (int)_localFaction,

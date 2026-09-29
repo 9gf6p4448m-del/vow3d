@@ -35,6 +35,7 @@ namespace Vow.Bootstrap
         [SerializeField] private Transform _arenaBoundary;
         [SerializeField] private TrainingOpponent _opponent;
         [SerializeField] private SkillTelegraphService _opponentTelegraph;
+        [SerializeField] private AbyssalVanguardTarget _vanguardTarget;
 
         private readonly DuelTuning _duelTuning = new DuelTuning();
         private DuelRoundLogic _duelRound;
@@ -123,6 +124,7 @@ namespace Vow.Bootstrap
         // ── v0.6.1 的驗收面：PlayMode 測試 asmdef 看不到 Vow.UI，STATE 列的顯示值改由這裡轉交 ──
         public ReactionCalloutDisplay Callouts => _callouts;
         public string HudStateLabel => _hud != null ? _hud.StateLabel : null;
+        public string VanguardStatusLabel => _hud != null ? _hud.VanguardStatusLabel : null;
 
         // ───────────────────── v0.8.0：七塊板塊佔領迴圈（V080_CAPTURE_PLAN.md §2.1-3）─────────────────────
         // 規則與時序全部在 CaptureMatchLogic（純邏輯、已驗收）；這裡只做 Unity 端的接線：每幀 Tick、受傷／倒地分派、
@@ -136,6 +138,8 @@ namespace Vow.Bootstrap
         private readonly CaptureBoardSpec _captureSpec = CaptureBoardSpec.V0100Sanctuary;
         private CaptureMatchLogic _capture;
         private CaptureMatchView _captureView;
+        private readonly AbyssalVanguardTuning _vanguardTuning = new AbyssalVanguardTuning();
+        private AbyssalVanguardLogic _vanguardLogic;
         private CombatTargetBehaviour[] _navBlockers = new CombatTargetBehaviour[0]; // 復活傳送後逐一推出（R10）
         private DummyTarget[] _dummies = new DummyTarget[0];                        // 佔領模式停用、回單挑恢復（r1 M1）
         private TestWallTarget[] _testWalls = new TestWallTarget[0];                // 佔領模式停用、回單挑恢復（v0.9.0 E22）
@@ -152,6 +156,9 @@ namespace Vow.Bootstrap
         public int CaptureInterruptCount => _capture != null ? _capture.InterruptCount : 0;
         public int CaptureRespawnCount => _capture != null ? _capture.RespawnCount : 0;
         public CaptureBoardSpec CaptureSpec => _captureSpec;
+        public AbyssalVanguardLogic VanguardLogic => _vanguardLogic;
+        public AbyssalVanguardTarget VanguardTarget => _vanguardTarget;
+        public AbyssalVanguardTuning VanguardTuning => _vanguardTuning;
         public RageAuraView RageAuras => _rageAuras;
         public int CaptureBlueNeutralizedCount => _capture != null ? _capture.BlueNeutralizedCount : 0;
         public int CaptureRedNeutralizedCount => _capture != null ? _capture.RedNeutralizedCount : 0;
@@ -344,6 +351,14 @@ namespace Vow.Bootstrap
             _navBlockers = CollectNavBlockers(targets);
             _dummies = CollectDummies(targets);
             _testWalls = CollectTestWalls(targets);
+            if (_capture != null && _vanguardTarget != null)
+            {
+                _vanguardLogic = new AbyssalVanguardLogic(_vanguardTuning);
+                _vanguardTarget.Initialize(_hero, _opponent, _captureSpec, _navigator, _navTuning.BodyRadius,
+                                            targets, _vanguardTuning);
+                _vanguardTarget.OnDied += HandleVanguardDied;
+                _opponent.ConfigureVanguard(_vanguardLogic, _vanguardTarget);
+            }
 
             _input.Initialize(_targets, _camera);
             _input.SetCaptureFog(_capture, _hero);
@@ -428,6 +443,7 @@ namespace Vow.Bootstrap
                 if (_captureView != null)
                     _hud.ConfigureCapture(_captureView, HandleCaptureButton, _captureSpec.TalentsEnabled,
                                           _captureSpec.TalentsEnabled ? (Action<PactTalent>)ChooseBlueTalent : null);
+                if (_vanguardLogic != null) _hud.ConfigureVanguard(_vanguardLogic, ReadVanguardHealth);
             }
             if (_aimPreview != null) _aimPreview.Initialize(_hero, _input, _telegraph, _camera);
         }
@@ -440,6 +456,7 @@ namespace Vow.Bootstrap
             if (_hero != null) _hero.OnDuelDamaged -= HandleHeroDamaged;
             if (_opponent != null) _opponent.OnDied -= HandleOpponentDied;
             if (_opponent != null && _opponentDamagedHandler != null) _opponent.OnDamaged -= _opponentDamagedHandler;
+            if (_vanguardTarget != null) _vanguardTarget.OnDied -= HandleVanguardDied;
             if (_duelInput != null)
             {
                 _duelInput.OnStartRequested -= StartDuel;
@@ -475,6 +492,14 @@ namespace Vow.Bootstrap
                 _opponent.SetFogVisible(!fogActive || CaptureVisibilityLogic.CanSee(
                     _capture, CaptureMatchLogic.BlueFactionId, heroPosition.x, heroPosition.z,
                     heroKnockedOut, position.x, position.z));
+            }
+            if (_vanguardTarget != null && _vanguardTarget.Phase == AbyssalVanguardTarget.ObjectivePhase.Behemoth)
+            {
+                Vector3 position = _vanguardTarget.transform.position;
+                _vanguardTarget.SetFogVisible(!fogActive ||
+                    _vanguardTarget.IsGloballyVisibleTo(Faction.BlueTeam) ||
+                    CaptureVisibilityLogic.CanSee(_capture, CaptureMatchLogic.BlueFactionId,
+                        heroPosition.x, heroPosition.z, heroKnockedOut, position.x, position.z));
             }
             RuneWall[] walls = _enemyWalls != null ? _enemyWalls.Pool : null;
             if (walls == null) return;
@@ -513,6 +538,7 @@ namespace Vow.Bootstrap
         }
 
         private float ReadOpponentHealth() { return _opponent != null ? _opponent.Health : 0f; }
+        private float ReadVanguardHealth() { return _vanguardTarget != null ? _vanguardTarget.Health : 0f; }
 
         // ───────────────────── v0.8.0：佔領迴圈的 Unity 端接線 ─────────────────────
 
@@ -612,6 +638,13 @@ namespace Vow.Bootstrap
             int redTileBefore = _capture.RedKnockedOut ? -1 : _capture.RedChannelingTile;
             int flipsBefore = _capture.FlipCount;
             _capture.Tick(dt, heroPosition.x, heroPosition.z, opponentPosition.x, opponentPosition.z);
+            if (_vanguardLogic != null)
+            {
+                _vanguardLogic.Tick(dt, _capture.State, _capture.MatchElapsed,
+                    heroPosition.x, heroPosition.z, !_capture.BlueKnockedOut && _hero.IsAlive,
+                    opponentPosition.x, opponentPosition.z, !_capture.RedKnockedOut && _opponent.IsAlive);
+                SyncVanguardState();
+            }
             // 紅方翻塊＝本 tick 翻塊數增加、紅方原本在引導 t、tick 後紅方引導歸零而它人仍在 t 的光圈內
             //（離圈或換圈時引導也會歸零，但那時人已不在 t；爭奪時引導凍結不歸零）。孤島翻塊當場中立化也算翻塊（E10）。
             if (redTileBefore >= 0 && _capture.FlipCount > flipsBefore && _capture.RedChannelingTile == -1
@@ -624,6 +657,37 @@ namespace Vow.Bootstrap
             if (before == CaptureMatchState.Active && _capture.State == CaptureMatchState.Ended) EnterCaptureEndPause();
             if (_capture.TryConsumeJustReturnedToLobby()) ReturnToCaptureLobby();
             ApplyRageSpeed();
+        }
+
+        private void HandleVanguardDied()
+        {
+            if (_vanguardLogic == null) return;
+            if (_vanguardLogic.Phase == AbyssalVanguardPhase.Vanguard) _vanguardLogic.NotifyVanguardDefeated();
+            else if (_vanguardLogic.Phase == AbyssalVanguardPhase.Behemoth) _vanguardLogic.NotifyBehemothDefeated();
+        }
+
+        private void SyncVanguardState()
+        {
+            if (_vanguardTarget == null) return;
+            switch (_vanguardLogic.Phase)
+            {
+                case AbyssalVanguardPhase.Vanguard:
+                    if (_vanguardTarget.Phase != AbyssalVanguardTarget.ObjectivePhase.Vanguard)
+                        _vanguardTarget.ActivateVanguard();
+                    break;
+                case AbyssalVanguardPhase.Core:
+                    if (_vanguardTarget.Phase != AbyssalVanguardTarget.ObjectivePhase.Core)
+                        _vanguardTarget.ShowCore();
+                    break;
+                case AbyssalVanguardPhase.Behemoth:
+                    if (_vanguardTarget.Phase != AbyssalVanguardTarget.ObjectivePhase.Behemoth)
+                        _vanguardTarget.ActivateBehemoth(_vanguardLogic.BehemothOwner);
+                    break;
+                default:
+                    if (_vanguardTarget.Phase != AbyssalVanguardTarget.ObjectivePhase.Inactive)
+                        _vanguardTarget.Deactivate();
+                    break;
+            }
         }
 
         // E17：狂怒倍率每幀依 view 寫入（復活走 ResetForDuel 會把倍率歸 1，只寫一次會失效，R3）。
@@ -651,6 +715,8 @@ namespace Vow.Bootstrap
         private void StartCapture()
         {
             if (_capture == null || !_capture.TryStart()) return;
+            _vanguardLogic?.ResetForMatch();
+            _vanguardTarget?.Deactivate();
             RefreshBluePactModifiers();
             _hero.CancelCombatForDuel();
             _shield?.Clear();
@@ -708,11 +774,13 @@ namespace Vow.Bootstrap
         private void HandleHeroDamaged()
         {
             if (CaptureState == CaptureMatchState.Active) _capture.NotifyDamaged(CaptureMatchLogic.BlueFactionId);
+            if (CaptureState == CaptureMatchState.Active) _vanguardLogic?.NotifyHeroDamaged(CaptureMatchLogic.BlueFactionId);
         }
 
         private void HandleOpponentDamaged(float applied)
         {
             if (CaptureState == CaptureMatchState.Active) _capture.NotifyDamaged(CaptureMatchLogic.RedFactionId);
+            if (CaptureState == CaptureMatchState.Active) _vanguardLogic?.NotifyHeroDamaged(CaptureMatchLogic.RedFactionId);
         }
 
         // 復活（E20／E21）：座標由 CaptureMatchLogic 在到期那個 tick 決定；補滿血並沿用 ResetForDuel 的清單。
@@ -1125,6 +1193,7 @@ namespace Vow.Bootstrap
                 if (boundary != null) _arenaBoundary = boundary.transform;
             }
             if (_opponent == null) _opponent = FindObjectOfType<TrainingOpponent>();
+            if (_vanguardTarget == null) _vanguardTarget = FindObjectOfType<AbyssalVanguardTarget>();
             if (_captureBoard == null) _captureBoard = FindObjectOfType<CaptureBoardView>(true); // 預設是關著的
             if (_rageAuras == null) _rageAuras = FindObjectOfType<RageAuraView>(true);
             if (_runeWallPool == null)

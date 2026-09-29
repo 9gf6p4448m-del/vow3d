@@ -64,7 +64,12 @@ namespace Vow.Combat
         private TargetOverheadDisplay _overhead;
         private bool _captureMode;
         private bool _chasingHero;
+        private bool _chasingVanguard;
+        private bool _movingToVanguardCore;
+        private bool _attackVanguard;
         private int _targetTile = -1;
+        private AbyssalVanguardLogic _vanguardLogic;
+        private AbyssalVanguardTarget _vanguardTarget;
 
         public bool IsCaptureMode => _captureMode;
         public bool IsChasingHero => _chasingHero;
@@ -90,10 +95,19 @@ namespace Vow.Combat
             _ownershipBuffer = new int[spec.TileCount];
         }
 
+        public void ConfigureVanguard(AbyssalVanguardLogic logic, AbyssalVanguardTarget target)
+        {
+            _vanguardLogic = logic;
+            _vanguardTarget = target;
+        }
+
         public void SetCaptureMode(bool captureMode)
         {
             _captureMode = captureMode;
             _chasingHero = false;
+            _chasingVanguard = false;
+            _movingToVanguardCore = false;
+            _attackVanguard = false;
             _targetTile = -1;
             _stunRemaining = 0f;
             _wallCooldownRemaining = 0f;
@@ -109,6 +123,9 @@ namespace Vow.Combat
             _phase = AttackPhase.Chase;
             _phaseRemaining = 0f;
             _chasingHero = false;
+            _chasingVanguard = false;
+            _movingToVanguardCore = false;
+            _attackVanguard = false;
             _targetTile = -1;
             _active = _hero != null;
         }
@@ -195,6 +212,9 @@ namespace Vow.Combat
         public void StopRound()
         {
             _active = false;
+            _chasingVanguard = false;
+            _movingToVanguardCore = false;
+            _attackVanguard = false;
             _stunRemaining = 0f;
             _wallCooldownRemaining = 0f;
             _locomotion.Stop();
@@ -268,7 +288,7 @@ namespace Vow.Combat
             if (!_active || _frozen || _hero == null || _captureView == null || _captureTuning == null || _captureSpec == null) return;
             float dt = Time.deltaTime;
             if (_captureView.State != CaptureMatchState.Active) return;
-            if (!CanSeeHero() && (_chasingHero || _phase != AttackPhase.Chase))
+            if (!_attackVanguard && !CanSeeHero() && (_chasingHero || _phase != AttackPhase.Chase))
             {
                 _chasingHero = false;
                 _phase = AttackPhase.Chase;
@@ -319,6 +339,9 @@ namespace Vow.Combat
 
             if (decision.ChaseHero)
             {
+                _chasingVanguard = false;
+                _movingToVanguardCore = false;
+                _attackVanguard = false;
                 float distance = Vector2.Distance(new Vector2(self.x, self.z),
                                                   new Vector2(heroPosition.x, heroPosition.z));
                 if (_captureWallCast != null && _captureWallTuning != null && _wallCooldownRemaining <= 0f
@@ -352,8 +375,24 @@ namespace Vow.Combat
                 return;
             }
 
+            if (_vanguardLogic != null && _vanguardTarget != null
+                && _vanguardLogic.Phase == AbyssalVanguardPhase.Vanguard && _vanguardTarget.IsAlive)
+            {
+                ChaseVanguard(dt, self);
+                return;
+            }
+
+            if (_vanguardLogic != null && _vanguardLogic.Phase == AbyssalVanguardPhase.Core)
+            {
+                MoveToVanguardCore(dt, self);
+                return;
+            }
+
             bool wasChasing = _chasingHero;
             _chasingHero = false;
+            _chasingVanguard = false;
+            _movingToVanguardCore = false;
+            _attackVanguard = false;
             if (wasChasing || decision.TargetTile != _targetTile)
             {
                 _targetTile = decision.TargetTile;
@@ -367,6 +406,53 @@ namespace Vow.Combat
                 float radius = _captureTuning.CircleRadius;
                 if (dx * dx + dz * dz > radius * radius) IssueTileOrder(self.y);
             }
+            _locomotion.Step(dt);
+        }
+
+        private void ChaseVanguard(float dt, Vector3 self)
+        {
+            _chasingHero = false;
+            _movingToVanguardCore = false;
+            _targetTile = -1;
+            Vector3 position = _vanguardTarget.transform.position;
+            if (!_chasingVanguard || _locomotion.HasArrived) _locomotion.Chase(_vanguardTarget.transform);
+            _chasingVanguard = true;
+
+            Vector3 offset = position - self;
+            offset.y = 0f;
+            float stop = _tuning.OpponentStopDistance;
+            if (offset.sqrMagnitude > stop * stop || HasBlockingWall(position))
+            {
+                _locomotion.Step(dt);
+                return;
+            }
+
+            _locomotion.Stop();
+            _locomotion.FaceTowards(position);
+            _attackCenter = position;
+            _attackCenter.y = 0f;
+            _attackVanguard = true;
+            _telegraph?.ShowZoneIndicator(_attackCenter, _tuning.AttackRadius, 0.09f);
+            _phaseRemaining = _tuning.WindupSeconds;
+            _phase = AttackPhase.Windup;
+        }
+
+        private void MoveToVanguardCore(float dt, Vector3 self)
+        {
+            _chasingHero = false;
+            _chasingVanguard = false;
+            _attackVanguard = false;
+            _targetTile = -1;
+            Vector3 core = new Vector3(_vanguardLogic.CoreX, self.y, _vanguardLogic.CoreZ);
+            float dx = core.x - self.x;
+            float dz = core.z - self.z;
+            if (dx * dx + dz * dz <= _vanguardLogic.CoreRadius * _vanguardLogic.CoreRadius)
+            {
+                _locomotion.Stop();
+                return;
+            }
+            if (!_movingToVanguardCore || _locomotion.HasArrived) _locomotion.MoveTo(core);
+            _movingToVanguardCore = true;
             _locomotion.Step(dt);
         }
 
@@ -391,6 +477,18 @@ namespace Vow.Combat
 
         private void ResolveAttack()
         {
+            if (_captureMode && _attackVanguard)
+            {
+                if (_vanguardLogic == null || _vanguardLogic.Phase != AbyssalVanguardPhase.Vanguard
+                    || _vanguardTarget == null || !_vanguardTarget.IsAlive) return;
+                Vector3 boss = _vanguardTarget.transform.position;
+                float bossX = boss.x - _attackCenter.x;
+                float bossZ = boss.z - _attackCenter.z;
+                float bossRadius = _tuning.AttackRadius;
+                if (bossX * bossX + bossZ * bossZ <= bossRadius * bossRadius && !HasBlockingWall(boss))
+                    _vanguardTarget.ReceiveDamage(_tuning.OpponentDamage, DamageType.Physical, gameObject);
+                return;
+            }
             if (!_hero.IsAlive) return;
             Vector3 target = _hero.transform.position;
             float dx = target.x - _attackCenter.x;

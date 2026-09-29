@@ -136,6 +136,15 @@ namespace Vow.UI
         private string _clockLabel;
         private int _sanctuaryRowShown = SanctuaryRowHidden;
         private string _sanctuaryLabel;
+        private AbyssalVanguardLogic _vanguardLogic;
+        private Func<float> _readVanguardHealth;
+        private Rect _vanguardStatusRect;
+        private string _vanguardStatusLabel;
+        private AbyssalVanguardPhase _vanguardPhaseShown = AbyssalVanguardPhase.Dormant;
+        private int _vanguardHealthShown = -1;
+        private int _vanguardBlueProgressShown = -1;
+        private int _vanguardRedProgressShown = -1;
+        private int _vanguardSecondsShown = -1;
 
         // 比分／復活字串被重算過幾次（零配置量測的活性，V-C03）。
         public int CaptureScoreLabelRecomputeCount { get; private set; }
@@ -167,6 +176,14 @@ namespace Vow.UI
             }
             RecalculateLayout();
         }
+
+        public void ConfigureVanguard(AbyssalVanguardLogic logic, Func<float> readHealth)
+        {
+            _vanguardLogic = logic;
+            _readVanguardHealth = readHealth;
+        }
+
+        public string VanguardStatusLabel => _vanguardStatusLabel;
 
         public void PressCaptureButton() { if (_pressCapture != null) _pressCapture(); }
 
@@ -306,6 +323,7 @@ namespace Vow.UI
             }
 
             if (CaptureTopRowsVisible) RefreshCaptureTopRows();
+            RefreshVanguardLabel();
 
             if (!_captureView.BlueKnockedOut) return;
             float remaining = _captureView.BlueRespawnRemaining;
@@ -315,6 +333,48 @@ namespace Vow.UI
             _respawnSecondsShown = seconds;
             _respawnLabel = CaptureHudLabels.Respawn(remaining);
             CaptureRespawnLabelRecomputeCount++;
+        }
+
+        private void RefreshVanguardLabel()
+        {
+            if (_captureView.State != CaptureMatchState.Active || _vanguardLogic == null)
+            {
+                _vanguardStatusLabel = null;
+                _vanguardPhaseShown = AbyssalVanguardPhase.Dormant;
+                return;
+            }
+
+            AbyssalVanguardPhase phase = _vanguardLogic.Phase;
+            int health = _readVanguardHealth != null ? Mathf.CeilToInt(_readVanguardHealth()) : 0;
+            int blueProgress = Mathf.FloorToInt(_vanguardLogic.BlueCoreProgress * 10f);
+            int redProgress = Mathf.FloorToInt(_vanguardLogic.RedCoreProgress * 10f);
+            int seconds = Mathf.CeilToInt(_vanguardLogic.BehemothRemaining);
+            if (phase == _vanguardPhaseShown && health == _vanguardHealthShown
+                && blueProgress == _vanguardBlueProgressShown && redProgress == _vanguardRedProgressShown
+                && seconds == _vanguardSecondsShown) return;
+
+            _vanguardPhaseShown = phase;
+            _vanguardHealthShown = health;
+            _vanguardBlueProgressShown = blueProgress;
+            _vanguardRedProgressShown = redProgress;
+            _vanguardSecondsShown = seconds;
+            switch (phase)
+            {
+                case AbyssalVanguardPhase.Vanguard:
+                    _vanguardStatusLabel = "VANGUARD 0: " + health + "/900";
+                    break;
+                case AbyssalVanguardPhase.Core:
+                    _vanguardStatusLabel = "CORE B " + (blueProgress / 10f).ToString("0.0")
+                        + "  R " + (redProgress / 10f).ToString("0.0") + " /3.5";
+                    break;
+                case AbyssalVanguardPhase.Behemoth:
+                    _vanguardStatusLabel = (_vanguardLogic.BehemothOwner == CaptureMatchLogic.BlueFactionId
+                        ? "BLUE BEAST " : "RED BEAST ") + health + " / " + seconds + "s";
+                    break;
+                default:
+                    _vanguardStatusLabel = null;
+                    break;
+            }
         }
 
         // v0.10.0 E16／E17：倒數與第二列只在整數秒或顯示內容真的變了才查表（預建字串表，零配置）。
@@ -680,6 +740,9 @@ namespace Vow.UI
             // v0.10.0 E17：上方正中兩列同樣向 DebugHudLayout 要（算式獨立，不影響上面任何矩形）。
             _matchClockRect = ToRect(layout.MatchClock);
             _sanctuaryRowRect = ToRect(layout.SanctuaryRow);
+            float objectiveX = Mathf.Max(260f, _sanctuaryRowRect.center.x - 100f);
+            _vanguardStatusRect = new Rect(objectiveX, _sanctuaryRowRect.y + 22f,
+                                           Mathf.Min(200f, _matchPanelRect.x - objectiveX - 8f), 22f);
             _talentPanelRect = ToRect(layout.TalentPanel);
             _talentTitleRect = ToRect(layout.TalentTitle);
             _talentFirstRect = ToRect(layout.TalentFirst);
@@ -907,9 +970,20 @@ namespace Vow.UI
             Fill(_matchClockRect, PanelColor);
             GUI.Label(_matchClockRect, clock, _buttonLabel);
             string row = CaptureSanctuaryLabel;
-            if (row == null) return;
-            Fill(_sanctuaryRowRect, PanelColor);
-            GUI.Label(_sanctuaryRowRect, row, _buttonLabel);
+            if (row != null)
+            {
+                Fill(_sanctuaryRowRect, PanelColor);
+                GUI.Label(_sanctuaryRowRect, row, _buttonLabel);
+            }
+            if (_vanguardStatusLabel != null)
+            {
+                Rect statusRect = TalentPanelVisible
+                    ? new Rect(_vanguardStatusRect.x, _talentPanelRect.yMax + 4f,
+                               _vanguardStatusRect.width, _vanguardStatusRect.height)
+                    : _vanguardStatusRect;
+                Fill(statusRect, PanelColor);
+                GUI.Label(statusRect, _vanguardStatusLabel, _buttonLabel);
+            }
         }
 
         private void DrawTalentPanel()
