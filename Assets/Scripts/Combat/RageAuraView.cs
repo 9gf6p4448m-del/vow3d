@@ -1,5 +1,6 @@
 using UnityEngine;
 using Vow.Core;
+using Vow.Core.Logic;
 
 namespace Vow.Combat
 {
@@ -14,6 +15,7 @@ namespace Vow.Combat
         [SerializeField] private Renderer _redAura;
 
         private ICaptureMatchView _view;
+        private CaptureMatchLogic _visibilityMatch;
         private Transform _heroBody;
         private Transform _opponentBody;
         private Transform _blueTransform;
@@ -29,7 +31,14 @@ namespace Vow.Combat
 
         public void Initialize(ICaptureMatchView view, Transform heroBody, Transform opponentBody)
         {
+            Initialize(view, heroBody, opponentBody, null);
+        }
+
+        public void Initialize(ICaptureMatchView view, Transform heroBody, Transform opponentBody,
+                               CaptureMatchLogic visibilityMatch)
+        {
             _view = view;
+            _visibilityMatch = visibilityMatch;
             _heroBody = heroBody;
             _opponentBody = opponentBody;
             // Transform 包裝在這裡抓一次（第一次讀 Component.transform 才建出 managed 包裝，不讓它落在 LateUpdate）。
@@ -48,7 +57,16 @@ namespace Vow.Combat
         {
             if (_view == null) return;
             Refresh(_blueAura, _blueTransform, _blueY, _heroBody, _view.BlueRageRemaining > 0f && !_view.BlueKnockedOut);
-            Refresh(_redAura, _redTransform, _redY, _opponentBody, _view.RedRageRemaining > 0f && !_view.RedKnockedOut);
+            bool redVisible = true;
+            if (_heroBody != null && _opponentBody != null && CaptureVisibilityLogic.AppliesTo(_visibilityMatch))
+            {
+                Vector3 hero = _heroBody.position;
+                Vector3 opponent = _opponentBody.position;
+                redVisible = CaptureVisibilityLogic.CanSee(_visibilityMatch, CaptureMatchLogic.BlueFactionId,
+                    hero.x, hero.z, _view.BlueKnockedOut, opponent.x, opponent.z);
+            }
+            Refresh(_redAura, _redTransform, _redY, _opponentBody,
+                redVisible && _view.RedRageRemaining > 0f && !_view.RedKnockedOut);
         }
 
         private void Refresh(Renderer aura, Transform auraTransform, float y, Transform body, bool shown)

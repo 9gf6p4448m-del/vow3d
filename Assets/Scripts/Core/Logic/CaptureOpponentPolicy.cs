@@ -33,8 +33,19 @@ namespace Vow.Core.Logic
             bool wasChasingLastFrame,
             int[] ownership, CaptureTuning tuning, CaptureBoardSpec spec)
         {
+            return Decide(opponentX, opponentZ, heroX, heroZ, heroKnockedOut, wasChasingLastFrame,
+                          true, ownership, tuning, spec);
+        }
+
+        // v0.12.0：正式 19 塊局由對稱視野先決定紅方是否知道英雄位置；舊規格呼叫上方多載，維持原行為。
+        public static CaptureOpponentDecision Decide(
+            float opponentX, float opponentZ,
+            float heroX, float heroZ, bool heroKnockedOut,
+            bool wasChasingLastFrame, bool heroVisible,
+            int[] ownership, CaptureTuning tuning, CaptureBoardSpec spec)
+        {
             bool chase = false;
-            if (!heroKnockedOut)
+            if (!heroKnockedOut && heroVisible)
             {
                 float dx = heroX - opponentX;
                 float dz = heroZ - opponentZ;

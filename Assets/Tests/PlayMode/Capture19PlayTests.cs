@@ -70,6 +70,7 @@ namespace Vow.Tests.PlayMode
             Assert.IsNotNull(_bootstrap);
             Assert.IsNotNull(_hero);
             Assert.IsNotNull(_opponent);
+            _bootstrap.DisableFogForLegacyCaptureTests();
             _heroLocomotion = _hero.GetComponent<HeroLocomotion>();
             _opponentLocomotion = _opponent.GetComponent<HeroLocomotion>();
             _board = _bootstrap.CaptureBoard;

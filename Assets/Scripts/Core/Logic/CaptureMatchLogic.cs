@@ -83,6 +83,12 @@ namespace Vow.Core.Logic
         }
 
         public CaptureBoardSpec Spec => _spec;
+        public bool FogEnabled { get; private set; } = true;
+
+#if UNITY_EDITOR
+        // 只由 Editor 的舊版場景回歸入口使用：保留 v0.9～v0.11 原腳本的全圖可見前提。
+        public void DisableFogForLegacyTest() { FogEnabled = false; }
+#endif
         public int TileCount => _spec.TileCount;
 
         public CaptureMatchState State { get; private set; } = CaptureMatchState.Off;

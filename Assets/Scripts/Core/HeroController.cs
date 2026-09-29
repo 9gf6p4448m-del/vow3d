@@ -33,6 +33,7 @@ namespace Vow.Core
         private PactTalent _pactAttackTalent;
         private ICombatTargetResolver _attackTargetResolver;
         private Func<Vector3, float> _attackDamageMultiplier;
+        private CaptureMatchLogic _captureVisibilityMatch;
 
         // ── Phase 2 批 4：元素場 ──
         // 英雄只認得 Vow.Core 的查詢介面（Vow.Core 不得反向依賴 Vow.Combat）。
@@ -75,6 +76,11 @@ namespace Vow.Core
         public void SetAttackDamageMultiplier(Func<Vector3, float> multiplier)
         {
             _attackDamageMultiplier = multiplier;
+        }
+
+        public void SetCaptureVisibilityMatch(CaptureMatchLogic match)
+        {
+            _captureVisibilityMatch = match;
         }
         public event Action OnKnockedOut;
 
@@ -270,16 +276,26 @@ namespace Vow.Core
             _wasRooted = isRootedNow;
         }
 
-        // 全英雄唯一的「這個目標打不打得到」（§2「鎖定判準的收斂」）：陣營校驗 ＋ 蒸氣遮蔽。
+        // 全英雄唯一的「這個目標打不打得到」（§2「鎖定判準的收斂」）：陣營、佔領視野、蒸氣遮蔽。
         // 生產呼叫點 N＝2（點擊當下的 HandleTargetSelected、持續驗證的 IsTargetValid），兩個都走這裡，
         // 涵蓋 2/2。`ICombatTarget.CanBeTargetedBy(Faction)` 的簽章一字不動——它拿不到攻擊者座標，
         // 而蒸氣規則②（同一團霧裡的攻擊者照樣打得到）需要。
         public bool CanEngage(ICombatTarget target)
         {
             if (target == null || !target.CanBeTargetedBy(_faction)) return false;
-            if (_elementField == null || target.TargetTransform == null) return true;
+            if (target.TargetTransform == null) return !CaptureVisibilityLogic.AppliesTo(_captureVisibilityMatch);
+            Vector3 targetPosition = target.TargetTransform.position;
+            if (CaptureVisibilityLogic.AppliesTo(_captureVisibilityMatch))
+            {
+                Vector3 heroPosition = transform.position;
+                if (!CaptureVisibilityLogic.CanSee(_captureVisibilityMatch, (int)_faction,
+                    heroPosition.x, heroPosition.z, !IsAlive, targetPosition.x, targetPosition.z)) return false;
+                if (CaptureVisibilityLogic.HasTrueVision(_captureVisibilityMatch, (int)_faction,
+                    targetPosition.x, targetPosition.z)) return true;
+            }
+            if (_elementField == null) return true;
             bool revealed = target is IConcealable concealable && concealable.IsRevealed;
-            return !_elementField.IsConcealedFrom(target.TargetTransform.position, revealed, transform.position);
+            return !_elementField.IsConcealedFrom(targetPosition, revealed, transform.position);
         }
 
         // ───────────────────────── 輸入 → 指令 ─────────────────────────

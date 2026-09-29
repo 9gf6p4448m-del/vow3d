@@ -199,6 +199,10 @@ namespace Vow.Tests.EditMode
             Assert.IsTrue(chase.ChaseHero, "英雄 (6.0,0) → 追");
             var noChase = CaptureOpponentPolicy.Decide(0f, 0f, 6.0625f, 0f, false, false, a, tuning, spec);
             Assert.IsFalse(noChase.ChaseHero, "英雄 (6.0625,0) → 不追");
+            Assert.IsFalse(CaptureOpponentPolicy.Decide(0f, 0f, 1f, 0f, false, false,
+                false, a, tuning, spec).ChaseHero, "看不見英雄時即使近在追擊距離內也不得追");
+            Assert.IsTrue(CaptureOpponentPolicy.Decide(0f, 0f, 1f, 0f, false, false,
+                true, a, tuning, spec).ChaseHero, "可見時保留既有追擊規則");
             // 加嚴（實作者 2026-09-25，補紅燈「新多載仍用 7 塊資料」在 Decide 路徑上的鑑別力）：不追時的目標也走 19 塊資料。
             var target = CaptureOpponentPolicy.Decide(0f, 7.578125f, 1000f, 1000f, false, false, b, tuning, spec);
             Assert.IsFalse(target.ChaseHero);

@@ -12,10 +12,12 @@ namespace Vow.Combat
     {
         private BoxCollider _collider;
         private Renderer _renderer;
+        private TargetOverheadDisplay _overhead;
         private RuneTuning _tuning;
         private RuneWallLogic _logic;
         private RuneCaster _caster;
         private int _slotIndex = -1;
+        private bool _fogVisible = true;
 
         // Phase 2 批 4：岩＝既有石牆（使用者裁定 1）。落點在水域內時凝結成泥濘流沙。
         // null 時 Activate 完全跳過這段，行為與 v0.5.0 逐行相同（既有石牆測試的盤面沒有 ElementField）。
@@ -34,11 +36,21 @@ namespace Vow.Combat
         // （V4-a／V4-b）能把它與 ((ICombatTarget)this).Health 逐值對照——合帳前兩者會分岔，合帳後必須相同。
         public float LogicHealth => _logic != null ? _logic.Health : 0f;
 
+        // 迷霧只改外觀，不關 Collider／導航阻擋；池中待命與死亡仍由 IsAlive 決定。
+        public void SetFogVisible(bool visible)
+        {
+            if (_fogVisible == visible) return;
+            _fogVisible = visible;
+            if (_renderer != null) _renderer.enabled = visible && IsAlive;
+            if (_overhead != null) _overhead.SetHidden(!visible);
+        }
+
         protected override void Awake()
         {
             base.Awake();
             _collider = GetComponent<BoxCollider>();
             _renderer = GetComponentInChildren<Renderer>();
+            _overhead = GetComponent<TargetOverheadDisplay>();
             if (_tuning == null) _tuning = new RuneTuning();
             if (_logic == null) _logic = new RuneWallLogic(_tuning);
 
@@ -74,7 +86,7 @@ namespace Vow.Combat
             _logic.Activate();
 
             _collider.enabled = true;
-            if (_renderer != null) _renderer.enabled = true;
+            if (_renderer != null) _renderer.enabled = _fogVisible;
 
             // 登記格點：推出被壓住的英雄由 CombatTargetBehaviour.Stamp 統一通知（§6 R4），
             // 這裡不再另開一條只有符印牆走得到的事件。

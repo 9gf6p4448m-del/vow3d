@@ -15,6 +15,11 @@ namespace Vow.Combat
     public sealed class CaptureBoardView : MonoBehaviour
     {
         private const float DiscHeightScale = 0.01f;
+        private const float FogFloorBrightness = 0.28f;
+        private const float FogTowerBrightness = 0.48f;
+        private const float FogRingBrightness = 0.35f;
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        private static readonly int ColorId = Shader.PropertyToID("_Color");
 
         [SerializeField] private Renderer[] _floors = new Renderer[0];
         [SerializeField] private Renderer[] _towers = new Renderer[0];
@@ -31,6 +36,13 @@ namespace Vow.Combat
         private int _tileCount;
         private ICaptureMatchView _view;
         private CaptureTuning _tuning;
+        private CaptureMatchLogic _visibilityMatch;
+        private HeroController _viewer;
+        private bool[] _shownFog = new bool[0];
+        private int[] _fogOwner = new int[0];
+        private MaterialPropertyBlock[] _floorBlocks = new MaterialPropertyBlock[0];
+        private MaterialPropertyBlock[] _towerBlocks = new MaterialPropertyBlock[0];
+        private MaterialPropertyBlock[] _ringBlocks = new MaterialPropertyBlock[0];
 
         // 地板／光圈換色的累計次數（零配置量測的活性，V-C03）。
         public int MaterialSwapCount { get; private set; }
@@ -50,8 +62,16 @@ namespace Vow.Combat
 
         public void Initialize(ICaptureMatchView view, CaptureTuning tuning)
         {
+            Initialize(view, tuning, null, null);
+        }
+
+        public void Initialize(ICaptureMatchView view, CaptureTuning tuning,
+                               CaptureMatchLogic visibilityMatch, HeroController viewer)
+        {
             _view = view;
             _tuning = tuning;
+            _visibilityMatch = visibilityMatch;
+            _viewer = viewer;
             _tileCount = view.TileCount;
             if (_floors.Length != _tileCount || _towers.Length != _tileCount || _rings.Length != _tileCount
                 || _progressDiscs.Length != _tileCount)
@@ -63,12 +83,19 @@ namespace Vow.Combat
                 return;
             }
             _shownOwner = new int[_tileCount];
+            _shownFog = new bool[_tileCount];
+            _fogOwner = new int[_tileCount];
+            _floorBlocks = CreateBlocks(_tileCount);
+            _towerBlocks = CreateBlocks(_tileCount);
+            _ringBlocks = CreateBlocks(_tileCount);
             _discTransforms = new Transform[_tileCount];
             // 起始狀態＝全部中立（與場景建置器預建的材質相同），在這裡明寫一次；之後只在歸屬真的變了才換色，
             // 進入佔領待機時不必把全部物件重設一遍。
             for (int i = 0; i < _shownOwner.Length; i++)
             {
                 _shownOwner[i] = (int)Faction.Neutral;
+                _shownFog[i] = false;
+                _fogOwner[i] = int.MinValue;
                 if (_floors[i] != null) _floors[i].sharedMaterial = _neutralMaterial;
                 if (_rings[i] != null) _rings[i].sharedMaterial = _neutralMaterial;
                 if (_towers[i] != null) _towers[i].sharedMaterial = _neutralMaterial;
@@ -105,6 +132,7 @@ namespace Vow.Combat
                     if (_towers[i] != null) _towers[i].sharedMaterial = material;
                     MaterialSwapCount++;
                 }
+                RefreshFog(i, owner);
                 RefreshDisc(i);
             }
         }
@@ -116,6 +144,11 @@ namespace Vow.Combat
         {
             Renderer disc = _progressDiscs[tile];
             if (disc == null) return;
+            if (_shownFog[tile])
+            {
+                if (disc.enabled) disc.enabled = false;
+                return;
+            }
 
             float progress = 0f;
             float required = 0f;
@@ -151,6 +184,45 @@ namespace Vow.Combat
             if (owner == (int)Faction.BlueTeam) return _blueMaterial;
             if (owner == (int)Faction.RedTeam) return _redMaterial;
             return _neutralMaterial;
+        }
+
+        private void RefreshFog(int tile, int owner)
+        {
+            bool fogged = false;
+            if (_visibilityMatch != null && _viewer != null && CaptureVisibilityLogic.AppliesTo(_visibilityMatch))
+            {
+                Vector3 hero = _viewer.transform.position;
+                fogged = !CaptureVisibilityLogic.CanSee(_visibilityMatch, CaptureMatchLogic.BlueFactionId,
+                    hero.x, hero.z, !_viewer.IsAlive, _visibilityMatch.Spec.CenterX(tile), _visibilityMatch.Spec.CenterZ(tile));
+            }
+            if (fogged == _shownFog[tile] && owner == _fogOwner[tile]) return;
+            _shownFog[tile] = fogged;
+            _fogOwner[tile] = owner;
+
+            Material material = MaterialFor(owner);
+            ApplyFog(_floors[tile], _floorBlocks[tile], material, fogged ? FogFloorBrightness : 1f);
+            ApplyFog(_towers[tile], _towerBlocks[tile], material, fogged ? FogTowerBrightness : 1f);
+            ApplyFog(_rings[tile], _ringBlocks[tile], material, fogged ? FogRingBrightness : 1f);
+        }
+
+        private static MaterialPropertyBlock[] CreateBlocks(int count)
+        {
+            MaterialPropertyBlock[] blocks = new MaterialPropertyBlock[count];
+            for (int i = 0; i < count; i++) blocks[i] = new MaterialPropertyBlock();
+            return blocks;
+        }
+
+        private static void ApplyFog(Renderer renderer, MaterialPropertyBlock block, Material material, float brightness)
+        {
+            if (renderer == null || material == null) return;
+            Color color = material.color;
+            color.r *= brightness;
+            color.g *= brightness;
+            color.b *= brightness;
+            block.Clear();
+            block.SetColor(BaseColorId, color);
+            block.SetColor(ColorId, color);
+            renderer.SetPropertyBlock(block);
         }
     }
 }

@@ -125,6 +125,7 @@ namespace Vow.Tests.PlayMode
             Assert.IsNotNull(_bootstrap);
             Assert.IsNotNull(_hero);
             Assert.IsNotNull(_opponent);
+            _bootstrap.DisableFogForLegacyCaptureTests();
             Assert.AreEqual(CaptureMatchState.Off, _bootstrap.CaptureState);
         }
 

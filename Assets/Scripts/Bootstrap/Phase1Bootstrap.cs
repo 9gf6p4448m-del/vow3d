@@ -234,6 +234,12 @@ namespace Vow.Bootstrap
         public int CaptureSanctuaryLabelRecomputeCount => _hud != null ? _hud.CaptureSanctuaryLabelRecomputeCount : 0;
 
 #if UNITY_EDITOR
+        // V9 場景劇本凍結於迷霧推出前：只在這兩組舊測試關閉迷霧，原斷言與路徑不變。
+        public void DisableFogForLegacyCaptureTests()
+        {
+            _capture?.DisableFogForLegacyTest();
+        }
+
         // PlayMode 終局用的比分種子入口（R12）：只寫兩個比分整數，不動計分時鐘、歸屬、進度。正式建置不編進去（V-D01）。
         // v0.10.0：邏輯端另外清雙方慢計分餘數（E15）。
         public void SeedCaptureScoresForTest(int blueScore, int redScore)
@@ -330,7 +336,8 @@ namespace Vow.Bootstrap
 
                 _capture = new CaptureMatchLogic(_captureTuning, _captureSpec);
                 _captureView = new CaptureMatchView(_capture);
-                _opponent.ConfigureCapture(_captureView, _captureTuning, _captureSpec);
+                _hero.SetCaptureVisibilityMatch(_capture);
+                _opponent.ConfigureCapture(_captureView, _captureTuning, _captureSpec, _capture);
                 _opponent.SetAttackDamageMultiplier(RedAttackDamageMultiplier);
                 InitializeCaptureBoard();
             }
@@ -339,6 +346,7 @@ namespace Vow.Bootstrap
             _testWalls = CollectTestWalls(targets);
 
             _input.Initialize(_targets, _camera);
+            _input.SetCaptureFog(_capture, _hero);
             // 批 3：「哪些石牆算自家牆」由本地陣營決定（點自家牆＝點到牆後的地板，§4-1）。
             _input.SetLocalFaction(_hero.HeroFaction);
 
@@ -455,6 +463,32 @@ namespace Vow.Bootstrap
             _elementCooldowns?.ResetForRound();
         }
 
+        private void LateUpdate()
+        {
+            if (_hero == null) return;
+            bool fogActive = CaptureVisibilityLogic.AppliesTo(_capture);
+            Vector3 heroPosition = _hero.transform.position;
+            bool heroKnockedOut = fogActive && _capture.BlueKnockedOut;
+            if (_opponent != null)
+            {
+                Vector3 position = _opponent.transform.position;
+                _opponent.SetFogVisible(!fogActive || CaptureVisibilityLogic.CanSee(
+                    _capture, CaptureMatchLogic.BlueFactionId, heroPosition.x, heroPosition.z,
+                    heroKnockedOut, position.x, position.z));
+            }
+            RuneWall[] walls = _enemyWalls != null ? _enemyWalls.Pool : null;
+            if (walls == null) return;
+            for (int i = 0; i < walls.Length; i++)
+            {
+                RuneWall wall = walls[i];
+                if (wall == null) continue;
+                Vector3 position = wall.transform.position;
+                wall.SetFogVisible(!fogActive || CaptureVisibilityLogic.CanSee(
+                    _capture, CaptureMatchLogic.BlueFactionId, heroPosition.x, heroPosition.z,
+                    heroKnockedOut, position.x, position.z));
+            }
+        }
+
         private void StartDuel()
         {
             if (_duelRound == null || !_duelRound.TryStart()) return;
@@ -490,7 +524,7 @@ namespace Vow.Bootstrap
                                "請執行 VOW/Phase 1/Build Greybox Scene 重建場景。", this);
                 return;
             }
-            _captureBoard.Initialize(_captureView, _captureTuning);
+            _captureBoard.Initialize(_captureView, _captureTuning, _capture, _hero);
             _captureBoard.SetShown(false); // Off 時整組不啟用（V-B01）
 
             if (_rageAuras == null)
@@ -499,7 +533,7 @@ namespace Vow.Bootstrap
                                "請執行 VOW/Phase 1/Build Greybox Scene 重建場景。", this);
                 return;
             }
-            _rageAuras.Initialize(_captureView, _hero.transform, _opponent.transform);
+            _rageAuras.Initialize(_captureView, _hero.transform, _opponent.transform, _capture);
         }
 
         // 全場會擋路的牆（符印牆池、敵方牆池、兩面測試牆）。只在 Start 收一次，復活傳送後逐一推出。

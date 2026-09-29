@@ -38,6 +38,8 @@ namespace Vow.Input
         private float[] _tapDistances;
         private bool[] _tapOwnWall;
         private Faction _localFaction = Faction.BlueTeam;
+        private CaptureMatchLogic _captureFogMatch;
+        private HeroController _captureFogViewer;
         private int _simulatedTapCount;
 
         private ICombatTargetResolver _targetResolver;
@@ -107,6 +109,12 @@ namespace Vow.Input
         public void SetLocalFaction(Faction faction)
         {
             _localFaction = faction;
+        }
+
+        public void SetCaptureFog(CaptureMatchLogic match, HeroController viewer)
+        {
+            _captureFogMatch = match;
+            _captureFogViewer = viewer;
         }
 
         // 按下與放開在同一次呼叫內完成：EndTouch 會把槽位釋放掉，所以不會被下一幀 EndFrame 的
@@ -389,7 +397,7 @@ namespace Vow.Input
             for (int i = 0; i < count; i++)
             {
                 _tapDistances[i] = _tapHits[i].distance;
-                _tapOwnWall[i] = IsOwnWall(_tapHits[i].collider);
+                _tapOwnWall[i] = IsOwnWall(_tapHits[i].collider) || IsHiddenByCaptureFog(_tapHits[i].collider);
             }
 
             int pick = TapPickLogic.SelectNearestAcceptable(_tapDistances, _tapOwnWall, count);
@@ -410,6 +418,17 @@ namespace Vow.Input
 
             IFactionOwned owned = target as IFactionOwned;
             return owned != null && owned.OwnerFaction == _localFaction;
+        }
+
+        private bool IsHiddenByCaptureFog(Collider collider)
+        {
+            if (!CaptureVisibilityLogic.AppliesTo(_captureFogMatch) || _captureFogViewer == null
+                || _targetResolver == null || !_targetResolver.TryResolve(collider, out ICombatTarget target)
+                || target == null || !target.IsAlive || target.TargetTransform == null) return false;
+            Vector3 viewer = _captureFogViewer.transform.position;
+            Vector3 position = target.TargetTransform.position;
+            return !CaptureVisibilityLogic.CanSee(_captureFogMatch, (int)_localFaction,
+                viewer.x, viewer.z, !_captureFogViewer.IsAlive, position.x, position.z);
         }
     }
 }

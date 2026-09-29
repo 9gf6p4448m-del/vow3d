@@ -56,10 +56,12 @@ namespace Vow.Combat
         // ── v0.8.0 佔領模式（V080_CAPTURE_PLAN.md §2.2「對手 AI」、E9／E10／E24）──
         // 旗標關著時 Update 走的是原本的單挑分支，一行都沒改；旗標只由 Phase1Bootstrap 在 CAPTURE 鈕進出模式時切換。
         private ICaptureMatchView _captureView;
+        private CaptureMatchLogic _captureMatch;
         private CaptureTuning _captureTuning;
         private CaptureBoardSpec _captureSpec;   // v0.9.0：塔心與板塊數讀 spec（V090_ENCIRCLE_PLAN.md §2.1-4、E19）
         private int[] _ownershipBuffer = new int[0]; // ConfigureCapture 時依 spec.TileCount 配置一次
         private Renderer[] _bodyRenderers;
+        private TargetOverheadDisplay _overhead;
         private bool _captureMode;
         private bool _chasingHero;
         private int _targetTile = -1;
@@ -68,17 +70,21 @@ namespace Vow.Combat
         public bool IsChasingHero => _chasingHero;
         public int CaptureTargetTile => _targetTile;
         public bool IsBodyHidden { get; private set; }
+        public bool IsFogVisible { get; private set; } = true;
 
         protected override void Awake()
         {
             base.Awake();
             _locomotion = GetComponent<HeroLocomotion>();
             _bodyRenderers = GetComponentsInChildren<Renderer>(true);
+            _overhead = GetComponent<TargetOverheadDisplay>();
         }
 
-        public void ConfigureCapture(ICaptureMatchView view, CaptureTuning tuning, CaptureBoardSpec spec)
+        public void ConfigureCapture(ICaptureMatchView view, CaptureTuning tuning, CaptureBoardSpec spec,
+                                     CaptureMatchLogic match = null)
         {
             _captureView = view;
+            _captureMatch = match;
             _captureTuning = tuning;
             _captureSpec = spec;
             _ownershipBuffer = new int[spec.TileCount];
@@ -120,11 +126,26 @@ namespace Vow.Combat
         public void SetBodyHidden(bool hidden)
         {
             IsBodyHidden = hidden;
-            for (int i = 0; i < _bodyRenderers.Length; i++)
-                if (_bodyRenderers[i] != null) _bodyRenderers[i].enabled = !hidden;
+            RefreshBodyRenderers();
             Collider[] colliders = TargetColliders;
             for (int i = 0; i < colliders.Length; i++)
                 if (colliders[i] != null) colliders[i].enabled = !hidden;
+        }
+
+        // v0.12.0 迷霧只改視覺；碰撞仍留在場上。倒地隱藏優先，復活時則沿用當前迷霧狀態。
+        public void SetFogVisible(bool visible)
+        {
+            if (IsFogVisible == visible) return;
+            IsFogVisible = visible;
+            RefreshBodyRenderers();
+        }
+
+        private void RefreshBodyRenderers()
+        {
+            bool visible = !IsBodyHidden && IsFogVisible;
+            for (int i = 0; i < _bodyRenderers.Length; i++)
+                if (_bodyRenderers[i] != null) _bodyRenderers[i].enabled = visible;
+            if (_overhead != null) _overhead.SetHidden(!visible);
         }
 
         public void Initialize(HeroController hero, SkillTelegraphService telegraph, DuelTuning tuning,
@@ -247,6 +268,14 @@ namespace Vow.Combat
             if (!_active || _frozen || _hero == null || _captureView == null || _captureTuning == null || _captureSpec == null) return;
             float dt = Time.deltaTime;
             if (_captureView.State != CaptureMatchState.Active) return;
+            if (!CanSeeHero() && (_chasingHero || _phase != AttackPhase.Chase))
+            {
+                _chasingHero = false;
+                _phase = AttackPhase.Chase;
+                _phaseRemaining = 0f;
+                _locomotion.Stop();
+                _telegraph?.HideIndicator();
+            }
             if (_stunRemaining > 0f)
             {
                 _stunRemaining -= dt;
@@ -286,7 +315,7 @@ namespace Vow.Combat
 
             CaptureOpponentDecision decision = CaptureOpponentPolicy.Decide(
                 self.x, self.z, heroPosition.x, heroPosition.z, !_hero.IsAlive,
-                _chasingHero, _ownershipBuffer, _captureTuning, _captureSpec);
+                _chasingHero, CanSeeHero(), _ownershipBuffer, _captureTuning, _captureSpec);
 
             if (decision.ChaseHero)
             {
@@ -339,6 +368,15 @@ namespace Vow.Combat
                 if (dx * dx + dz * dz > radius * radius) IssueTileOrder(self.y);
             }
             _locomotion.Step(dt);
+        }
+
+        private bool CanSeeHero()
+        {
+            if (_captureMatch == null) return true;
+            Vector3 self = transform.position;
+            Vector3 hero = _hero.transform.position;
+            return CaptureVisibilityLogic.CanSee(_captureMatch, CaptureMatchLogic.RedFactionId,
+                self.x, self.z, !IsAlive, hero.x, hero.z);
         }
 
         private void IssueTileOrder(float groundY)
