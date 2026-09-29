@@ -6,6 +6,7 @@ namespace Vow.Tests.EditMode
     public sealed class AbyssalVanguardLogicTests
     {
         private const float Away = 1000f;
+        private static readonly float CoreX = new AbyssalVanguardTuning().CoreX;
 
         private static AbyssalVanguardLogic NewCore()
         {
@@ -29,10 +30,9 @@ namespace Vow.Tests.EditMode
         {
             var tuning = new AbyssalVanguardTuning();
             Assert.AreEqual(600f, tuning.SpawnSeconds);
-            Assert.AreEqual(3f, tuning.CoreX);
+            Assert.AreEqual(4.375f, tuning.CoreX);
             Assert.AreEqual(0f, tuning.CoreZ);
-            Assert.AreEqual(new CaptureTuning().CircleRadius, tuning.CoreRadius);
-            Assert.AreEqual(2.5f, tuning.CoreRadius);
+            Assert.AreEqual(1.8f, tuning.CoreRadius);
             Assert.AreEqual(3.5f, tuning.CoreChannelSeconds);
             Assert.AreEqual(900, tuning.VanguardMaxHealth);
             Assert.AreEqual(3f, tuning.VanguardCounterattackIntervalSeconds);
@@ -50,6 +50,21 @@ namespace Vow.Tests.EditMode
             Assert.AreEqual(tuning.CoreX, logic.CoreX);
             Assert.AreEqual(tuning.CoreZ, logic.CoreZ);
             Assert.AreEqual(tuning.CoreRadius, logic.CoreRadius);
+        }
+
+        [Test]
+        public void CoreCircle_OverlapsNoCaptureCircle_OnNineteenBoard()
+        {
+            // v0.13.1 裁定：站同一點不得同時引導核心與佔任何塔（每個塔心距 >= 兩半徑和）。
+            var tuning = new AbyssalVanguardTuning();
+            CaptureBoardSpec spec = CaptureBoardSpec.V0100Sanctuary;
+            float gap = tuning.CoreRadius + new CaptureTuning().CircleRadius;
+            for (int i = 0; i < spec.TileCount; i++)
+            {
+                float dx = tuning.CoreX - spec.CenterX(i);
+                float dz = tuning.CoreZ - spec.CenterZ(i);
+                Assert.GreaterOrEqual(dx * dx + dz * dz, gap * gap, "核心圈不得與第 " + i + " 塊佔塔圈重疊");
+            }
         }
 
         [Test]
@@ -93,15 +108,15 @@ namespace Vow.Tests.EditMode
         public void Core_ContestPausesBothProgress_LeavingOrFallingResetsOnlyThatSide()
         {
             var logic = NewCore();
-            TickCore(logic, 3f, 0f, true, Away, Away, true, 8);
+            TickCore(logic, CoreX, 0f, true, Away, Away, true, 8);
             Assert.AreEqual(2f, logic.BlueCoreProgress);
-            TickCore(logic, 3f, 0f, true, 3f, 0f, true, 4);
+            TickCore(logic, CoreX, 0f, true, CoreX, 0f, true, 4);
             Assert.AreEqual(2f, logic.BlueCoreProgress);
             Assert.AreEqual(0f, logic.RedCoreProgress);
-            TickCore(logic, Away, Away, true, 3f, 0f, true, 4);
+            TickCore(logic, Away, Away, true, CoreX, 0f, true, 4);
             Assert.AreEqual(0f, logic.BlueCoreProgress);
             Assert.AreEqual(1f, logic.RedCoreProgress);
-            TickCore(logic, Away, Away, true, 3f, 0f, false, 1);
+            TickCore(logic, Away, Away, true, CoreX, 0f, false, 1);
             Assert.AreEqual(0f, logic.RedCoreProgress);
             Assert.AreEqual(AbyssalVanguardPhase.Core, logic.Phase);
         }
@@ -110,32 +125,32 @@ namespace Vow.Tests.EditMode
         public void Core_DamageClearsProgressAndSkipsThatSidesNextTick()
         {
             var logic = NewCore();
-            TickCore(logic, 3f, 0f, true, Away, Away, true, 10);
+            TickCore(logic, CoreX, 0f, true, Away, Away, true, 10);
             logic.NotifyHeroDamaged(CaptureMatchLogic.BlueFactionId);
             Assert.AreEqual(0f, logic.BlueCoreProgress);
-            TickCore(logic, 3f, 0f, true, Away, Away, true, 1);
+            TickCore(logic, CoreX, 0f, true, Away, Away, true, 1);
             Assert.AreEqual(0f, logic.BlueCoreProgress);
-            TickCore(logic, 3f, 0f, true, Away, Away, true, 13);
+            TickCore(logic, CoreX, 0f, true, Away, Away, true, 13);
             Assert.AreEqual(3.25f, logic.BlueCoreProgress);
-            TickCore(logic, 3f, 0f, true, Away, Away, true, 1);
+            TickCore(logic, CoreX, 0f, true, Away, Away, true, 1);
             Assert.AreEqual(AbyssalVanguardPhase.Behemoth, logic.Phase);
             Assert.AreEqual(CaptureMatchLogic.BlueFactionId, logic.BehemothOwner);
 
             var control = NewCore();
-            TickCore(control, 3f, 0f, true, Away, Away, true, 13);
+            TickCore(control, CoreX, 0f, true, Away, Away, true, 13);
             control.NotifyHeroDamaged(CaptureMatchLogic.RedFactionId);
-            TickCore(control, 3f, 0f, true, Away, Away, true, 1);
+            TickCore(control, CoreX, 0f, true, Away, Away, true, 1);
             Assert.AreEqual(AbyssalVanguardPhase.Behemoth, control.Phase,
                 "紅方受傷不能中斷藍方引導");
 
             var red = NewCore();
-            TickCore(red, Away, Away, true, 3f, 0f, true, 10);
+            TickCore(red, Away, Away, true, CoreX, 0f, true, 10);
             red.NotifyHeroDamaged(CaptureMatchLogic.RedFactionId);
-            TickCore(red, Away, Away, true, 3f, 0f, true, 1);
+            TickCore(red, Away, Away, true, CoreX, 0f, true, 1);
             Assert.AreEqual(0f, red.RedCoreProgress);
-            TickCore(red, Away, Away, true, 3f, 0f, true, 13);
+            TickCore(red, Away, Away, true, CoreX, 0f, true, 13);
             Assert.AreEqual(AbyssalVanguardPhase.Core, red.Phase);
-            TickCore(red, Away, Away, true, 3f, 0f, true, 1);
+            TickCore(red, Away, Away, true, CoreX, 0f, true, 1);
             Assert.AreEqual(CaptureMatchLogic.RedFactionId, red.BehemothOwner);
         }
 
@@ -143,20 +158,20 @@ namespace Vow.Tests.EditMode
         public void Core_CircleBoundaryAndUnopposedChannelClaimForBothSides()
         {
             var blue = NewCore();
-            TickCore(blue, 5.501f, 0f, true, Away, Away, true, 4);
+            TickCore(blue, CoreX, 1.801f, true, Away, Away, true, 4);
             Assert.AreEqual(0f, blue.BlueCoreProgress, "半徑外不得引導");
-            TickCore(blue, 5.5f, 0f, true, Away, Away, true, 13);
+            TickCore(blue, CoreX, 1.8f, true, Away, Away, true, 13);
             Assert.AreEqual(AbyssalVanguardPhase.Core, blue.Phase);
             Assert.AreEqual(3.25f, blue.BlueCoreProgress);
-            TickCore(blue, 5.5f, 0f, true, Away, Away, true, 1);
+            TickCore(blue, CoreX, 1.8f, true, Away, Away, true, 1);
             Assert.AreEqual(AbyssalVanguardPhase.Behemoth, blue.Phase);
             Assert.AreEqual(CaptureMatchLogic.BlueFactionId, blue.BehemothOwner);
             Assert.AreEqual(90f, blue.BehemothRemaining);
 
             var red = NewCore();
-            TickCore(red, Away, Away, true, 3f, 0f, true, 13);
+            TickCore(red, Away, Away, true, CoreX, 0f, true, 13);
             Assert.AreEqual(AbyssalVanguardPhase.Core, red.Phase);
-            TickCore(red, Away, Away, true, 3f, 0f, true, 1);
+            TickCore(red, Away, Away, true, CoreX, 0f, true, 1);
             Assert.AreEqual(AbyssalVanguardPhase.Behemoth, red.Phase);
             Assert.AreEqual(CaptureMatchLogic.RedFactionId, red.BehemothOwner);
         }
@@ -165,7 +180,7 @@ namespace Vow.Tests.EditMode
         public void Behemoth_ExpiresAtNinetySeconds_OrWhenDefeated_NoRespawn()
         {
             var logic = NewCore();
-            TickCore(logic, 3f, 0f, true, Away, Away, true, 14);
+            TickCore(logic, CoreX, 0f, true, Away, Away, true, 14);
             logic.Tick(89.75f, CaptureMatchState.Active, 800f, Away, Away, true, Away, Away, true);
             Assert.AreEqual(AbyssalVanguardPhase.Behemoth, logic.Phase);
             Assert.AreEqual(0.25f, logic.BehemothRemaining);
@@ -177,7 +192,7 @@ namespace Vow.Tests.EditMode
             Assert.AreEqual(AbyssalVanguardPhase.Finished, logic.Phase);
 
             var defeated = NewCore();
-            TickCore(defeated, Away, Away, true, 3f, 0f, true, 14);
+            TickCore(defeated, Away, Away, true, CoreX, 0f, true, 14);
             defeated.NotifyBehemothDefeated();
             Assert.AreEqual(AbyssalVanguardPhase.Finished, defeated.Phase);
             Assert.AreEqual(0f, defeated.BehemothRemaining);
@@ -187,7 +202,7 @@ namespace Vow.Tests.EditMode
         public void EndedMatchCleansUp_AndResetAllowsExactlyOneNewSpawn()
         {
             var logic = NewCore();
-            TickCore(logic, Away, Away, true, 3f, 0f, true, 14);
+            TickCore(logic, Away, Away, true, CoreX, 0f, true, 14);
             Assert.AreEqual(CaptureMatchLogic.RedFactionId, logic.BehemothOwner);
             logic.Tick(0.25f, CaptureMatchState.Ended, 900f, Away, Away, true, Away, Away, true);
             Assert.AreEqual(AbyssalVanguardPhase.Finished, logic.Phase);

@@ -314,7 +314,8 @@ namespace Vow.EditorTools
         private static AbyssalVanguardTarget CreateAbyssalVanguard(Materials materials)
         {
             GameObject root = new GameObject("AbyssalVanguard_Objective");
-            root.transform.position = new Vector3(3f, 0f, 0f);
+            var vanguardTuning = new AbyssalVanguardTuning();
+            root.transform.position = new Vector3(vanguardTuning.CoreX, 0f, vanguardTuning.CoreZ);
             CapsuleCollider capsule = root.AddComponent<CapsuleCollider>();
             capsule.center = new Vector3(0f, 1.1f, 0f);
             capsule.height = 2.2f;
@@ -335,7 +336,8 @@ namespace Vow.EditorTools
             core.name = "Vanguard_CoreCircle";
             core.transform.SetParent(root.transform, false);
             core.transform.localPosition = new Vector3(0f, 0.045f, 0f);
-            core.transform.localScale = new Vector3(5f, 0.015f, 5f);
+            float coreDiameter = vanguardTuning.CoreRadius * 2f;   // 與判定半徑同源
+            core.transform.localScale = new Vector3(coreDiameter, 0.015f, coreDiameter);
             Object.DestroyImmediate(core.GetComponent<Collider>());
             core.layer = IgnoreRaycastLayer;
             Renderer coreRenderer = core.GetComponent<Renderer>();

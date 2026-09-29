@@ -71,7 +71,7 @@ namespace Vow.Tests.PlayMode
             AbyssalVanguardTarget boss = _bootstrap.VanguardTarget;
             Assert.AreEqual(900f, boss.Health);
             Assert.IsTrue(_hero.CanEngage(boss), "遠處的中立先鋒必須越過迷霧可鎖定");
-            _opponent.GetComponent<HeroLocomotion>().WarpTo(new Vector3(3f, 0f, 1.5f));
+            _opponent.GetComponent<HeroLocomotion>().WarpTo(new Vector3(4.375f, 0f, 1.5f));
             int frames = 0;
             while (boss.Health >= 900f && frames++ < 180) yield return null;
             Assert.Less(boss.Health, 900f, "紅方 AI 須透過正式受擊入口實際打掉先鋒生命");
@@ -143,7 +143,7 @@ namespace Vow.Tests.PlayMode
             yield return null;
             AssertOwnersUnchanged(owners, "擊倒後一幀");
             Assert.AreEqual("CORE B 0.0  R 0.0 /3.5", _bootstrap.VanguardStatusLabel, "HUD 須顯示核心雙方引導進度");
-            _hero.GetComponent<HeroLocomotion>().WarpTo(new Vector3(3f, 0f, 0f));
+            _hero.GetComponent<HeroLocomotion>().WarpTo(new Vector3(4.375f, 0f, 0f));
             for (int i = 0; i < 90; i++) yield return null;
             Assert.Greater(_bootstrap.VanguardLogic.BlueCoreProgress, 1f, "站圈必須真的累積引導");
             _hero.TakeDuelDamage(1f, DamageType.Physical);
@@ -194,7 +194,7 @@ namespace Vow.Tests.PlayMode
             _opponent.StopRound();
             AbyssalVanguardTarget boss = _bootstrap.VanguardTarget;
             boss.ReceiveDamage(900f, DamageType.Physical, _hero.gameObject);
-            _hero.GetComponent<HeroLocomotion>().WarpTo(new Vector3(3f, 0f, 0f));
+            _hero.GetComponent<HeroLocomotion>().WarpTo(new Vector3(4.375f, 0f, 0f));
             int frames = 0;
             while (_bootstrap.VanguardLogic.Phase != AbyssalVanguardPhase.Behemoth && frames++ < 300)
                 yield return null;

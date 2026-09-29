@@ -4,9 +4,10 @@ namespace Vow.Core.Logic
     public sealed class AbyssalVanguardTuning
     {
         public float SpawnSeconds = 600f;
-        public float CoreX = 3f;
+        // v0.13.1 使用者裁定：核心放在 0／2／3 號塊交會頂點，半徑 1.8m，與三個 2.5m 佔塔圈各留 0.075m 不重疊。
+        public float CoreX = 4.375f;
         public float CoreZ = 0f;
-        public float CoreRadius = new CaptureTuning().CircleRadius;
+        public float CoreRadius = 1.8f;
         public float CoreChannelSeconds = new CaptureTuning().CaptureSeconds;
 
         public int VanguardMaxHealth = 900;
