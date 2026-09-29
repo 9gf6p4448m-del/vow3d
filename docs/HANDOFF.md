@@ -1,13 +1,20 @@
 # VOW 誓約 — Codex 接手紀錄（2026-09-29 更新）
 
-## 目前狀態：v0.12.0 地脈共振迷霧已部署，線上互動已核對
+## 目前狀態：v0.13.0 深淵先鋒已部署（線上現役），待使用者試玩
+
+- 分支 `v0130-abyssal-vanguard`（已推 origin；未併 main，main 仍在 `f5bda92`）。Codex 實作到一半撞額度中斷，Claude 接手收尾：`74c7e3b` 主體＋測試、`66ff098` 試玩捷徑 `?devvanguard`（開局跳到第 590 秒）、`e816036` HUD 讓位修正（建置來源）。規格 `docs/V0130_ABYSSAL_VANGUARD_PLAN.md`；玩法、試玩清單、證據在驗收指南 §24。
+- 驗證：verify 304／1、`RESULT: ALL PASS`；EditMode 298／7 略過／0 失敗；PlayMode 211／211；兩輪對抗審查（`vow-toolchain/REVIEW-v0130-r1.md`、`r2.md`）無未解 CRITICAL／HIGH；8 組 PlayMode 手動突變全抓到。突變全套 168／172、4 SKIP 為 v0.11／v0.12 起就過期的定義（S5、C16、N15、N17），先鋒邏輯尚未納入 `mutation_check.py`。
+- 送達：`origin/gh-pages b97bc78`（2026-09-29 20:19:43 +08:00），線上讀回 `v0.13.0 · build 2026-09-29 09:49 UTC · e816036`，新瀏覽器實測 `errors=[]`。
+- 未驗證／待裁：預警圈在手機上是否醒目；核心圈中心 (3,0) 不在正中心、巨獸傷害吃聖所減傷——兩項規格留白待使用者確認。下一批依藍圖是立體地貌，開工前先凍結規格。
+
+## v0.12.0 地脈共振迷霧（已部署，線上互動已核對）
 
 - 工作分支 `v0120-tectonic-fog`，已知良好起點 `713166edebb595d2fa345364fc2941bd014fbe31`；凍結規格在 `docs/V0120_TECTONIC_FOG_PLAN.md`。使用者裁定：暗區保留地形／晶塔輪廓並可點地探索、6m 局部視野、雙方板塊真視野、紅方 AI 對稱遵守視野。來源提交 `a0c4e99ad9b6fc38e55a9246e533bec1874be21d`（2026-09-29 13:06:52 +08:00）；工作分支已推到 `origin/v0120-tectonic-fog` 並讀回同 SHA。
 - 迷霧只在正式 19 塊佔領局 Active 生效。敵方英雄／牆的外觀、點選與持續鎖定共用視野判定；己方板塊真視野可揭露蒸氣目標，6m 局部視野仍受蒸氣限制；紅方失去視野即停止追擊。BFS 斷能當 tick 失去真視野，第二局歸屬與視野重置。舊 V9 測試以 Editor-only、每場獨立的迷霧關閉入口保留原測試前提，正式版預設開啟。
 - `UNITY_REFS_DIR=<vow-toolchain/refs 絕對路徑> bash Tools/DotnetCheck/verify.sh`：純邏輯 296 通過／1 略過，Unity 腳本編譯 0 錯，靜態掃描全 PASS。Unity `v0120-full-edit-r2.xml`：290 通過／7 略過／0 失敗；`v0120-full-play-r2.xml`：204／204 通過；後補定向 `v0120-fog-play-r5.xml`：5／5 通過（紅方 AI 追擊進出）；完整 EditMode 已包含 BFS 斷能與第二局測試。完整 PlayMode 後只新增兩項測試與版號，未改遊戲邏輯。獨立 code review 最終 APPROVE。
 - 正確的 WebGL Unity 安裝是 `C:\Users\shung\Unity\Hub\Editor\2022.3.62f1\Editor\Unity.exe`（含 WebGLSupport）。`Builds/v0120-release-build-r2.log`：WebGL 建置成功，10.6 MB／400 秒；首頁 `v0.12.0 · build 2026-09-29 05:16 UTC · a0c4e99`。本機 Chromium 844×390、640×360、1280×720 截圖已目視暗區、地形與塔輪廓、HUD；頁面／console error 各 0。線上 [試玩](https://9gf6p4448m-del.github.io/vow3d/) 部署 `origin/gh-pages 8305ba8cdccfd6006e7cd5c15c45fd26e96ffca1`（2026-09-29 13:19:23 +08:00），無快取 HTTP 及新瀏覽器實際點選 CAPTURE→開局讀回同一版號、迷霧畫面、0 error。細節在驗收指南 §23；PWA 若顯示舊版，關閉分頁重開或強制重新整理並核對底部 `a0c4e99`。
 - 使用者 2026-09-29 回報 v0.12.0「試玩通過」，採記為本版線上試玩的人工驗收；未指明試玩裝置或逐項場景。原生 Android／iOS 的幀率、震動、延遲及觸控手感仍未驗證，本機 WebGL FPS 偏低不可代替。按 `docs/V090_ENCIRCLE_PLAN.md` 裁定 1，下一批是深淵先鋒，再來是立體地貌；改玩法前先凍結下一批規格。
-- 下一批已從 v0.12.0 人工驗收提交 `6151623` 開 `v0130-abyssal-vanguard` 分支；`docs/V0130_ABYSSAL_VANGUARD_PLAN.md` 的玩法與灰盒數值已於 2026-09-29 依使用者逐題回覆凍結，尚未改遊戲程式。第 10 分鐘中央先鋒全圖可見且紅 AI 參戰；擊倒後公開站圈引導 3.5 秒、受傷打斷、雙方同圈凍結；巨獸攻向敵母板塊但不自行佔塔，90 秒屆滿或被擊倒清理。先鋒 900 HP、反擊 8／3 秒；巨獸 1500 HP、3m/s、對英雄／牆 12／60 傷每 1.5 秒。下一步依計畫分步實作與驗證。
+- 下一批已從 v0.12.0 人工驗收提交 `6151623` 開 `v0130-abyssal-vanguard` 分支；`docs/V0130_ABYSSAL_VANGUARD_PLAN.md` 的玩法與灰盒數值已於 2026-09-29 依使用者逐題回覆凍結（當時尚未改遊戲程式；後續實作與部署見最上方 v0.13.0 一節）。第 10 分鐘中央先鋒全圖可見且紅 AI 參戰；擊倒後公開站圈引導 3.5 秒、受傷打斷、雙方同圈凍結；巨獸攻向敵母板塊但不自行佔塔，90 秒屆滿或被擊倒清理。先鋒 900 HP、反擊 8／3 秒；巨獸 1500 HP、3m/s、對英雄／牆 12／60 傷每 1.5 秒。（已完成，見最上方。）
 
 ## v0.11.0 誓約天賦歷史驗收
 
