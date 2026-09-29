@@ -27,6 +27,20 @@ namespace Vow.Combat
         private SectorTelegraph _telegraph;
         private ElementZoneView[] _views = System.Array.Empty<ElementZoneView>();
         private ReactionCalloutDisplay _callouts;
+        private CaptureMatchLogic _captureMatch;
+        private HeroController _blueHero;
+        private Transform _blueAttacker;
+        private Transform _redAttacker;
+
+        // 由組裝根注入，元素傷害每次結算才讀攻擊者位置；不把板塊加成封存在區域內。
+        public void ConfigurePactDamage(CaptureMatchLogic match, HeroController blueHero,
+                                        Transform blueAttacker, Transform redAttacker)
+        {
+            _captureMatch = match;
+            _blueHero = blueHero;
+            _blueAttacker = blueAttacker;
+            _redAttacker = redAttacker;
+        }
 
         // Resolve 之前的全場快照：`ReactionOutcome` 不回傳被消耗區域的座標（§8 的介面事實），
         // 爆沸的 AOE 圓心／半徑只能從這裡反查。固定容量、零配置。
@@ -235,6 +249,7 @@ namespace Vow.Combat
             TakeSnapshot();
             ReactionOutcome outcome = ElementReactionLogic.Resolve(cast, factionId, x, z, dirX, dirZ, _field, _tuning);
             ResolveDamage(outcome, x, z, dirX, dirZ);
+            ResolveComboDamage(outcome, x, z, dirX, dirZ);
             CountReaction(outcome.Reaction);
             ShowReactionCallout(outcome);
 
@@ -326,6 +341,74 @@ namespace Vow.Combat
             ApplyCircleDamage(outcome.AoeDamage, outcome.DamageFactionId, castX, castZ, _tuning.BurnRadius);
         }
 
+        // 與原 AoE 分開：蒸氣／流沙雖然原傷害為零，仍要各結算一次 Combo 真傷。
+        private void ResolveComboDamage(ReactionOutcome outcome, float castX, float castZ, float dirX, float dirZ)
+        {
+            if (!outcome.IsCombo || _captureMatch == null) return;
+            int faction = outcome.Reaction == ElementReaction.Quicksand
+                ? outcome.NewZoneFactionId : outcome.DamageFactionId;
+            if (faction != CaptureMatchLogic.BlueFactionId && faction != CaptureMatchLogic.RedFactionId) return;
+            if (_captureMatch.SelectedTalent(faction, 3) != PactTalent.ElementalAnnihilation) return;
+
+            if (outcome.Reaction == ElementReaction.Firestorm)
+            {
+                ApplyComboToTargets(faction, true, castX, castZ, 0f, dirX, dirZ);
+                return;
+            }
+
+            if (outcome.Reaction == ElementReaction.Steam || outcome.Reaction == ElementReaction.Quicksand)
+            {
+                if (TryGetSnapshot(outcome.ConsumedZoneId, out float cx, out float cz, out float _))
+                    ApplyComboToTargets(faction, false, cx, cz, outcome.NewZoneRadius, 0f, 0f);
+            }
+        }
+
+        private void ApplyComboToTargets(int faction, bool sector, float cx, float cz,
+                                         float radius, float dirX, float dirZ)
+        {
+            Faction enemy = faction == CaptureMatchLogic.BlueFactionId ? Faction.RedTeam : Faction.BlueTeam;
+            if (_roster != null)
+            {
+                for (int i = 0; i < _roster.Count; i++)
+                {
+                    CombatTargetBehaviour target = _roster.GetBehaviour(i);
+                    if (target == null) continue;
+                    bool enemyUnit = target.TargetFaction == enemy;
+                    bool enemyWall = target.TargetFaction == Faction.DestructibleWall
+                                     && target.OwnerFaction == enemy;
+                    if ((!enemyUnit && !enemyWall) || !IsElementDamageable(target, faction)) continue;
+                    Vector3 position = target.TargetTransform.position;
+                    if (!InsideComboArea(sector, position.x, position.z, cx, cz, radius, dirX, dirZ)) continue;
+                    target.ReceiveDamage(target.MaxHealth * 0.08f, DamageType.True, null);
+                }
+            }
+
+            // 英雄不在 CombatTargetRoster 中，紅方 Combo 要從相同幾何另外結算。
+            if (faction != CaptureMatchLogic.RedFactionId || _blueHero == null || !_blueHero.IsAlive) return;
+            Vector3 heroPosition = _blueHero.transform.position;
+            if (InsideComboArea(sector, heroPosition.x, heroPosition.z, cx, cz, radius, dirX, dirZ))
+                _blueHero.TakeDuelDamage(_blueHero.MaxHealth * 0.08f, DamageType.True);
+        }
+
+        private bool InsideComboArea(bool sector, float x, float z, float cx, float cz,
+                                     float radius, float dirX, float dirZ)
+        {
+            return sector
+                ? ElementGeometry.IsInsideSector(x, z, cx, cz, dirX, dirZ,
+                    _tuning.FirestormRangeMeters, _tuning.FirestormAngleDegrees)
+                : ElementGeometry.IsInsideCircle(x, z, cx, cz, radius);
+        }
+
+        private float ElementDamageMultiplier(int faction)
+        {
+            if (_captureMatch == null) return 1f;
+            Transform attacker = faction == CaptureMatchLogic.BlueFactionId ? _blueAttacker
+                               : faction == CaptureMatchLogic.RedFactionId ? _redAttacker : null;
+            if (attacker == null) return 1f;
+            Vector3 position = attacker.position;
+            return _captureMatch.DamageMultiplierFor(faction, position.x, position.z);
+        }
+
         private void ApplyCircleDamage(float amount, int castFactionId, float cx, float cz, float radius)
         {
             if (_roster == null) return;
@@ -336,7 +419,7 @@ namespace Vow.Combat
 
                 Vector3 position = target.TargetTransform.position;
                 if (!ElementGeometry.IsInsideCircle(position.x, position.z, cx, cz, radius)) continue;
-                target.ReceiveDamage(amount, DamageType.Elemental, null);
+                target.ReceiveDamage(amount * ElementDamageMultiplier(castFactionId), DamageType.Elemental, null);
             }
         }
 
@@ -351,7 +434,7 @@ namespace Vow.Combat
                 Vector3 position = target.TargetTransform.position;
                 if (!ElementGeometry.IsInsideSector(position.x, position.z, apexX, apexZ, dirX, dirZ,
                         _tuning.FirestormRangeMeters, _tuning.FirestormAngleDegrees)) continue;
-                target.ReceiveDamage(amount, DamageType.Elemental, null);
+                target.ReceiveDamage(amount * ElementDamageMultiplier(castFactionId), DamageType.Elemental, null);
             }
         }
 

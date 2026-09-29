@@ -55,7 +55,18 @@ namespace Vow.Combat
         // 英雄正前方 QuickCastDistance（4m）生一面紅隊牆，壽命與己方牆相同。池滿時擠掉最舊那面（FIFO）。
         public RuneWall Spawn()
         {
-            if (_pool == null || _hero == null || _runeTuning == null || _roster == null) return null;
+            if (_hero == null) return null;
+            return SpawnFrom(_hero.position, _hero.forward);
+        }
+
+        // 正常佔領局由紅方對手提供施法位置；除錯鈕仍走上面的英雄前方入口。
+        public RuneWall SpawnFrom(Vector3 casterPosition, Vector3 castDirection)
+        {
+            if (_pool == null || _runeTuning == null || _roster == null) return null;
+
+            castDirection.y = 0f;
+            if (castDirection.sqrMagnitude < 1e-6f) return null;
+            castDirection.Normalize();
 
             // 已經死掉的牆先退出名冊，免得名額被屍體佔著
             for (int i = 0; i < _pool.Length; i++)
@@ -67,15 +78,9 @@ namespace Vow.Combat
             int evicted = _roster.Add(index);
             if (evicted >= 0 && evicted < _pool.Length && _pool[evicted] != null) _pool[evicted].CollapseWall(false);
 
-            Vector3 heroPos = _hero.position;
-            Vector3 forward = _hero.forward;
-            forward.y = 0f;
-            if (forward.sqrMagnitude < 1e-6f) forward = Vector3.forward;
-            forward.Normalize();
-
-            Vector3 position = heroPos + forward * _runeTuning.QuickCastDistance;
-            position.y = heroPos.y + _runeTuning.WallHeight * 0.5f;
-            Quaternion rotation = Quaternion.LookRotation(forward, Vector3.up);
+            Vector3 position = casterPosition + castDirection * _runeTuning.QuickCastDistance;
+            position.y = casterPosition.y + _runeTuning.WallHeight * 0.5f;
+            Quaternion rotation = Quaternion.LookRotation(castDirection, Vector3.up);
 
             // caster 給 null：敵方牆不屬於玩家名冊，死亡時不得去釋放玩家的名額。
             _pool[index].Activate(position, rotation, Faction.RedTeam, null, index);

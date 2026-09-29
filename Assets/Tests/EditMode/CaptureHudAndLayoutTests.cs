@@ -224,6 +224,20 @@ namespace Vow.Tests.EditMode
         }
 
         [Test]
+        public void B0_TallLandscapeKeepsElementButtonsBelowTalentPanelAndAwayFromGroundTapBand()
+        {
+            DebugHudLayout layout = DebugHudLayout.Compute(640f, 480f, 96f,
+                                                           true, true, true, true, true);
+            Assert.AreEqual(layout.TalentPanel.YMax + 6f, layout.Water.Y, 1e-4f);
+            Assert.AreEqual(layout.Water.Y, layout.Fire.Y, 1e-4f);
+            Assert.AreEqual(layout.Water.Y, layout.Wind.Y, 1e-4f);
+            Assert.IsFalse(layout.Water.Overlaps(layout.TalentPanel));
+            Assert.IsFalse(layout.Fire.Overlaps(layout.TalentPanel));
+            Assert.IsFalse(layout.Wind.Overlaps(layout.TalentPanel));
+            Assert.Less(layout.Wind.YMax, 480f);
+        }
+
+        [Test]
         public void C03_TalentButtonsTakePriorityOverPanelAndHiddenPanelDoesNotStealInput()
         {
             for (int i = 0; i < TalentDeviceConfigs.Length; i++)

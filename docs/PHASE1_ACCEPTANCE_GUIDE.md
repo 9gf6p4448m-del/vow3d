@@ -646,3 +646,14 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 - **V10-D07 通過**：上述整場 Chromium D04～D06 `pageerror`／`console.error` 都是 0；先前 D02～D04 Chromium 及 D03 WebKit 載入紀錄亦各為 0。線上版本仍是部署 `origin/gh-pages 74a2c35`（2026-09-28 22:09:02 +08:00）、來源 `bb090ed`；本次只補驗收文件，沒有重新部署遊戲。
 
 **未驗證**：真人對局是否約 12 分鐘（目前僅模型推導）；線上「時間到」結束畫面（放置局會先達 1000，只有 PlayMode V10-B09）；線上奪回母板塊 1.8 秒（只有 PlayMode V10-B07）；紅方聖所線上畫面（開局時鏡頭外）；原生 Android／iOS 的幀率、震動、延遲與觸控手感。PWA 若仍顯示舊版，關閉分頁重開或強制重新整理，再核對底部 `bb090ed`。
+
+## 22. v0.11.0：誓約天賦（2026-09-29 開工中）
+
+凍結規格與玩法裁定見 `docs/V0110_PACT_TALENTS_PLAN.md`。正式佔領局開放元素技能；時間到 3／6／9 分鐘，或任一方先達 250／500／750 分，雙方同時解鎖各階。藍方從右側盤即時三選一；紅方只選目前確實可用的天賦，現有 AI 缺少第一、二階可用技能，故暫不假選。九項效果、傷害與眩暈邊界逐項列於計畫。
+
+**目前工程證據（待全套與部署）**：
+- `UNITY_REFS_DIR=<vow-toolchain/refs 絕對路徑> bash Tools/DotnetCheck/verify.sh`：純邏輯 289 通過／1 略過，Unity 腳本編譯 0 error，靜態掃描全 PASS。
+- `run_unity.sh v0110-release-edit EditMode`：XML 283 通過／7 略過／0 失敗；`run_unity.sh v0110-engaged-wall-all-play PlayMode`：XML 200／200 通過，含原本失敗的舊 C07 全組；定向 `v0110-engaged-wall-ai-r3.xml`：2／2。run_unity wrapper 在零 Failed 時末尾 `grep` 仍回傳 1，以上依 XML 判定。
+- 前兩輪獨立審查所找出的「穿透傷己牆、Combo 漏敵牆、Combo 誤傷中立目標」與 AI 繞牆／破牆測試缺口已修並補實際 PlayMode；第三輪 code review APPROVE。全套 PlayMode `v0110-final-play-r2.xml` 曾為 190／200，10 個舊 C07 狂怒劇本失敗；隔離試驗顯示 640×480 元素列遮住世界點擊，以及紅方 AI 石牆干擾舊移動軌跡。HUD 改為高橫屏把元素列放在天賦盤下方；紅方只在英雄鎖定它交戰時放牆。修正後 `v0110-engaged-wall-c10.xml` 舊 C10 1／1，`v0110-engaged-wall-ai-r3.xml` 新版放牆／堅磐體 2／2；完整 `v0110-engaged-wall-all-play.xml` **200／200 通過**、0 失敗。
+
+**尚未驗證**：WebGL 建置、本機天賦盤與元素按鈕實際畫面、線上部署版號／互動、原生 Android／iOS 手感；`origin/gh-pages` 仍為 v0.10.0。取得完整證據前，不把 v0.11.0 當成已送達。

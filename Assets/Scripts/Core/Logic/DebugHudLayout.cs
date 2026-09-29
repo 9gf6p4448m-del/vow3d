@@ -105,7 +105,9 @@ namespace Vow.Core.Logic
                 float logicalHeight = screenHeight / layout.Scale;
                 float groupWidth = matchPanelX - 20f - 260f;
                 float elementWidth = (groupWidth - 16f) / 3f;
-                float elementY = logicalHeight - 56f;
+                // Tall landscape leaves world-tap space below the talent panel; a bottom row
+                // would cover ground targets near the screen edge during capture movement.
+                float elementY = logicalHeight > 400f ? layout.TalentPanel.YMax + 6f : logicalHeight - 56f;
                 layout.Water = new HudRect(260f, elementY, elementWidth, 40f);
                 layout.Fire = new HudRect(268f + elementWidth, elementY, elementWidth, 40f);
                 layout.Wind = new HudRect(276f + elementWidth * 2f, elementY, elementWidth, 40f);

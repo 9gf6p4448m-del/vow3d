@@ -99,6 +99,16 @@ namespace Vow.Core.Logic
             return State == CaptureMatchState.Active && _spec.TalentsEnabled && _talents.TryChoose(side, talent);
         }
 
+        // 傷害結算當下讀位置和歸屬；燃燒區不可把施法當刻的加成快取下來。
+        public float DamageMultiplierFor(int side, float attackerX, float attackerZ)
+        {
+            if (State != CaptureMatchState.Active || !_spec.TalentsEnabled
+                || (side != BlueFactionId && side != RedFactionId)
+                || _talents.Selected(side, 3) != PactTalent.GeothermalFrenzy) return 1f;
+            int tile = _spec.TileAt(attackerX, attackerZ);
+            return tile >= 0 && _ownership[tile] == side ? 1.15f : 1f;
+        }
+
         public CaptureMatchResult Result { get; private set; } = CaptureMatchResult.None;
         public CaptureMatchResult LastResult { get; private set; } = CaptureMatchResult.None;
 

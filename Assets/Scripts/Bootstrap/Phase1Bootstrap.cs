@@ -193,6 +193,21 @@ namespace Vow.Bootstrap
             bool overclock = BlueHasTalent(3, PactTalent.ExtremeOverclock);
             _hero?.SetPactCadenceModifiers(swift, overclock);
             _shield?.SetStoneBodyEnabled(stone);
+            PactTalent attackTalent = BlueHasTalent(2, PactTalent.WindPiercer) ? PactTalent.WindPiercer
+                                    : BlueHasTalent(2, PactTalent.StoneShock) ? PactTalent.StoneShock : PactTalent.None;
+            _hero?.SetPactAttackTalent(attackTalent, _targets);
+        }
+
+        private float BlueAttackDamageMultiplier(Vector3 position)
+        {
+            return _capture != null
+                ? _capture.DamageMultiplierFor(CaptureMatchLogic.BlueFactionId, position.x, position.z) : 1f;
+        }
+
+        private float RedAttackDamageMultiplier(Vector3 position)
+        {
+            return _capture != null
+                ? _capture.DamageMultiplierFor(CaptureMatchLogic.RedFactionId, position.x, position.z) : 1f;
         }
 
         public bool TryGetCaptureButtonScreenPoint(out float x, out float y)
@@ -316,6 +331,7 @@ namespace Vow.Bootstrap
                 _capture = new CaptureMatchLogic(_captureTuning, _captureSpec);
                 _captureView = new CaptureMatchView(_capture);
                 _opponent.ConfigureCapture(_captureView, _captureTuning, _captureSpec);
+                _opponent.SetAttackDamageMultiplier(RedAttackDamageMultiplier);
                 InitializeCaptureBoard();
             }
             _navBlockers = CollectNavBlockers(targets);
@@ -345,6 +361,7 @@ namespace Vow.Bootstrap
                 heroRuneInput = _duelInput;
             }
             _hero.Initialize(heroInput, _feedback, _camera, _haptics);
+            _hero.SetAttackDamageMultiplier(BlueAttackDamageMultiplier);
 
             // 符印石牆：極速施放／鬆手成牆走延遲注入層（heroInput／heroRuneInput，同英雄本體）；
             // 虛影與按鈕是純本地回饋，直接訂閱 _input，不經延遲（計畫書 §4 假設 11）。
@@ -855,8 +872,13 @@ namespace Vow.Bootstrap
             if (_shieldBar != null) _shieldBar.Initialize(_shield, _projectileTuning);
 
             if (_enemyWalls != null && _tuningAsset != null)
+            {
                 _enemyWalls.Initialize(_tuningAsset.Rune, _projectileTuning, _hero.transform,
                                        CollectWalls(_enemyWallPool, "EnemyWallPool"));
+                if (_opponent != null)
+                    _opponent.SetCaptureWallCast((position, direction) => _enemyWalls.SpawnFrom(position, direction) != null,
+                                                 _tuningAsset.Rune);
+            }
 
             if (_turret == null) return;
 
@@ -908,6 +930,8 @@ namespace Vow.Bootstrap
             _callouts.Initialize(_elementTuning);
 
             _elementField.Initialize(_elementTuning, _elementRoster, _feedback, _sectorTelegraph, views, _callouts);
+            if (_capture != null && _opponent != null)
+                _elementField.ConfigurePactDamage(_capture, _hero, _hero.transform, _opponent.transform);
 
             // 岩＝既有石牆（使用者裁定 1）：符印牆與除錯鈕生的敵方牆都走 RuneWall.Activate。
             for (int i = 0; i < targets.Length; i++)

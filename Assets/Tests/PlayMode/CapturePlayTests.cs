@@ -687,6 +687,212 @@ namespace Vow.Tests.PlayMode
                 "單挑不能沿用上一局的連滑段數");
         }
 
+        [UnityTest]
+        public IEnumerator V0110_B2_StoneShock_LandedBasicStunsDuringWindup_ThenResumesRemainingWindup()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _bootstrap.SeedCaptureScoresForTest(500, 0);
+            yield return null;
+            TapTalentOption(0); // Tier 1 SwiftStep, allowing Tier 2 selection.
+            TapTalentOption(2); // Tier 2 StoneShock.
+
+            ScriptedInput input = new ScriptedInput();
+            _hero.Initialize(input, null, Camera.main);
+            _opponent.transform.position = _hero.transform.position + Vector3.forward * 1.1f;
+            yield return null;
+            Assert.IsTrue(_hero.Mover.TryExecuteCadenceDash(Vector3.back), "成功微滑步是增效前提");
+            int dashFrames = 0;
+            while (_hero.Mover.IsDashing && dashFrames++ < 16) yield return null;
+            Assert.IsFalse(_hero.Mover.IsDashing);
+            _opponent.transform.position = _hero.transform.position + Vector3.forward * 1.1f;
+            input.TapTarget(_opponent);
+            int frames = 0;
+            while (_opponent.StunRemaining <= 0f && frames++ < 90) yield return null;
+            Assert.Greater(_opponent.StunRemaining, 0f, "真正的普攻命中須使紅方眩暈");
+            int attacks = _opponent.AttacksResolved;
+            Vector3 pausedAt = _opponent.transform.position;
+            for (int i = 0; i < 15; i++) yield return null;
+            Assert.AreEqual(attacks, _opponent.AttacksResolved, "眩暈期間不可出刀");
+            Assert.Less(Vector3.Distance(pausedAt, _opponent.transform.position), 0.01f, "眩暈期間不可移動");
+            while (_opponent.StunRemaining > 0f) yield return null;
+            Assert.AreEqual(attacks, _opponent.AttacksResolved, "眩暈解除同幀不可補出前搖攻擊");
+
+            _hero.CancelCombatForDuel(); // Stop further basic attacks while observing the AI windup.
+            frames = 0;
+            while (!_opponent.IsWarning && frames++ < 180) yield return null;
+            Assert.IsTrue(_opponent.IsWarning, "前提：AI 已進入攻擊前搖");
+            _opponent.ApplyCaptureStun(0.5f);
+            attacks = _opponent.AttacksResolved;
+            for (int i = 0; i < 29; i++) yield return null;
+            Assert.AreEqual(attacks, _opponent.AttacksResolved, "前搖中眩暈不可出刀");
+            Assert.IsTrue(_opponent.IsWarning, "前搖剩餘時間應保留");
+            while (_opponent.StunRemaining > 0f) yield return null;
+            Assert.AreEqual(attacks, _opponent.AttacksResolved, "眩暈解除當幀不可直接出刀");
+            Assert.IsTrue(_opponent.IsWarning, "解除後仍須完成剩餘前搖");
+
+            yield return EndCaptureAndReturnToLobby();
+            _opponent.ApplyCaptureStun(0.5f);
+            Assert.AreEqual(0f, _opponent.StunRemaining, "非 Active 不得套眩暈");
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_B2_WindPiercer_RealLandedBasicPiercesEnemyWallBehindDirectTarget()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _bootstrap.SeedCaptureScoresForTest(500, 0);
+            yield return null;
+            TapTalentOption(0); // Tier 1 SwiftStep.
+            TapTalentOption(0); // Tier 2 WindPiercer.
+            ScriptedInput input = new ScriptedInput();
+            _hero.Initialize(input, null, Camera.main);
+            _opponent.SetHitstopFrozen(true); // Keep the target on the ray during this hit.
+
+            Assert.IsTrue(_hero.Mover.TryExecuteCadenceDash(Vector3.back));
+            int frames = 0;
+            while (_hero.Mover.IsDashing && frames++ < 16) yield return null;
+            Assert.IsFalse(_hero.Mover.IsDashing);
+            _opponent.transform.position = _hero.transform.position + Vector3.forward * 1.1f;
+            RuneWall wall = _bootstrap.EnemyWalls.SpawnFrom(_hero.transform.position, Vector3.forward);
+            Assert.IsNotNull(wall);
+            Physics.SyncTransforms();
+            float beforeTarget = _opponent.Health;
+            float beforeWall = wall.Health;
+            input.TapTarget(_opponent);
+            frames = 0;
+            while (_opponent.Health >= beforeTarget && frames++ < 90) yield return null;
+            Assert.Less(_opponent.Health, beforeTarget, "大腦須真的命中直接目標");
+            Assert.AreEqual(beforeTarget - 60f, _opponent.Health, 0.01f,
+                "直接目標只能受一次原普攻傷害");
+            Assert.AreEqual(beforeWall - 60f, wall.Health, 0.01f,
+                "目標後方 5m 內的敵牆應吃到一次原普攻傷害");
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_B2_WindPiercer_DoesNotDamageFriendlyWallOnTheSameRay()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _bootstrap.SeedCaptureScoresForTest(500, 0);
+            yield return null;
+            TapTalentOption(0); // Tier 1 SwiftStep.
+            TapTalentOption(0); // Tier 2 WindPiercer.
+            ScriptedInput input = new ScriptedInput();
+            _hero.Initialize(input, null, Camera.main);
+            _opponent.SetHitstopFrozen(true);
+
+            Assert.IsTrue(_hero.Mover.TryExecuteCadenceDash(Vector3.back));
+            int frames = 0;
+            while (_hero.Mover.IsDashing && frames++ < 16) yield return null;
+            Assert.IsFalse(_hero.Mover.IsDashing);
+            _opponent.transform.position = _hero.transform.position + Vector3.forward * 1.1f;
+            GameObject pool = GameObject.Find("RuneWallPool");
+            Assert.IsNotNull(pool, "場景須有玩家自己的石牆池");
+            RuneWall[] blueWalls = pool.GetComponentsInChildren<RuneWall>(true);
+            Assert.Greater(blueWalls.Length, 0);
+            RuneWall friendly = blueWalls[0];
+            Vector3 wallPosition = _hero.transform.position + Vector3.forward * 4f + Vector3.up;
+            friendly.Activate(wallPosition, Quaternion.LookRotation(Vector3.forward), Faction.BlueTeam, null, -1);
+            Physics.SyncTransforms();
+            float beforeTarget = _opponent.Health;
+            float beforeFriendly = friendly.Health;
+            input.TapTarget(_opponent);
+            frames = 0;
+            while (_opponent.Health >= beforeTarget && frames++ < 90) yield return null;
+            Assert.AreEqual(beforeTarget - 60f, _opponent.Health, 0.01f,
+                "直接目標必須真的命中，否則不能鑑別己方牆過濾");
+            Assert.AreEqual(beforeFriendly, friendly.Health, 0.01f,
+                "同射線己方石牆不可被裂風矢傷害");
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_AI_OnlyActiveChaseCastsRedWallFourMetresAheadOfOpponent()
+        {
+            yield return Setup();
+            TapCaptureButton();
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState);
+            for (int i = 0; i < 12; i++) yield return null;
+            Assert.AreEqual(0, _bootstrap.EnemyWalls.AliveCount(), "Lobby 不得施放紅牆");
+            TapOpponent();
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState);
+            _opponent.transform.position = _hero.transform.position + Vector3.forward * 5.5f;
+            ScriptedInput combatInput = new ScriptedInput();
+            _hero.Initialize(combatInput, null, Camera.main);
+            combatInput.TapTarget(_opponent);
+            Assert.AreSame(_opponent, _hero.CurrentTarget, "紅方放牆測試須進入真實交戰");
+            int frames = 0;
+            while (_bootstrap.EnemyWalls.AliveCount() == 0 && frames++ < 90) yield return null;
+            Assert.Greater(_bootstrap.EnemyWalls.AliveCount(), 0, "Active 追英雄時應由紅方 AI 施放石牆");
+            RuneWall wall = null;
+            foreach (RuneWall candidate in _bootstrap.EnemyWalls.Pool)
+                if (candidate != null && candidate.IsAlive) { wall = candidate; break; }
+            Assert.IsNotNull(wall);
+            Assert.AreEqual(Faction.RedTeam, wall.OwnerFaction);
+            float fromRed = Vector3.Distance(new Vector3(wall.transform.position.x, 0f, wall.transform.position.z),
+                                             new Vector3(_opponent.transform.position.x, 0f, _opponent.transform.position.z));
+            Assert.AreEqual(4f, fromRed, 0.2f, "牆應從紅方自身往英雄方向 4m 落下");
+        }
+
+        [UnityTest]
+        public IEnumerator V0110_AI_ActiveRedWallCanBeBrokenForStoneBody_AndAIResumesCapture()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _bootstrap.SeedCaptureScoresForTest(250, 0);
+            yield return null;
+            TapTalentOption(1); // Tier 1 StoneBody.
+            _opponent.transform.position = _hero.transform.position + Vector3.forward * 5.5f;
+            ScriptedInput combatInput = new ScriptedInput();
+            _hero.Initialize(combatInput, null, Camera.main);
+            combatInput.TapTarget(_opponent);
+            Assert.AreSame(_opponent, _hero.CurrentTarget, "堅磐體測試須先讓雙方交戰");
+            int frames = 0;
+            while (_bootstrap.EnemyWalls.AliveCount() == 0 && frames++ < 90) yield return null;
+            Assert.Greater(_bootstrap.EnemyWalls.AliveCount(), 0, "石牆必須由正常 Active AI 自行施放");
+            RuneWall wall = null;
+            foreach (RuneWall candidate in _bootstrap.EnemyWalls.Pool)
+                if (candidate != null && candidate.IsAlive) { wall = candidate; break; }
+            Assert.IsNotNull(wall);
+            Assert.AreEqual(Faction.RedTeam, wall.OwnerFaction);
+
+            // While its own wall is alive, the red AI must continue pursuing instead of parking against it.
+            float initialDistance = Vector3.Distance(_opponent.transform.position, _hero.transform.position);
+            float nearest = initialDistance;
+            float maxSideStep = 0f;
+            float initialX = _opponent.transform.position.x;
+            for (int i = 0; i < 120 && wall.IsAlive; i++)
+            {
+                yield return null;
+                nearest = Mathf.Min(nearest, Vector3.Distance(_opponent.transform.position, _hero.transform.position));
+                maxSideStep = Mathf.Max(maxSideStep, Mathf.Abs(_opponent.transform.position.x - initialX));
+            }
+            Assert.IsTrue(_opponent.IsChasingHero, "紅方立牆後仍須追英雄");
+            Assert.Greater(maxSideStep, 0.3f, "紅方應側移繞過自己立下的牆");
+            Assert.Less(nearest, initialDistance - 0.5f, "紅方應繼續逼近英雄");
+            Assert.IsTrue(wall.IsAlive, "繞牆觀察必須發生在 5 秒牆壽命內");
+
+            _opponent.SetHitstopFrozen(true); // Isolate the melee break from incoming AI attacks.
+            _hero.CancelCombatForDuel(); // End the opponent lock before directing the next real melee at the wall.
+            ScriptedInput input = new ScriptedInput();
+            _hero.Initialize(input, null, Camera.main);
+            Assert.Greater(wall.RemainingLifespan, 0.5f, "破牆前仍須有時間供近戰命中");
+            float breakStartedAt = Time.time;
+            yield return MeleeBreakWall(wall, input, "正常 AI 紅牆");
+            Assert.Less(Time.time - breakStartedAt, 0.5f, "必須由近戰擊碎，不能等到 5 秒自然坍塌");
+            Assert.AreEqual(220f, _bootstrap.Shield.Amount, 0.01f,
+                "選堅磐體後 5 秒內近戰擊碎正常 AI 紅牆應得到 220 護盾");
+
+            _opponent.SetHitstopFrozen(false);
+            _hero.CancelCombatForDuel();
+            _hero.transform.position = _opponent.transform.position + Vector3.forward * 12f;
+            Physics.SyncTransforms();
+            frames = 0;
+            while (_opponent.CaptureTargetTile < 0 && frames++ < 120) yield return null;
+            Assert.GreaterOrEqual(_opponent.CaptureTargetTile, 0,
+                "英雄離開追擊距離後紅方應恢復尋找佔領板塊");
+        }
+
         private void CastThreeElementButtons()
         {
             _hero.transform.rotation = Quaternion.identity;

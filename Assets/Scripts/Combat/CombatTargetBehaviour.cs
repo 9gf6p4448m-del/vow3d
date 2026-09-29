@@ -89,7 +89,8 @@ namespace Vow.Combat
 
             // v0.10.0（V0100_SANCTUARY_PLAN.md E4）：受傷縮放掛在這個唯一的受擊入口，檢查之後、扣血之前；
             // OnDamaged 送出的是縮放後實際扣掉的量（聖所下 60 → 飄字 51）。
-            amount = ScaleIncomingDamage(amount);
+            // 真傷不經聖所的 Physical／Elemental 減傷，其他受擊流程照常。
+            if (type != DamageType.True) amount = ScaleIncomingDamage(amount);
             float applied = ConsumeDamage(amount);
             // Phase 2 批 4（GDD 圍欄九）：霧內目標「受傷後顯影 1.5s」。掛在這個唯一的受擊入口上，
             // 不掛在近戰／子彈／元素各自的呼叫端——三條路徑全部收斂在這裡（分母歸一）。

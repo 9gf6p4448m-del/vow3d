@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using Vow.Combat.Feedback;
 using Vow.Core;
@@ -6,7 +7,7 @@ using Vow.Core.Logic;
 namespace Vow.Combat
 {
     [RequireComponent(typeof(HeroLocomotion))]
-    public sealed class TrainingOpponent : CombatTargetBehaviour, IHitstopParticipant
+    public sealed class TrainingOpponent : CombatTargetBehaviour, IHitstopParticipant, ICaptureStunnable
     {
         private enum AttackPhase { Chase, Windup, Recovery }
 
@@ -21,11 +22,36 @@ namespace Vow.Combat
         private AttackPhase _phase;
         private bool _active;
         private bool _frozen;
+        private float _stunRemaining;
+        private Func<Vector3, Vector3, bool> _captureWallCast;
+        private RuneTuning _captureWallTuning;
+        private float _wallCooldownRemaining;
+        private Func<Vector3, float> _attackDamageMultiplier;
 
         public bool IsEngaged => _active;
         public bool IsWarning => _active && _phase == AttackPhase.Windup;
         public Vector3 AttackCenter => _attackCenter;
         public int AttacksResolved { get; private set; }
+        public float StunRemaining => _stunRemaining;
+
+        public void SetCaptureWallCast(Func<Vector3, Vector3, bool> cast, RuneTuning tuning)
+        {
+            _captureWallCast = cast;
+            _captureWallTuning = tuning;
+        }
+
+        public void SetAttackDamageMultiplier(Func<Vector3, float> multiplier)
+        {
+            _attackDamageMultiplier = multiplier;
+        }
+
+        public void ApplyCaptureStun(float seconds)
+        {
+            if (!_captureMode || _captureView == null || _captureView.State != CaptureMatchState.Active
+                || !_active || !IsAlive || seconds <= 0f) return;
+            _stunRemaining = Mathf.Max(_stunRemaining, seconds);
+            _locomotion.Stop();
+        }
 
         // ── v0.8.0 佔領模式（V080_CAPTURE_PLAN.md §2.2「對手 AI」、E9／E10／E24）──
         // 旗標關著時 Update 走的是原本的單挑分支，一行都沒改；旗標只由 Phase1Bootstrap 在 CAPTURE 鈕進出模式時切換。
@@ -63,6 +89,8 @@ namespace Vow.Combat
             _captureMode = captureMode;
             _chasingHero = false;
             _targetTile = -1;
+            _stunRemaining = 0f;
+            _wallCooldownRemaining = 0f;
         }
 
         // 佔領開局與倒地復活共用（E18／E20）：傳送＋補滿血＋恢復 Renderer／Collider，並以「還沒在追、沒有目標塔」起步。
@@ -137,6 +165,7 @@ namespace Vow.Combat
         {
             if (!IsAlive || _hero == null) return;
             _active = true;
+            _stunRemaining = 0f;
             _phase = AttackPhase.Chase;
             _phaseRemaining = 0f;
             _locomotion.Chase(_hero.transform);
@@ -145,6 +174,8 @@ namespace Vow.Combat
         public void StopRound()
         {
             _active = false;
+            _stunRemaining = 0f;
+            _wallCooldownRemaining = 0f;
             _locomotion.Stop();
             _telegraph?.HideIndicator();
         }
@@ -215,6 +246,15 @@ namespace Vow.Combat
         {
             if (!_active || _frozen || _hero == null || _captureView == null || _captureTuning == null || _captureSpec == null) return;
             float dt = Time.deltaTime;
+            if (_captureView.State != CaptureMatchState.Active) return;
+            if (_stunRemaining > 0f)
+            {
+                _stunRemaining -= dt;
+                if (_stunRemaining < 0f) _stunRemaining = 0f;
+                // Preserve the windup/recovery timer; no attack or movement on the expiry frame.
+                return;
+            }
+            if (_wallCooldownRemaining > 0f) _wallCooldownRemaining = Mathf.Max(0f, _wallCooldownRemaining - dt);
             if (_phase == AttackPhase.Chase)
             {
                 StepCaptureChase(dt);
@@ -250,6 +290,14 @@ namespace Vow.Combat
 
             if (decision.ChaseHero)
             {
+                float distance = Vector2.Distance(new Vector2(self.x, self.z),
+                                                  new Vector2(heroPosition.x, heroPosition.z));
+                if (_captureWallCast != null && _captureWallTuning != null && _wallCooldownRemaining <= 0f
+                    && ReferenceEquals(_hero.CurrentTarget, this)
+                    && distance >= _captureWallTuning.QuickCastDistance + 1f
+                    && distance <= _captureWallTuning.QuickCastDistance + 2f
+                    && _captureWallCast(self, heroPosition - self))
+                    _wallCooldownRemaining = _captureWallTuning.CooldownSeconds;
                 // 剛轉頭、或上一段前搖把移動停掉（Stop 之後 HasArrived 恆真）：重新下追擊指令。
                 if (!_chasingHero || _locomotion.HasArrived) _locomotion.Chase(_hero.transform);
                 _chasingHero = true;
@@ -311,7 +359,9 @@ namespace Vow.Combat
             float dz = target.z - _attackCenter.z;
             float radius = _tuning.AttackRadius;
             if (dx * dx + dz * dz > radius * radius || HasBlockingWall(target)) return;
-            _hero.TakeDuelDamage(_tuning.OpponentDamage);
+            float multiplier = _attackDamageMultiplier != null
+                ? _attackDamageMultiplier(transform.position) : 1f;
+            _hero.TakeDuelDamage(_tuning.OpponentDamage * multiplier);
         }
 
         private bool HasBlockingWall(Vector3 target)

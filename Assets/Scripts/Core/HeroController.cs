@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Vow.Core.Logic;
 
@@ -26,6 +27,12 @@ namespace Vow.Core
         private bool _watchdogReported;
         private HeroVitality _vitality;
         private IRockShield _shield;
+        private readonly PactAttackWindow _pactAttackWindow = new PactAttackWindow();
+        private readonly RaycastHit[] _pierceHits = new RaycastHit[64];
+        private readonly HashSet<ICombatTarget> _piercedTargets = new HashSet<ICombatTarget>();
+        private PactTalent _pactAttackTalent;
+        private ICombatTargetResolver _attackTargetResolver;
+        private Func<Vector3, float> _attackDamageMultiplier;
 
         // ── Phase 2 批 4：元素場 ──
         // 英雄只認得 Vow.Core 的查詢介面（Vow.Core 不得反向依賴 Vow.Combat）。
@@ -54,6 +61,20 @@ namespace Vow.Core
         public void SetPactCadenceModifiers(bool swiftStep, bool extremeOverclock)
         {
             _mover?.SetPactCadenceModifiers(swiftStep, extremeOverclock);
+        }
+        // Bootstrap passes None outside an Active capture match. The multiplier is evaluated at each hit.
+        public void SetPactAttackTalent(PactTalent talent, ICombatTargetResolver resolver)
+        {
+            if (talent != PactTalent.WindPiercer && talent != PactTalent.StoneShock)
+                talent = PactTalent.None;
+            if (_pactAttackTalent != talent) _pactAttackWindow.Clear();
+            _pactAttackTalent = talent;
+            _attackTargetResolver = resolver;
+        }
+
+        public void SetAttackDamageMultiplier(Func<Vector3, float> multiplier)
+        {
+            _attackDamageMultiplier = multiplier;
         }
         public event Action OnKnockedOut;
 
@@ -113,11 +134,17 @@ namespace Vow.Core
 
         public void TakeDuelDamage(float amount)
         {
+            TakeDuelDamage(amount, DamageType.Physical);
+        }
+
+        public void TakeDuelDamage(float amount, DamageType type)
+        {
             if (!IsAlive || amount <= 0f) return;
             OnDuelDamaged?.Invoke();
             // v0.10.0（V0100_SANCTUARY_PLAN.md E3／E4、Q14）：聖所減傷排在打斷之後、護盾之前——護盾吸收的是減傷後的量。
             // 先乘整數再除 100（20／60／100 在 P＝85 時精確得 17／51／85）；P＝100 時不做乘除，傷害與 v0.9.1 逐位相同。
-            if (_damageTakenPercent != 100) amount = amount * _damageTakenPercent / 100f;
+            if (type != DamageType.True && _damageTakenPercent != 100)
+                amount = amount * _damageTakenPercent / 100f;
             if (_shield != null) amount = _shield.Absorb(amount);
             if (!_vitality.TakeDamage(amount)) return;
             CancelCombatForDuel();
@@ -126,6 +153,7 @@ namespace Vow.Core
 
         public void CancelCombatForDuel()
         {
+            _pactAttackWindow.Clear();
             _brain.ResetForRound();
             _mover.ResetForRound();
             _locomotion.Stop();
@@ -340,7 +368,18 @@ namespace Vow.Core
         // 打擊反饋金字塔（GDD §肆-2）：普通平 A＝頓挫＋微震＋輕震覺；斬殺＝再加瞬時閃白與焦痕貼花；破牆＝重震＋重震覺＋地裂貼花。
         public void ResolveAttackHit(ICombatTarget target)
         {
-            target.ReceiveDamage(_tuning.AttackDamage, DamageType.Physical, gameObject);
+            // Capture direction before the direct hit can destroy or deactivate the target.
+            Vector3 direction = target.TargetTransform != null
+                ? target.TargetTransform.position - transform.position : Vector3.zero;
+            direction.y = 0f;
+            float damage = _tuning.AttackDamage * (_attackDamageMultiplier != null
+                ? _attackDamageMultiplier(transform.position) : 1f);
+            bool empowered = _pactAttackTalent != PactTalent.None && _pactAttackWindow.Consume(_brain.Clock);
+            target.ReceiveDamage(damage, DamageType.Physical, gameObject);
+            if (empowered && _pactAttackTalent == PactTalent.WindPiercer)
+                ResolveWindPierce(target, direction);
+            if (empowered && _pactAttackTalent == PactTalent.StoneShock && target is ICaptureStunnable stunnable)
+                stunnable.ApplyCaptureStun(0.5f);
 
             bool killed = !target.IsAlive;
             bool wallBroken = killed && target.TargetFaction == Faction.DestructibleWall;
@@ -364,6 +403,32 @@ namespace Vow.Core
             if (targetTransform != null) _feedback.SpawnGroundDecal(targetTransform.position, DecalType.ScorchCrater);
         }
 
+        private void ResolveWindPierce(ICombatTarget directTarget, Vector3 direction)
+        {
+            if (_attackTargetResolver == null || direction.sqrMagnitude < 1e-6f) return;
+            Vector3 origin = transform.position + Vector3.up * 0.9f;
+            int count = Physics.RaycastNonAlloc(origin, direction.normalized, _pierceHits, 5f,
+                                                Physics.AllLayers, QueryTriggerInteraction.Ignore);
+            if (count >= _pierceHits.Length)
+            {
+                Debug.LogWarning("[VOW] 裂風矢射線緩衝已滿，取消這次貫穿。", this);
+                return;
+            }
+            _piercedTargets.Clear();
+            _piercedTargets.Add(directTarget);
+            for (int i = 0; i < count; i++)
+            {
+                if (!_attackTargetResolver.TryResolve(_pierceHits[i].collider, out ICombatTarget target)
+                    || target == null || !target.IsAlive || !_piercedTargets.Add(target)
+                    || !target.CanBeTargetedBy(_faction)) continue;
+                if (target.TargetFaction == Faction.DestructibleWall
+                    && target is IFactionOwned owned && owned.OwnerFaction == _faction) continue;
+                float damage = _tuning.AttackDamage * (_attackDamageMultiplier != null
+                    ? _attackDamageMultiplier(transform.position) : 1f);
+                target.ReceiveDamage(damage, DamageType.Physical, gameObject);
+            }
+        }
+
         public bool TryBeginCadenceDash(float worldDirX, float worldDirZ)
         {
             // 縛足期間不得滑步，而且**不消耗充能**（附加規則，不是位移防線本體——防線在 ApplyDisplacement）。
@@ -375,6 +440,7 @@ namespace Vow.Core
 
         private void HandleDashExecuted(float distance)
         {
+            if (_pactAttackTalent != PactTalent.None) _pactAttackWindow.Arm(_brain.Clock);
             if (_haptics != null) _haptics.Notify(HapticCue.CadenceDash);
         }
 
