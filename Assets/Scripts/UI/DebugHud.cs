@@ -977,7 +977,8 @@ namespace Vow.UI
             }
             if (_vanguardStatusLabel != null)
             {
-                Rect statusRect = TalentPanelVisible
+                // 只有真的與天賦盤重疊才讓位；無條件下移會蓋到元素列（v0.13.0 本機 844×390 實測 FIRE 被蓋住）。
+                Rect statusRect = TalentPanelVisible && _vanguardStatusRect.Overlaps(_talentPanelRect)
                     ? new Rect(_vanguardStatusRect.x, _talentPanelRect.yMax + 4f,
                                _vanguardStatusRect.width, _vanguardStatusRect.height)
                     : _vanguardStatusRect;
