@@ -15,6 +15,7 @@ namespace Vow.Bootstrap
     public sealed class Phase1Bootstrap : MonoBehaviour
     {
         private const int TargetFrameRate = 120;
+        private const float DevVanguardElapsedSeconds = 590f;
 
         [SerializeField] private HeroController _hero;
         [SerializeField] private PlayerInputService _input;
@@ -717,6 +718,9 @@ namespace Vow.Bootstrap
             if (_capture == null || !_capture.TryStart()) return;
             _vanguardLogic?.ResetForMatch();
             _vanguardTarget?.Deactivate();
+            // v0.13.0 試玩捷徑：網址帶 ?devvanguard 時開局直接跳到第 590 秒，10 秒後先鋒甦醒（倒數同步剩 5:10）。
+            // 只在開局讀一次網址；不帶參數時行為與正式版完全相同。
+            if (Application.absoluteURL.Contains("devvanguard")) _capture.SeedMatchElapsedForTest(DevVanguardElapsedSeconds);
             RefreshBluePactModifiers();
             _hero.CancelCombatForDuel();
             _shield?.Clear();
