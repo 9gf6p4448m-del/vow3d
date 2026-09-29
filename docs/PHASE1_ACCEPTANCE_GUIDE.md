@@ -662,3 +662,19 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 **使用者人工驗收（2026-09-29）**：回報「試玩通過」，採記為 v0.11.0 線上試玩的整體回報；未逐項指明九個天賦搭配或原生裝置。
 
 **尚未驗證**：原生 Android／iOS 的幀率、震動、延遲與觸控手感，以及逐項天賦搭配的主觀平衡感；WebGL 本機 FPS 偏低，不能代替原生手感驗收。藍圖下一批依 `docs/V090_ENCIRCLE_PLAN.md` 裁定 1 為地脈共振迷霧，其後才是深淵先鋒與立體地貌。
+
+## 23. v0.12.0：地脈共振迷霧（2026-09-29 已部署）
+
+凍結規格與使用者裁定見 `docs/V0120_TECTONIC_FOG_PLAN.md`。正式 19 塊佔領局 Active 中，己方板塊提供真視野，英雄提供水平 6m 局部視野；暗區仍能看見地面與晶塔輪廓、可點地探索，敵方英雄與牆在不可見時不顯示、不可點選或持續鎖定。紅方 AI 使用對稱視野；BFS 斷能當 tick 失去真視野。舊模式不變。
+
+**工程驗收**：
+- 來源 `a0c4e99ad9b6fc38e55a9246e533bec1874be21d`（2026-09-29 13:06:52 +08:00）。改動集中在 `CaptureVisibilityLogic`、`HeroController`、`PlayerInputService`、`TrainingOpponent`／`CaptureOpponentPolicy`、`CaptureBoardView`、`RuneWall`、`RageAuraView` 與 Bootstrap 接線；新增純邏輯和 PlayMode 迷霧測試。V9 舊測試各場以 Editor-only 入口保留其迷霧前提；正式版預設開啟。獨立 code review 最終 APPROVE。
+- `$env:UNITY_REFS_DIR=(Resolve-Path '..\vow-toolchain\refs').Path; & 'C:\Program Files\Git\bin\bash.exe' Tools/DotnetCheck/verify.sh`：純邏輯 296 通過／1 略過、Unity 腳本編譯 0 錯、靜態掃描全 PASS，輸出 `RESULT: ALL PASS`。
+- `& 'C:\Program Files\Git\bin\bash.exe' ..\vow-toolchain\run_unity.sh v0120-full-edit-r2 EditMode`：`v0120-full-edit-r2.xml` 297 項、290 通過／7 略過／0 失敗，含第二局重置、BFS 真實斷能同 tick 視野變化與 6m 邊界。`run_unity.sh v0120-full-play-r2 PlayMode`：`v0120-full-play-r2.xml` 204／204 通過；後補定向 `v0120-fog-play-r5.xml` 5／5，含紅方 AI 看見時追擊、失視野停止、暗區點地、敵牆／頭頂資訊／紅方狂怒光暈及蒸氣真視野。完整 PlayMode 後只加測試與版號，沒有改遊戲邏輯。`run_unity.sh` 在 0 失敗時最後的 `grep` 仍回傳 1，數據以 XML 為準。
+
+**本機畫面與送達**：
+- `& 'C:\Users\shung\Unity\Hub\Editor\2022.3.62f1\Editor\Unity.exe' -batchmode -quit -projectPath <vow> -buildTarget WebGL -executeMethod Vow.EditorTools.VOWWebGLBuilder.Build -logFile <vow>/Builds/v0120-release-build-r2.log`：`[VOW] WebGL 建置完成：Builds/WebGL，10.6 MB，耗時 400s，版本 0.12.0`；首頁列 `build 2026-09-29 05:16 UTC · a0c4e99`，wasm 存在。`C:\Program Files\Unity\Hub\Editor\2022.3.62f1` 只有 Windows 模組，首次誤用得到 `build target was unsupported`；改用上述含 WebGLSupport 的安裝後成功。
+- `python -m http.server 8792 --directory Builds/WebGL` 與 `python ..\vow-toolchain\v0120-visual-check.py http://127.0.0.1:8792/ ..\vow-toolchain\browser-screenshots\v0120-local-a0c4e99`：Chromium 觸控模擬成功點選 CAPTURE、開局，844×390／640×360／1280×720 截圖已逐張目視，己方 3 塊亮藍，遠處暗區仍保留地面／塔輪廓，HUD 可讀；`errors=[]`。本機 FPS 約 2–10，不作原生手感判斷。
+- 同一份建置產物推送 `origin/gh-pages 8305ba8cdccfd6006e7cd5c15c45fd26e96ffca1`（2026-09-29 13:19:23 +08:00）；`git ls-remote origin refs/heads/gh-pages` 讀回同 SHA。無快取 HTTP 由舊 v0.11.0 轉為 `VOW v0.12.0`／`build 2026-09-29 05:16 UTC · a0c4e99`；`python ..\vow-toolchain\v0120-visual-check.py 'https://9gf6p4448m-del.github.io/vow3d/?v=a0c4e99-20260929' ..\vow-toolchain\browser-screenshots\v0120-online-a0c4e99` 在新瀏覽器實際點選 CAPTURE→開局，`active-844x390.png` 已目視迷霧、15 分鐘倒數、比分與版本列，`errors=[]`。[線上試玩](https://9gf6p4448m-del.github.io/vow3d/)；PWA 若顯示舊版，關閉分頁重開或強制重新整理，核對底部 `a0c4e99`。
+
+**尚未驗證**：使用者手機對 v0.12.0 的試玩回報，以及原生 Android／iOS 幀率、震動、延遲與觸控手感。下一批按藍圖是深淵先鋒，再後才是立體地貌；本版未提前加入。
