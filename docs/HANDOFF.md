@@ -1,11 +1,12 @@
 # VOW 誓約 — Codex 接手紀錄（2026-09-29 更新）
 
-## 目前狀態：v0.11.0 誓約天賦開工中，尚未部署
+## 目前狀態：v0.11.0 誓約天賦已部署，線上版本與本機互動已核對
 
 - 工作分支 `v0110-pact-talents`，已知良好起點 `9341813601c38a8e59541557b3f46023c0965757`；規格與分步驗收在 `docs/V0110_PACT_TALENTS_PLAN.md`。使用者已裁定佔領 Active 開放元素、任一方先達 250／500／750 分則雙方同時開放該階。
 - 使用者已以「按照建議」裁定 B2／B3／AI 的玩法邊界，逐項凍結條件見計畫。A／B0／B1／B2／B3／C 與正常佔領局紅方石牆已接線；紅方目前沒有第一、二階真正可用的天賦，因此不假選、不跳到第三階。2026-09-29 `UNITY_REFS_DIR=<vow-toolchain/refs> bash Tools/DotnetCheck/verify.sh`：純邏輯 289 通過／1 略過、Unity 編譯 0 error、靜態掃描全 PASS。Unity EditMode `v0110-release-edit.xml`：283 通過／7 略過；完整 PlayMode `v0110-engaged-wall-all-play.xml`：200／200 通過，含舊 C07、裂風矢同線敵／己牆、碎岩震、AI 紅牆繞行／近戰破牆 220 盾／恢復佔點，以及三種 Combo、地脈施法後移位、紅 Combo 命中藍英雄先耗盾、敵／己／中立牆與中立木樁。第三輪獨立 code review 為 APPROVE，前兩輪的三個 finding 已修並補測。
-- 全套 PlayMode `v0110-final-play-r2.xml` 曾為 190／200，10 個舊 C07 狂怒劇本失敗；已隔離並修正 640×480 HUD 元素列遮住舊世界點擊，以及紅方 AI 放牆改變舊移動軌跡兩個原因。修正後 `v0110-engaged-wall-all-play.xml` **200／200 通過**（含舊 C07 與新版 AI）；`v0110-engaged-wall-ai-r3.xml` 新版 AI 定向實戰 2／2。`v0110-release-edit.xml` EditMode 283 通過／7 略過；`UNITY_REFS_DIR=<vow-toolchain/refs> bash Tools/DotnetCheck/verify.sh` 純邏輯 289 通過／1 略過、Unity 編譯 0 error、靜態紅線全 PASS。已把版號升至 0.11.0，WebGL 建置、本機畫面與線上送達仍**未驗證**。`origin/gh-pages` 仍是已驗收的 v0.10.0。
-- v0.11 本機視覺驗證尚未完成。`C:\Program Files\Unity\Hub\Editor\2022.3.62f1` 沒裝 WebGLSupport，應使用 `C:\Users\shung\Unity\Hub\Editor\2022.3.62f1`（`Tools/deploy-webgl.sh` 已會自動選）。用後者建置本機預覽時，`../vow-toolchain/v0110-partial-webgl-build-r3.log` 到 `Link_WebGL_wasm` 持續約 15 分鐘仍未完成，已停止行程，沒有新產物可供截圖。`../vow-toolchain/v0110-local-ui-check.py` 已備妥且通過語法／格式／純函式檢查，尚未對新 WebGL 實跑；不能拿舊的 `Builds/WebGL` 當 v0.11 證據。
+- 全套 PlayMode `v0110-final-play-r2.xml` 曾為 190／200，10 個舊 C07 狂怒劇本失敗；已隔離並修正 640×480 HUD 元素列遮住舊世界點擊，以及紅方 AI 放牆改變舊移動軌跡兩個原因。修正後 `v0110-engaged-wall-all-play.xml` **200／200 通過**（含舊 C07 與新版 AI）；`v0110-release-edit.xml` EditMode 283 通過／7 略過；`UNITY_REFS_DIR=<vow-toolchain/refs> bash Tools/DotnetCheck/verify.sh` 純邏輯 289 通過／1 略過、Unity 編譯 0 error、靜態紅線全 PASS。
+- 來源工作分支 `origin/v0110-pact-talents 6126f60`（2026-09-29 10:15:59 +08:00）含 Unity bundleVersion 0.11.0；`Builds/v0110-release-build-r2.log` 記錄 WebGL 建置成功，10.6 MB／181 秒，首頁 `v0.11.0 · build 2026-09-29 02:19 UTC · 6126f60`。本機 `v0110-local-6126f60-r2` 的 844×390、640×360、1280×720 截圖已目視：天賦盤三選項與倒數、比分、元素鈕均可讀且不互蓋，頁面／console error 各 0；`v0110-local-interaction-6126f60` 真觸控選 SWIFT 後盤面消失，點 WATER 後出現藍色水域與冷卻。部署 `origin/gh-pages fed8887`（2026-09-29 10:30:08 +08:00）；無快取 HTTP 讀回與 `v0110-online-6126f60/capture-active.png` 均顯示 v0.11.0，同時可見 14:58、`SANCT 15%`、0／0 與元素列，線上頁面／console error 各 0。[線上試玩](https://9gf6p4448m-del.github.io/vow3d/)；PWA 若顯示舊版，關閉分頁重開或強制重新整理，核對底部 `6126f60`。
+- 未驗證：原生 Android／iOS 的幀率、震動、延遲與觸控手感；本機 WebGL 的低 FPS 不能作原生手感驗收。使用者實際試玩天賦搭配的主觀平衡感也尚未驗證。
 
 ## v0.10.0 已部署，線上 D02～D07 驗收通過
 

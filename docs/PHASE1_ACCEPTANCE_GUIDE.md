@@ -643,17 +643,20 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 **補驗證據（2026-09-29）**：執行 `python -u ..\vow-toolchain\v0100-manual-accept.py https://9gf6p4448m-del.github.io/vow3d/ online-manual-20260928`，退出碼 0；`browser-screenshots/v0100-manual-online-manual-20260928-20260928T154237.619628Z-14568/check.log` 記錄 `capture_complete_unjudged`（腳本只擷取，以下由主對話逐張目視）、D05 前段 39 張／後段 17 張、牆鐘 753.328 秒、D06 靜置 9.275 秒、`pageerror_count=0`、`console_error_count=0`。因 Windows OCR 在本機逾時，改用人工看圖建立切段 marker；第一段在 `RESPAWN` 與 ≤13:00 後仍密集連拍到 11:53，覆蓋比每 30 秒取樣更密，放置期間全程沒有頁面輸入。後段從 11:18 起約每 30 秒截圖；截圖時長受本機低幀率影響。
 - **V10-D05 通過**：`d05-p1-0008.png` 同時有 `SANCT 15%`、HERO HP 49；39 張前段圖中凡有 `SANCT 15%` 均未見 HP 80／60／40／20。`d05-p1-0009.png` 見 `RESPAWN 5`；倒數 ≥13:00 的圖均無 `SIEGE`，`d05-p2-000.png` 在 11:18 見 `SIEGE 0%`，`d05-p2-002.png` 已到 10:23。最後一張 `d05-p2-016.png` 為 `LAST: RED WINS`、BLUE 24／RED 1001；56 張 D05 截圖中的每張 Active 畫面均以倒數與比分核對，BLUE＋RED 都低於凍結上限 `⌊19×(900−倒數秒數)／7⌋＋3`。
 - **V10-D06 通過**：`d06-01-second-active.png` 是第二局 14:59、0／0、3 塊藍與 `SANCT 15%`；點 4 號後 9.275 秒不輸入、不截圖，`d06-02-tower4-after-9s.png` 為 14:43、4 號翻藍、`SANCT` 消失、BLUE 8／RED 10（18 ≤ 當時上限 49）。
-- **V10-D07 通過**：上述整場 Chromium D04～D06 `pageerror`／`console.error` 都是 0；先前 D02～D04 Chromium 及 D03 WebKit 載入紀錄亦各為 0。線上版本仍是部署 `origin/gh-pages 74a2c35`（2026-09-28 22:09:02 +08:00）、來源 `bb090ed`；本次只補驗收文件，沒有重新部署遊戲。
+- **V10-D07 通過**：上述整場 Chromium D04～D06 `pageerror`／`console.error` 都是 0；先前 D02～D04 Chromium 及 D03 WebKit 載入紀錄亦各為 0。當次補驗的線上版本是部署 `origin/gh-pages 74a2c35`（2026-09-28 22:09:02 +08:00）、來源 `bb090ed`；當時只補驗收文件，沒有重新部署遊戲。
 
-**未驗證**：真人對局是否約 12 分鐘（目前僅模型推導）；線上「時間到」結束畫面（放置局會先達 1000，只有 PlayMode V10-B09）；線上奪回母板塊 1.8 秒（只有 PlayMode V10-B07）；紅方聖所線上畫面（開局時鏡頭外）；原生 Android／iOS 的幀率、震動、延遲與觸控手感。PWA 若仍顯示舊版，關閉分頁重開或強制重新整理，再核對底部 `bb090ed`。
+**未驗證**：真人對局是否約 12 分鐘（目前僅模型推導）；線上「時間到」結束畫面（放置局會先達 1000，只有 PlayMode V10-B09）；線上奪回母板塊 1.8 秒（只有 PlayMode V10-B07）；紅方聖所線上畫面（開局時鏡頭外）；原生 Android／iOS 的幀率、震動、延遲與觸控手感。當時 PWA 若仍顯示舊版，須關閉分頁重開或強制重新整理，再核對底部 `bb090ed`。
 
-## 22. v0.11.0：誓約天賦（2026-09-29 開工中）
+## 22. v0.11.0：誓約天賦（2026-09-29 已部署）
 
 凍結規格與玩法裁定見 `docs/V0110_PACT_TALENTS_PLAN.md`。正式佔領局開放元素技能；時間到 3／6／9 分鐘，或任一方先達 250／500／750 分，雙方同時解鎖各階。藍方從右側盤即時三選一；紅方只選目前確實可用的天賦，現有 AI 缺少第一、二階可用技能，故暫不假選。九項效果、傷害與眩暈邊界逐項列於計畫。
 
-**目前工程證據（待全套與部署）**：
+**工程與送達證據**：
 - `UNITY_REFS_DIR=<vow-toolchain/refs 絕對路徑> bash Tools/DotnetCheck/verify.sh`：純邏輯 289 通過／1 略過，Unity 腳本編譯 0 error，靜態掃描全 PASS。
 - `run_unity.sh v0110-release-edit EditMode`：XML 283 通過／7 略過／0 失敗；`run_unity.sh v0110-engaged-wall-all-play PlayMode`：XML 200／200 通過，含原本失敗的舊 C07 全組；定向 `v0110-engaged-wall-ai-r3.xml`：2／2。run_unity wrapper 在零 Failed 時末尾 `grep` 仍回傳 1，以上依 XML 判定。
 - 前兩輪獨立審查所找出的「穿透傷己牆、Combo 漏敵牆、Combo 誤傷中立目標」與 AI 繞牆／破牆測試缺口已修並補實際 PlayMode；第三輪 code review APPROVE。全套 PlayMode `v0110-final-play-r2.xml` 曾為 190／200，10 個舊 C07 狂怒劇本失敗；隔離試驗顯示 640×480 元素列遮住世界點擊，以及紅方 AI 石牆干擾舊移動軌跡。HUD 改為高橫屏把元素列放在天賦盤下方；紅方只在英雄鎖定它交戰時放牆。修正後 `v0110-engaged-wall-c10.xml` 舊 C10 1／1，`v0110-engaged-wall-ai-r3.xml` 新版放牆／堅磐體 2／2；完整 `v0110-engaged-wall-all-play.xml` **200／200 通過**、0 失敗。
+- `& 'C:\Users\shung\Unity\Hub\Editor\2022.3.62f1\Editor\Unity.exe' -batchmode -quit -projectPath <vow> -buildTarget WebGL -executeMethod Vow.EditorTools.VOWWebGLBuilder.Build -logFile <vow>/Builds/v0110-release-build-r2.log`：日誌 `[VOW] WebGL 建置完成：Builds/WebGL，10.6 MB，耗時 181s，版本 0.11.0`；首頁嵌入 `build 2026-09-29 02:19 UTC · 6126f60`，wasm 產物存在，來源 `origin/v0110-pact-talents 6126f60`（2026-09-29 10:15:59 +08:00）。
+- `PYTHONIOENCODING=utf-8 python ../vow-toolchain/v0110-local-ui-check.py http://127.0.0.1:8791/ local-6126f60-r2 --wall-timeout 1200`：`tier1_evidence_captured`，第一階盤面 OCR 確認，844×390／640×360／1280×720 截圖已逐張目視，三個選項與比分、倒數、元素列不互蓋；`pageerrors=0`、`console_errors=0`。`python ../vow-toolchain/v0110-local-interaction.py`：實際點選 SWIFT 後選盤消失，點 WATER 後出現藍色水域與 `WATER 3`，前／後三張 PNG 在 `../vow-toolchain/browser-screenshots/v0110-local-interaction-6126f60/`，兩種錯誤各 0。
+- 建置產物已推到 `origin/gh-pages fed88874f1850604862d38353de518fbd95afa3d`（2026-09-29 10:30:08 +08:00）。`git ls-remote origin refs/heads/gh-pages` 讀回同 SHA；`Invoke-WebRequest -UseBasicParsing 'https://9gf6p4448m-del.github.io/vow3d/?v=6126f60-20260929'` 先讀到 v0.10.0，待 Pages 傳播後再讀到 `VOW v0.11.0`／`build 2026-09-29 02:19 UTC · 6126f60`。`python ../vow-toolchain/v0110-online-smoke.py` 新瀏覽器 844×390／DPR2 載入與 CAPTURE 實際點擊成功，`capture-active.png` 同時可見 14:58、`SANCT 15%`、0／0、元素列及版本列；`pageerrors=0`、`console_errors=0`。PWA 舊快取需關閉分頁重開或強制重新整理，再核對底部 `6126f60`。
 
-**尚未驗證**：WebGL 建置、本機天賦盤與元素按鈕實際畫面、線上部署版號／互動、原生 Android／iOS 手感；`origin/gh-pages` 仍為 v0.10.0。取得完整證據前，不把 v0.11.0 當成已送達。
+**尚未驗證**：原生 Android／iOS 的幀率、震動、延遲與觸控手感，以及玩家對天賦搭配的主觀平衡感；WebGL 本機 FPS 偏低，不能代替原生手感驗收。
