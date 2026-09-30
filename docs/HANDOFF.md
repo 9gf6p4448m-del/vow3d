@@ -1,14 +1,14 @@
 # VOW 誓約 — Codex 接手紀錄（2026-09-30 更新）
 
-## 目前：v0.14.0 步驟 B 進行中，未驗收、未部署
+## 目前：v0.14.0 步驟 B 已驗收；整版未驗證、未部署
 
 - 分支 `v0140-abyssal-canyon`；驗證來源 snapshot `045029dbb6e3312f3cf7d298e090faff4a891b70`（前一 B checkpoint `d97ae86`）；此證據提交包含兩個 B checkpoint，推送核對以 `git log origin/v0140-abyssal-canyon -1` 為準。A 的已驗收／已推來源為 `66f98a6`。
-- 地形、地熱、樓層移動、射程、顯形、真 HUD 接線與場景已實作；真畫面已查看。`v0140-B-codex-wiring-r8.xml` 為 32／32，B13 真 844×390、258 點最少 3／15、埋入對照 0／15。這不等於 B 完整驗收。
-- `v0140-B-codex-full-edit.xml`：319 過／0 敗／8 既有 dotnet-only 略過；`root-verify-11.log` 為 ALL PASS。首輪完整 PlayMode 為 224／243（18 個 640×480 環境前提失敗、1 個 WATER 觸控失敗），保留原始證據。
+- 地形、地熱、樓層移動、射程、顯形、真 HUD 接線與場景已實作；真畫面已查看。`v0140-B-codex-wiring-r8.xml` 為 32／32，B13 真 844×390、258 點最少 3／15、埋入對照 0／15。包含於本次B驗收證據。
+- `v0140-B-codex-full-edit.xml`：319 過／0 敗／8 既有 dotnet-only 略過；`v0140-B-root-verify-11.log` 為 ALL PASS。首輪完整 PlayMode 為 224／243（18 個 640×480 環境前提失敗、1 個 WATER 觸控失敗），保留原始證據。
 - 新增 Editor-only 真 GameView 640×480 全域環境，B13 自行暫用 844×390；恢復平地除錯區域的原有觸控消耗／MatchGate，峽谷仍收起區域。修後 `v0140-B-codex-gameview-smoke-r2.xml` 原 2 個舊失敗方法＋32 峽谷方法＝34／34；完整 `v0140-B-codex-full-play-r2.xml` 已 243／243、0 敗／0 略，包含 70 次原狂怒重播（2326.1234829 秒）。
-- **B12 待使用者裁定**：計畫:293、422 同時寫「牆中心 y＝地面」與「2m 牆下緣貼地」，互相矛盾；目前實作／測試採地面錨點 −1、幾何中心 0。已提出二選一裁定；未回覆前不得改計畫或宣稱 B12 字面通過。
-- 原21群突變對應32方法；隔離來源同045029db，末各550檔hash全部還原。UPM根因為process缺ALLUSERSPROFILE，僅子process補ProgramData後正常。原G01–G10、G12–G17、G19–G21共19群29方法有目標故障紅／每群還原32綠；G11原前搖紅未取得預定位移，NOT_CAUGHT永久保留。補充G11b已在原位移assert紅（0.100000106＞0.05），還原32綠；fresh行為彙核原47 XML／863 case通過（errors=[]）。G18兩方法待B12裁定，未跑、未豁免；不得稱原21群全CAUGHT、0 miss或完整B通過。
-- repo證據紀錄見 `docs/V0140_STEP_B_ACCEPTANCE.md`（未驗收）；全部外部日誌、審查與進度索引在同層 `vow-toolchain/v0140-B-root-progress.md`、`v0140-B-codex-review.md`、`v0140-B-mutation-runner-review-result.md`。先讀各批 journal／原始 XML，不能把 dry PASS 或故障編譯中止算 CAUGHT。C／D 尚未開始，線上仍 v0.13.1。
+- **B12已裁定並補驗**：使用者2026-09-30「按照建議」採牆下緣貼地（谷底下緣−1、幾何中心0）；計畫§5.2／§7.3／B12釐清、§14記裁定，尺寸／座標／窗口／容差不變、source/tests不改。G18兩case均原536目標assert紅，baseline與restore各32綠、550hash完整還原。
+- 原21群突變對應32方法；隔離來源同045029db，末各550檔hash全部還原。UPM根因為process缺ALLUSERSPROFILE，僅子process補ProgramData後正常。原G01–G10、G12–G21共20群31方法有目標故障紅／每群還原32綠；G11原前搖紅未取得預定位移，NOT_CAUGHT永久保留。補充G11b已在原位移assert紅（0.100000106＞0.05），還原32綠；fresh行為彙核原50 XML／929 case通過（errors=[]）。原20群31方法加G11b補充一方法，全部32新增方法已有鑑別力；原G11記錄不覆寫，不能稱原21群全CAUGHT或0 miss。限定B獨立覆審通過；C05全套突變門檻仍屬下一步C。
+- repo證據紀錄見 `docs/V0140_STEP_B_ACCEPTANCE.md`（B已驗收）；全部外部日誌、審查與進度索引在同層 `vow-toolchain/v0140-B-root-progress.md`、`v0140-B-codex-review.md`、`v0140-B-mutation-runner-review-result.md`。先讀各批 journal／原始 XML，不能把 dry PASS 或故障編譯中止算 CAUGHT。下一步為C整局／全套回歸；C／D尚未開始，線上仍v0.13.1。
 - 使用者原有 `GDD.md`、`docs/PLAYER_EXPERIENCE_BLUEPRINT.md` 保留，不納入本次提交。
 
 ## 本次接手：v0.14.0 深淵峽谷步驟 A 驗收通過（2026-09-30，Codex）
