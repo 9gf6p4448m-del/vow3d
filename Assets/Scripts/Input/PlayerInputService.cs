@@ -400,23 +400,23 @@ namespace Vow.Input
             for (int i = 0; i < count; i++)
             {
                 _tapDistances[i] = _tapHits[i].distance;
-                _tapOwnWall[i] = IsOwnWall(_tapHits[i].collider) || IsHiddenByCaptureFog(_tapHits[i].collider);
+                _tapOwnWall[i] = IsOwnWall(_tapHits[i].colliderInstanceID) || IsHiddenByCaptureFog(_tapHits[i].colliderInstanceID);
             }
 
             int pick = TapPickLogic.SelectNearestAcceptable(_tapDistances, _tapOwnWall, count);
             if (pick < 0) return; // 整條射線上只有自家牆：這一下什麼都不做
 
-            Collider picked = _tapHits[pick].collider;
+            int picked = _tapHits[pick].colliderInstanceID;
             if (_targetResolver != null && _targetResolver.TryResolve(picked, out ICombatTarget target) && target.IsAlive)
                 OnCombatTargetSelected?.Invoke(target);
             else
                 OnMoveDestinationSelected?.Invoke(_tapHits[pick].point);
         }
 
-        private bool IsOwnWall(Collider collider)
+        private bool IsOwnWall(int colliderInstanceId)
         {
             if (_targetResolver == null) return false;
-            if (!_targetResolver.TryResolve(collider, out ICombatTarget target) || target == null) return false;
+            if (!_targetResolver.TryResolve(colliderInstanceId, out ICombatTarget target) || target == null) return false;
             if (target is IGlobalObjectiveVisibility && target.TargetFaction == _localFaction) return true;
             if (target.TargetFaction != Faction.DestructibleWall) return false;
 
@@ -424,10 +424,10 @@ namespace Vow.Input
             return owned != null && owned.OwnerFaction == _localFaction;
         }
 
-        private bool IsHiddenByCaptureFog(Collider collider)
+        private bool IsHiddenByCaptureFog(int colliderInstanceId)
         {
             if (!CaptureVisibilityLogic.AppliesTo(_captureFogMatch) || _captureFogViewer == null
-                || _targetResolver == null || !_targetResolver.TryResolve(collider, out ICombatTarget target)
+                || _targetResolver == null || !_targetResolver.TryResolve(colliderInstanceId, out ICombatTarget target)
                 || target == null || !target.IsAlive || target.TargetTransform == null) return false;
             if (target is IGlobalObjectiveVisibility objective && objective.IsGloballyVisibleTo(_localFaction)) return false;
             Vector3 viewer = _captureFogViewer.transform.position;

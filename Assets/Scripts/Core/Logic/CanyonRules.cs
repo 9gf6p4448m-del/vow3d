@@ -1,11 +1,11 @@
+using Tuning = Vow.Core.Logic.CanyonTuning.Defaults;
+
 namespace Vow.Core.Logic
 {
     // v0.14.0 崖台射程與谷底淺水（docs/V0140_CANYON_PLAN.md §4.1、§4.4，2026-09-30 凍結）。零 UnityEngine、零配置。
     // terrain == null（Off 模式、平地夾具）一律回傳原值。
     public static class CanyonRules
     {
-        private static readonly CanyonTuning Tuning = new CanyonTuning();
-
         // 攻擊者出手當下所在位置的射程：ClassAt(攻擊者)==Cliff 才加成（斜坡不算、目標在哪一層不影響）。
         public static float AttackRange(float baseRange, float ax, float az, ITerrainQuery terrain)
         {

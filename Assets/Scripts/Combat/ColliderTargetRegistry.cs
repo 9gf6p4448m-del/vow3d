@@ -32,7 +32,17 @@ namespace Vow.Combat
                 target = null;
                 return false;
             }
-            return _byColliderId.TryGetValue(collider.GetInstanceID(), out target);
+            return TryResolve(collider.GetInstanceID(), out target);
+        }
+
+        public bool TryResolve(int colliderInstanceId, out ICombatTarget target)
+        {
+            if (colliderInstanceId == 0)
+            {
+                target = null;
+                return false;
+            }
+            return _byColliderId.TryGetValue(colliderInstanceId, out target);
         }
     }
 }

@@ -16,12 +16,20 @@ namespace Vow.Animation
         private HeroController _hero;
         private IAttackHitReceiver _hitReceiver;
         private bool _subscribed;
+        private int _idleHash, _runHash, _attackHash, _dashHash, _hitHash;
 
         private void Awake()
         {
             _animator = GetComponent<Animator>();
             _hero = GetComponentInParent<HeroController>();
             _hitReceiver = _hero;
+            // Resolve the controller contract with the component's other resources,
+            // so the first state transition only consumes prepared animation IDs.
+            _idleHash = HeroAnimatorContract.IdleHash;
+            _runHash = HeroAnimatorContract.RunHash;
+            _attackHash = HeroAnimatorContract.AttackHash;
+            _dashHash = HeroAnimatorContract.DashHash;
+            _hitHash = HeroAnimatorContract.HitHash;
 
             if (_hero == null)
                 Debug.LogError("[VOW] HeroAnimationDriver 的父層找不到 HeroController。", this);
@@ -62,13 +70,13 @@ namespace Vow.Animation
 
         public void PlayHitReaction()
         {
-            _animator.CrossFadeInFixedTime(HeroAnimatorContract.HitHash, LocomotionBlendSeconds);
+            _animator.CrossFadeInFixedTime(_hitHash, LocomotionBlendSeconds);
         }
 
         // 每一刀都從第 0 幀重播（連續攻擊同一個狀態時 CrossFade 不會重新起播，所以用 Play）。
         private void HandleWindupStarted()
         {
-            _animator.Play(HeroAnimatorContract.AttackHash, 0, 0f);
+            _animator.Play(_attackHash, 0, 0f);
         }
 
         private void HandleStateChanged(PlayerState oldState, PlayerState newState)
@@ -76,15 +84,15 @@ namespace Vow.Animation
             switch (newState)
             {
                 case PlayerState.Idle:
-                    _animator.CrossFadeInFixedTime(HeroAnimatorContract.IdleHash, LocomotionBlendSeconds);
+                    _animator.CrossFadeInFixedTime(_idleHash, LocomotionBlendSeconds);
                     break;
 
                 case PlayerState.Moving:
-                    _animator.CrossFadeInFixedTime(HeroAnimatorContract.RunHash, LocomotionBlendSeconds);
+                    _animator.CrossFadeInFixedTime(_runHash, LocomotionBlendSeconds);
                     break;
 
                 case PlayerState.CadenceDashing:
-                    _animator.CrossFadeInFixedTime(HeroAnimatorContract.DashHash, DashBlendSeconds);
+                    _animator.CrossFadeInFixedTime(_dashHash, DashBlendSeconds);
                     break;
 
                 // AttackWindup：由 HandleWindupStarted 處理

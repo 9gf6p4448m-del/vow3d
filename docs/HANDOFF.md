@@ -1,6 +1,22 @@
 # VOW 誓約 — Codex 接手紀錄（2026-09-30 更新）
 
-## 目前：v0.14.0 步驟 B 已驗收；整版未驗證、未部署
+## 目前工作：v0.14.0 步驟 C 進行中（未驗收）
+- **已批准並實跑 C03 例外（2026-09-30）**：使用者逐項批准本版兩筆 JIT 各48B 與 C01 僅 Ended→Lobby 重置幀驗指定終點／高度。測試與計畫§14已窄修訂；獨立冷 Unity `v0140-C-approved-cold-C03.xml` 為1過／0敗／0略、Exit0，480幀、首／210幀各48、其餘0、Late0，全部活性通過；原零配置仍未通過。554來源路徑、553未改檔hash及raw核對一致，批准test另固定hash。fresh Astra限定覆審APPROVE、0 findings，報告 `vow-toolchain/v0140-C-approved-criteria-review.md`。C01/C02/C04及C05仍在驗證，整版未驗收、未部署。
+
+- **修後冷捕獲已落地**：`vow-toolchain/v0140-C03-resume-cold-analysis.json`實測480完整probe區間、2筆各48B、直接父Mono.JIT、總96，與同run原C03失敗96完全對帳。readback-r2 exit0；JIT方法metadata仍空。使用者已明確批准：C03限本版兩筆JIT各48B之96B例外；C01僅Ended→Lobby重置幀改驗指定終點與高度。正在落實窄範圍修訂及實跑，不能稱原零標準通過。
+
+- **本次接手最新（2026-09-30）**：離線補齊原raw為1589幀，480組probe／18筆配置共722。正式源碼移除CanyonRules多餘設定物件、動畫hash改在Awake持有；原C03三次冷跑為362→294→96（第1／210幀各48，Late0，原零斷言仍紅）。verify326過/1既有略/0敗、EditMode319過/8既有略/0敗、相關PlayMode19/19；190突變anchors唯一但尚未執行全套。修前raw兩筆48直接父為Mono.JIT且metadata空，修後獨立冷捕獲已對帳96B，仍不能稱VM不可避免。證據及下一步見同層 `vow-toolchain/v0140-C03-resume-progress.md`；C03條件未改、未部署、工作樹尚未提交。
+- 使用者2026-09-30「繼續下一步」；C的已知良好起點為 `f7aec42ac182d3eef4cb7c77a0b75888f8fc15fc`，B來源仍 `045029d`。限定C01–C05整局／19段路線／配置及效能／兩入口與第二局／全套回歸；D未開始、未部署。
+- C01–C04 已兩輪定向 Unity 實跑：r1 1過／3敗／0略（70.3845569秒），r2 1過／3敗／0略（68.1867003秒）；原 XML/log 留在同層 vow-toolchain。C02十九段皆在原幀窗內。不能以B的243／243代替新C驗收。
+- fresh Astra 依r2確認：C01第4241幀 Ended→Lobby 的指定Warp穿越崖連線，與全程相鄰幀禁穿崖條文衝突；已詢問使用者僅此重置幀改驗指定終點，目前待裁定、原斷言保留。正式Lobby新增局部Physics同步與C03真移動完成driver，r3定向2條＝1過／1敗／0略（14.4342846秒）：C04两個入口皆同幀開局；撤掉同步原Active斷言紅，bytes已還原。C03路線／發射1／落地／高度451／視野48真432假均過，最終Update722、Late0未守零配置；分段真input606與其他116，正在定位、零門檻保留。
+- C04 在主工作樹撤同步的紅／還原綠只作診斷：計畫要求突變在獨立工作樹，正式驗收仍須重跑隔離版，不計入新增方法鑑別力。原 bytes 已還原。
+- C03 隔離探針 r2 重現 Update722，7534 段對帳 residual 全0：碰撞器 getter360、首個 CommandMove246、紅方 Update116；探針有效／空 helper0，地熱子段0。ID lookup 最小修補獨立有限 APPROVE／0 finding；Unity修後原C03＋新registry2條為2過／1敗／0略（9.6472891秒），兩個生命週期測試通過，C03原零配置斷言仍紅：實測Update362＝第1幀246＋第210幀116，Late0。正在隔離原722來源捕獲真配置堆疊，不暖能力或放寬零門檻。真 v0.13.1 參考1／1綠、480樣本 median0.95795ms／P951.3331ms，原534檔hash一致；舊版平地、無R5／地熱差異保留，新版健康效能未取得。
+- ID修後 C04 另跑原實際方法1／1綠（5.6232377秒）。隔離 callstack capture r2 實跑原Update722紅（10.0553883秒），149467751 bytes binary raw 已保存，但即時buffer first/last=-1、0 frame／0 GC sample；不能稱已取得堆疊。正在評估公開LoadProfile離線讀回既有raw，原測量與原診斷備份保留。capture r1 的內部API編譯阻斷審查結果保留，r2已移除後才實跑。
+- 離線Editor reader 實跑 exit0，Load=True，但實際只載入末300 raw幀（1289–1588），48852 GC samples／原rawhash前後一致；獨立結構核查只含99次遊戲Update，缺首命令／第210幀配置，不能稱已定位246／116。完整raw仍在，正在確認僅離線載入容量的窄調整。服務容量中斷已換可用Sol接續，reader有限覆審0HIGH／1MEDIUM（IO錯誤可能跳過cleanup）保留。
+- C05 外部runner兩輪Sol覆審REJECT後，fresh Astra定案修補並第三輪有限APPROVED（hash `05c9e074514ddf618841bb7b54c03e38f7ebacb0a557faa8cb51cfc8c4f6736d`）；尚未Execute正式190。原190mutations anchors全部唯一、原定義不改，將用新C snapshot與三個新隔離工作樹64／63／63；每fault備份還原、全pure綠，與Unity batchmode序列執行。格式探針僅K2：健康327／1既有略、故障2紅、還原327／1既有略、來源hashclean，不計入正式190。
+- 不動使用者既有GDD／PLAYER_EXPERIENCE_BLUEPRINT；不改既有測試斷言、幀窗、座標或配置量門檻。最新C日誌索引在外部 `vow-toolchain/v0140-C-mutation-prep.md`、`v0140-C-tests-report.md`（由worker落地）。
+
+## v0.14.0 步驟 B 已驗收；整版未驗證、未部署
 
 - 分支 `v0140-abyssal-canyon`；驗證來源 snapshot `045029dbb6e3312f3cf7d298e090faff4a891b70`（前一 B checkpoint `d97ae86`）；此證據提交包含兩個 B checkpoint，推送核對以 `git log origin/v0140-abyssal-canyon -1` 為準。A 的已驗收／已推來源為 `66f98a6`。
 - 地形、地熱、樓層移動、射程、顯形、真 HUD 接線與場景已實作；真畫面已查看。`v0140-B-codex-wiring-r8.xml` 為 32／32，B13 真 844×390、258 點最少 3／15、埋入對照 0／15。包含於本次B驗收證據。

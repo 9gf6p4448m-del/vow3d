@@ -3,12 +3,18 @@ namespace Vow.Core.Logic
     // v0.14.0 深淵峽谷灰盒數值（docs/V0140_CANYON_PLAN.md §7.1，2026-09-30 凍結）。零 UnityEngine。
     public sealed class CanyonTuning
     {
+        public static class Defaults
+        {
+            public const int CliffRangePercent = 10;
+            public const float CanyonWaterBonusMeters = 1f;
+        }
+
         // §4.1 崖台射程加成（整數百分比；range × (100 + 10) / 100f）。
-        public int CliffRangePercent = 10;
+        public int CliffRangePercent = Defaults.CliffRangePercent;
         // §4.2 站在崖台上的觀看者局部視野；其他位置維持 CaptureVisibilityLogic.LocalVisionRadius（6）。
         public float CliffVisionRadius = 8f;
         // §4.4 谷底淺水：水域圓心在谷底時半徑加這麼多（與潮汐牽引相加）。
-        public float CanyonWaterBonusMeters = 1f;
+        public float CanyonWaterBonusMeters = Defaults.CanyonWaterBonusMeters;
 
         // §4.5 地熱點。
         public float VentChannelSeconds = 0.6f;

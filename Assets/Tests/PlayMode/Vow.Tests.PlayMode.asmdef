@@ -5,6 +5,7 @@
         "Vow.Core",
         "Vow.Combat",
         "Vow.Bootstrap",
+        "Vow.Input",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

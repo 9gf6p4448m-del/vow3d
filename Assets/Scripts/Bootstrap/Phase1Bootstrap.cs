@@ -983,6 +983,8 @@ namespace Vow.Bootstrap
             _hero.ResetForDuel(new Vector3(_captureSpec.MotherRespawnX(0, 0), 0f, _captureSpec.MotherRespawnZ(0, 0)));
             _opponent.RespawnAt(new Vector3(_canyonTuning.CanyonLobbyOpponentSpawnX, 0f, _canyonTuning.CanyonLobbyOpponentSpawnZ));
             _opponent.StopRound();
+            // Both Lobby entrances permit a tap this frame; publish their warped collider poses now.
+            Physics.SyncTransforms();
         }
 
         private void HandleCaptureButton()

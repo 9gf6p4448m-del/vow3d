@@ -33,5 +33,6 @@ namespace Vow.Core
     public interface ICombatTargetResolver
     {
         bool TryResolve(Collider collider, out ICombatTarget target);
+        bool TryResolve(int colliderInstanceId, out ICombatTarget target);
     }
 }
