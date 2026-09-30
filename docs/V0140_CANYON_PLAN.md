@@ -1,10 +1,10 @@
 # 計畫：v0.14.0 深淵峽谷——立體地貌 C 案第 1 批（三層高度＋6 處斜坡＋崖台規則＋2 個地熱點）
 
-> 狀態：**草案（2026-09-30 起草，未凍結）**。起草 → 主對話審稿 → 使用者裁定 §13 留白題 → §12.1 前置作業 → 凍結。凍結後 §2～§6 的規則與數值、§9 全部 V14 條文、§10 突變定義只能走 §12 修改。
+> 狀態：**草案 r1（2026-09-30 起草；同日依 `vow-toolchain/v0140-plan-review.md` 完成凍結前審稿修訂 r1，見 §14；未凍結，待使用者確認 §13 Q14）**。起草 → 主對話審稿 → 使用者裁定 §13 留白題 → §12.1 前置作業 → 凍結。凍結後 §2～§6 的規則與數值、§9 全部 V14 條文、§10 突變定義只能走 §12 修改。
 > 已知良好狀態：`main 96730fd`（v0.13.1，`96730fdf34c1fbbb35982bc758a1ac0771f26aa3`），線上 `origin/gh-pages e82603c`（來源 `eb3c164`）。工作分支 `v0140-abyssal-canyon`（從 `96730fd` 開，起草時工作區乾淨）。
 > 裁定紀錄（權威、唯一需求來源）：`vow-toolchain/v0140-alignment.md`（2 輪、7 題全部照建議）；示意圖 `vow-toolchain/v0140-layout-C.png`。範本：`docs/V0100_SANCTUARY_PLAN.md`（章節結構、共同遵守、指令、變更規則沿用）。
 > 推導腳本：`vow-toolchain/v0140-reachability.py`（輸出 `v0140-reachability.out.txt`）。它是**重建模型**（從 `CaptureBoardSpec.cs` 解析 19 塊中心與 42 條邊，以 float64 逐行重建 `BlockGrid.StampBox`／`FlowField` 規則，以高度場近似鏡頭 Linecast），**不是被測物**，實作不得 import 或移植它的值當期望值；它的格點數字在 float32 邊界上可能差一格，凍結前由 §12.1-1 用 C# 實跑複核。
-> 標記：【解讀】＝對齊紀錄沒講清楚、由起草者給出的解讀，全部同時列在 §13；【凍結前補】＝字面值須在 §12.1 前置作業實跑後寫入，未補不得凍結。
+> 標記：【解讀】＝對齊紀錄沒講清楚、由起草者給出的解讀，全部同時列在 §13；【凍結前補】＝字面值須在 §12.1 前置作業實跑後寫入，未補不得凍結（r1：全數已補，計畫內已無待補欄位）。r1 新增字面值的 C# 重算：`vow-toolchain/v0140-refcs/Extra.cs`（`dotnet run -c Release -- r1`，輸出 `refcs-r1-output.txt`；C# 重建模型，不是 Unity 實跑）。
 >
 > 目的：把目前「只有 x/z 的平面格子導航」升級為 2.5D——每個位置有高度、層與層之間只能經斜坡（或地熱點單向上崖）移動；在正式 19 塊佔領局加上深淵峽谷版面、谷心核心、崖台射程／視野、谷底淺水與地熱點。WebGL 可以玩，不代表原生手機驗收已通過。
 
@@ -94,7 +94,7 @@ namespace Vow.Core.Logic
 
 ### 2.2 6 處斜坡（【解讀】寬 3.5m、長 4m）
 
-**使用者 2026-09-30 裁定（工程）**：斜坡資料結構支援**任意落差**（每條斜坡的高度由兩端塊的層高決定，坡度＝落差／長度，不寫死 1m），讓日後改丁案（崖台接谷底、落差 2m）只需改資料。本批 6 條都是落差 1m、坡度 0.25；V14-A09 的連續不變量門檻改為「該處斜坡坡度×格心距＋1e-5」（本批數值不變）。
+**使用者 2026-09-30 裁定（工程）**：斜坡資料結構支援**任意落差**（每條斜坡的高度由兩端塊的層高決定，坡度＝落差／長度，不寫死 1m），讓日後改丁案（崖台接谷底、落差 2m）只需改資料。本批 6 條都是落差 1m、坡度 0.25。**r1（審稿 M-3）**：V14-A09 的門檻維持字面 0.25×格心距＋1e-5（本批 6 條坡度都是 0.25；期望值不得讀規格欄位，「該處坡度」在跨斜坡端的格子對上也無定義）；任意落差改由 **V14-A22**（落差 2m 的測試斜坡）驗收。`CanyonTerrainSpec` 須有公開建構子 `CanyonTerrainSpec(CaptureBoardSpec board, float[] tileHeights, int[] rampLowTiles, int[] rampHighTiles)`（斜坡寬長讀 `CanyonTuning`），`CanyonTerrainSpec.V0140` 以同一建構子建出。
 
 斜坡＝一個矩形坡道：中心在兩塊共用邊的中點，長軸沿兩塊塔心連線（因此「塔心到塔心」的直線正好走在坡道中軸上），跨邊各 2m；寬 3.5m（共用邊長 4.375m，兩端各留 0.4375m 崖壁）。高度沿長軸線性內插；坡度 1m／4m＝0.25（14.04°），遠小於 `HeroLocomotion.ApplyDisplacement` 的「地面」判準 `normal.y > 0.7`（45.6°）。
 
@@ -123,7 +123,7 @@ namespace Vow.Core.Logic
 
 | 點 | 踏點圓心 (x, z) | 踏點半徑 | 所在塊 | 落點 (x, z) | 落點塊／高度 | 備註 |
 |---|---|---:|---|---|---|---|
-| 東北 G0 | (2.09375, 2.0625) | 0.375 | 0（谷底） | (4.59375, 2.0703125) | 2／+1.0 | 距 0 號塔心 2.9390，踏點圓與核心／0 號佔塔圈相隔 0.0640m；落點在 2 號光圈外 0.1134m、距崖壁線 0.8457m |
+| 東北 G0 | (2.09375, 2.0625) | 0.375 | 0（谷底） | (4.59375, 2.0703125) | 2／+1.0 | 距 0 號塔心 2.9390，踏點圓與核心／0 號佔塔圈相隔 0.0640m；落點在 2 號光圈外 0.1134m、距最近崖壁線段 1.2246m（r1 C# 重算，`refcs-r1-output.txt` M-10 節；草案原寫 0.8457，已更正） |
 | 西南 G1 | (−2.09375, −2.0625) | 0.375 | 0 | (−4.59375, −2.0703125) | 5／+1.0 | G0 的 180° 旋轉 |
 
 兩個踏點格、落點格在重建格點上都不是 Blocked，藍出生點與紅出生點都走得到踏點。示意圖把星號畫在 0 號塊靠 2／5 號那側，此處照辦。
@@ -173,17 +173,13 @@ namespace Vow.Core.Logic
 
 ## 3. 核心：谷心 (0,0)、半徑 2.5m（Q1 甲，推翻 v0.13.1 修-1）
 
-> **主對話凍結前修訂（依 `vow-toolchain/v0140-prefreeze-tests.md` 缺口 G3／G9）**：核心位置改為**跟著棋盤規格走**，不改 `new AbyssalVanguardTuning()` 的預設值。`AbyssalVanguardTuning` 新增靜態工廠 `ForSpec(CaptureBoardSpec spec)`：`spec.Terrain != null`（`V0140Canyon`）→ (0,0)、半徑 2.5；否則回傳預設（v0.13.1：(4.375,0)、1.8）。`Phase1Bootstrap` 以目前規格取用。效果：①關地形的平地夾具（§13 Q2）完整保留 v0.13.1 行為，`AbyssalVanguardPlayTests` 與三條 EditMode 條文**一字不改、仍應全綠**（下方「受影響的既有測試」清單與 §8 T1～T4 作廢）；②§13 Q3 不必刪舊條文（它測的是預設／平地，仍成立），使用者原同意刪除，現改為保留、不刪；③峽谷的核心行為只由 V14-A10、B11 驗收。V14-A10 的 `new AbyssalVanguardTuning()` 一律讀作 `AbyssalVanguardTuning.ForSpec(CaptureBoardSpec.V0140Canyon)`，並加一句：`ForSpec(V0100Sanctuary)` 的 CoreX＝4.375f、CoreRadius＝1.8f（活性：兩規格真的不同）。
+> **主對話凍結前修訂（依 `vow-toolchain/v0140-prefreeze-tests.md` 缺口 G3／G9）**：核心位置改為**跟著棋盤規格走**，不改 `new AbyssalVanguardTuning()` 的預設值。`AbyssalVanguardTuning` 新增靜態工廠 `ForSpec(CaptureBoardSpec spec)`：`spec.Terrain != null`（`V0140Canyon`）→ (0,0)、半徑 2.5；否則回傳預設（v0.13.1：(4.375,0)、1.8）。`Phase1Bootstrap` 以目前規格取用。效果：①關地形的平地夾具（§13 Q2）完整保留 v0.13.1 行為，`AbyssalVanguardPlayTests` 與 `AbyssalVanguardLogicTests` 全部條文的**斷言一字不改、仍應全綠**（`AbyssalVanguardPlayTests` 只在 `SetUp` 新增 §8 G1 的一行呼叫）；②§13 Q3 不必刪舊條文（它測的是預設／平地，仍成立），使用者原同意刪除，現改為保留、不刪——此偏離待使用者確認（§13 Q14）；③峽谷的核心行為只由 V14-A10、B11 驗收。
 
-- `AbyssalVanguardTuning`：`CoreX = 0f`、`CoreZ = 0f`、`CoreRadius = 2.5f`；引導仍 3.5 秒（連動 `CaptureTuning.CaptureSeconds`）。核心圈與 0 號佔塔圈（圓心 (0,0)、`CaptureTuning.CircleRadius`＝2.5）**完全重合**：站在圈內同時引導核心與佔 0 號塔，受傷兩者都中斷。
+- `AbyssalVanguardTuning.ForSpec(V0140Canyon)`：`CoreX = 0f`、`CoreZ = 0f`、`CoreRadius = 2.5f`；引導仍 3.5 秒（連動 `CaptureTuning.CaptureSeconds`）。`new AbyssalVanguardTuning()` 的預設值**不改**（4.375f／0f／1.8f）。核心圈與 0 號佔塔圈（圓心 (0,0)、`CaptureTuning.CircleRadius`＝2.5）**完全重合**：站在圈內同時引導核心與佔 0 號塔，受傷兩者都中斷。
+- **r1（審稿 L-6）新增介面**：`AbyssalVanguardTuning.IsInCore(float x, float z)`（實例方法，`dx²+dz² ≤ CoreRadius²`，含邊界）；`AbyssalVanguardLogic` 私有的 `InsideCore` 改為呼叫它（單一事實來源，判定式不變）。V14-A10 以它斷言。
 - 先鋒生成位置 `(CoreX, HeightAt(CoreX, CoreZ), CoreZ)`＝(0, −1, 0)。先鋒 5m 反擊範圍涵蓋整個 0 號塊的大部分；站在 2／3／5／6 崖台邊緣（離 (0,0) 至少 3.79＋0.37＝4.16m）仍在 5m 內，會被反擊（x/z 距離，不看高度，【解讀】同 §4.1）。
-- 核心半徑不再與 `CaptureTuning.CircleRadius` 分開：v0.13.1 修-1 的「核心半徑自此不再連動 CircleRadius」維持（兩個欄位各自寫 2.5），不改成讀同一欄位，避免日後調佔塔圈時連帶移動核心。
-- **受影響的既有測試**（逐條讀過）：
-  - EditMode `AbyssalVanguardLogicTests.Tuning_UsesFrozenGreyboxValuesAndCaptureCircleRadius`：斷言 `CoreX==4.375f`、`CoreRadius==1.8f` → 改為 0f、2.5f（本批規則改動的直接結果）。
-  - EditMode `AbyssalVanguardLogicTests.CoreCircle_OverlapsNoCaptureCircle_OnNineteenBoard`：v0.13.1 的「不得與任何佔塔圈重疊」與 Q1 甲正好相反 → 以 V14-A10 的「與 0 號圈重合、與其他 18 塊不重疊」取代（刪除舊條文需使用者同意，見 §13 Q3）。
-  - EditMode `AbyssalVanguardLogicTests.Core_CircleBoundaryAndUnopposedChannelClaimForBothSides`：邊界字面值 1.801f／1.8f → 2.5078125f／2.5f。
-  - 其餘 6 條 `TickCore(…, CoreX, 0f, …)` 讀 `new AbyssalVanguardTuning().CoreX`，自動跟著變為 (0,0)，**斷言不變**，應維持綠燈（純邏輯不看高度）。
-  - PlayMode `AbyssalVanguardPlayTests` 第 74、146、197 行寫死 `(4.375f, 0f, …)`：新版面上 (4.375,0) 是 0／2／3 三塊交會的崖壁頂點，英雄傳送過去會卡在崖壁線上 → 改為讀 `_bootstrap` 暴露的核心座標、y 取 `HeightAt`；第 96／111 行（核心 ±4.9／5.1m）在谷底方向仍落在 0／4 號塊內，保留。
+- 核心半徑不再與 `CaptureTuning.CircleRadius` 分開：v0.13.1 修-1 的「核心半徑自此不再連動 CircleRadius」維持（`ForSpec` 寫字面 2.5），不改成讀同一欄位，避免日後調佔塔圈時連帶移動核心。
+- **受影響的既有測試**（r1 改寫，審稿 M-1）：因核心改為依規格取用、預設值不改，`AbyssalVanguardLogicTests` 三條（`Tuning_UsesFrozenGreyboxValuesAndCaptureCircleRadius`、`CoreCircle_OverlapsNoCaptureCircle_OnNineteenBoard`、`Core_CircleBoundaryAndUnopposedChannelClaimForBothSides`）與其餘 6 條 `TickCore` 條文**全部不改**；`AbyssalVanguardPlayTests` 第 74、146、197 行的 `(4.375f, 0f, …)` 在平地夾具下仍是核心，**不改**。草案時期的「字面值改寫／刪除舊條文」（原 §8 T1～T4）全部作廢。
 
 ---
 
@@ -194,6 +190,7 @@ namespace Vow.Core.Logic
 - **判定位置**：看**攻擊者**出手當下的地形類別；`ClassAt(攻擊者 x, z)==Cliff` 才加成。目標在哪一層不影響。斜坡（`Ramp`）不算崖台。【解讀】
 - **作用對象**【解讀，§13 Q5】：只作用在「普攻射程」——藍方英雄 `HeroTuningAsset.AttackRange` 5m → 5.5m；紅方對手的出手距離 `DuelTuning.OpponentStopDistance` 1.8m → 1.98m（對手的傷害圈 `AttackRadius` 1.5m 是落在英雄腳下的閃避圈，不是射程，不變）。元素（施放距離 3m、火浪 6m）與符印（極速 4m、拖曳 1.2～8m）不加成。
 - **計算式**：`range × (100 + CliffRangePercent) / 100f`，`CliffRangePercent = 10`（整數，放 `CanyonTuning`）。5×110/100＝5.5 在 float32 精確；邊界測試用二進位有限小數（V14-A11）。
+- **介面（r1，審稿 H-1）**：`CanyonRules.AttackRange(float baseRange, float ax, float az, ITerrainQuery terrain)` 回傳攻擊者所在位置的射程（`terrain==null` → `baseRange`）；`CanyonRules.InAttackRange(float baseRange, float ax, float az, float tx, float tz, ITerrainQuery terrain)` ＝ `(tx−ax)²+(tz−az)² ≤ AttackRange(baseRange, ax, az, terrain)²`（含邊界）。`HeroController.IsTargetInAttackRange` 與 `TrainingOpponent` 的停步判定都改呼叫 `InAttackRange`，不在呼叫端另算距離。
 - 距離一律水平（`offset.y = 0`，沿用 `HeroController.IsTargetInAttackRange`），高度差不影響射程。崖壁不擋攻擊（`TrainingOpponent.HasBlockingWall` 只認符印牆／測試牆，維持）。
 
 ### 4.2 局部視野 6→8m
@@ -202,7 +199,7 @@ namespace Vow.Core.Logic
 
 ### 4.3 谷底看不到崖台上的敵人，與 v0.12 迷霧的合成（【解讀】順序）
 
-`CanSee(match, viewerSide, viewer, viewerKO, target)`：
+`CanSee(match, tracker, targetUnit, viewerSide, viewer, viewerKO, target)`（r1 介面見 §4.7 末「介面」）：
 
 1. 不適用迷霧（非 Active、非正式規則集、`FogEnabled==false`）→ 看得到。
 1.5 **目標處於「開火顯形」且顯形對象是觀看方 → 看得到**（§4.7；蓋過下面所有「看不到」的規則，含倒地、谷底看崖台、距離）。
@@ -232,6 +229,7 @@ namespace Vow.Core.Logic
 | 發射 | 【解讀】發射後進入 0.5 秒的拋物線飛行：水平位置由踏點圓心線性移到落點、高度 `lerp(−1, +1) + 4·1.0·t(1−t)`（頂點高出 1m）；飛行中英雄不能下指令、可以被攻擊但不打斷飛行；落地後 `TerrainLayer=0`、y＝`HeightAt(落點)`。對手在飛行中失去目標的判定照 §4.3（英雄在飛行中的 `ClassAt` 以水平位置計算）。 |
 | 落點被佔 | 落點被符印牆蓋住時，落地後照既有 `EjectFromBox` 推到最近空格，但限定「與落點同一樓地板」（§5.2、`IsSameFloor`），不會被推回谷底。 |
 | 重開局 | 第二局兩點冷卻與引導全部歸 0。Off／Lobby／Ended 不引導。 |
+| **介面（r1，審稿 M-7／L-6）** | `GeothermalVentLogic(CanyonTerrainSpec terrain, CanyonTuning tuning)`（踏點與落點從 terrain 讀，固定 2 點、零配置）；`void Tick(float dt, float heroX, float heroZ, bool heroCanTrigger)`；`void NotifyDamaged()`；`void Reset()`；唯讀 `LaunchCount`、`LastLaunchPad`、`LastLandingX`、`LastLandingZ`、`Progress(int pad)`、`Cooldown(int pad)`。**邏輯層不追蹤飛行、存活與對局狀態**：`heroCanTrigger`＝「玩家英雄存活 && 未在移動鎖定（含地熱點飛行） && 對局 Active」，由呼叫端（`Phase1Bootstrap`）每 tick 算好傳入；`heroCanTrigger==false` 等同 ④ 的「不可觸發」（`progress = 0`）。飛行 0.5 秒的鎖定只在 `HeroLocomotion`（§7.3）。發射時呼叫端清除英雄既有的移動目的地（落地後停在落點，與 V14-B07 ④ 一致；r1 定義補寫，非規則改動）。 |
 | **Tick 順序**（V14-A14 的字面值依此推導，凍結） | 對每一點依序：① `cooldown = max(0, cooldown − dt)`；② `cooldown > 0` → `progress = 0`，本點結束；③ 若本 tick 有待處理的受傷旗標 → `progress = 0`、清旗標，本點結束；④ 英雄可觸發且在圓內 → `progress += dt`，否則 `progress = 0`；⑤ `progress ≥ VentChannelSeconds` → 發射、`progress = 0`、`cooldown = VentCooldownSeconds`。兩點依索引 0、1 處理；同一 tick 至多一點發射（英雄只能在一個圓內，兩圓相距 5.9m）。 |
 
 ### 4.7 開火顯形（使用者 2026-09-30 裁定，新規則）
@@ -239,10 +237,31 @@ namespace Vow.Core.Logic
 - **觸發**：任一單位的普攻或技能（元素、符印牆撞擊、裂風矢、巨獸攻擊）對**敵方英雄／對手**實際造成傷害（扣血 > 0 的那一次受擊）時，攻擊者對**受害者所屬陣營**顯形 `RevealSeconds = 1.5f`（放 `CanyonTuning`；與 GDD 蒸氣迷霧受擊顯影同長）。先鋒、巨獸被打不算（中立／建物不觸發）。
 - **計時**：每個可被顯形的單位（藍英雄、紅對手、雙方巨獸）各一個 `RevealRemaining`；再次命中重設為 1.5（不累加）；每 tick 減 dt、夾 0；`> 0` 時顯形。第二局歸 0。
 - **作用範圍**：只在迷霧適用時有意義（§4.3 第 1 步不適用就本來全可見）；`V0100Sanctuary` 夾具也適用（它有迷霧），但夾具的既有 EditMode 條文不觸發命中，不受影響。
-- **單一來源**：純邏輯 `RevealTracker`（零配置、固定容量），`CanSee` 第 1.5 步讀它；Unity 端在傷害入口（`TakeDuelDamage`／`ReceiveDamage` 的扣血成功分支）呼叫 `NotifyHit(attackerId, victimSide)`。B 步開工先數分母：`grep -rn "TakeDuelDamage\|ReceiveDamage" Assets/Scripts` 逐一標明是否經過 `NotifyHit`。
+- **單一來源**：純邏輯 `RevealTracker`（零配置、固定容量），`CanSee` 第 1.5 步讀它；Unity 端在傷害入口（`TakeDuelDamage`／`ReceiveDamage` 的扣血成功分支）呼叫 `NotifyHit`（簽章見下方「介面」）。B 步開工先數分母：`grep -rn "TakeDuelDamage\|ReceiveDamage" Assets/Scripts` 逐一標明是否經過 `NotifyHit`。
 - **AI 反應**：紅方 AI 的 `CanSeeHero` 讀 `CanSee`，顯形期間照既有追打規則追擊（甲案要走斜坡繞路才上得了崖台）；不另寫 AI 規則。
 
 > **主對話凍結前修訂（缺口 G4）**：`TakeDuelDamage` 沒有攻擊者參數、元素傷害的 instigator 為 null。規則改寫為**以陣營歸屬**：`NotifyHit(attackerSide, victimSide)` 讓「攻擊方陣營的英雄／對手」顯形；元素、符印牆撞擊的攻擊方＝該區域／牆的 `factionId`；巨獸打人時顯形的是巨獸本身（`NotifyHit` 另一多載帶單位 id）。B 步開工逐一標明 15 個實際造成傷害的呼叫點（`v0140-prefreeze-tests.md` §2）各自如何取得 attackerSide，漏一處即 V14-B16 範圍不完整。
+
+> **介面（r1，審稿 M-6；寫死，實作與 V14-A20 照此）**：
+> ```csharp
+> public enum RevealUnit { BlueHero = 0, RedOpponent = 1, BlueBehemoth = 2, RedBehemoth = 3 }   // 固定 4 格
+> public sealed class RevealTracker          // Vow.Core.Logic，零配置
+> {
+>     public RevealTracker(float revealSeconds);                // 本批傳 CanyonTuning.RevealSeconds＝1.5f
+>     public void NotifyHit(int attackerSide, int victimSide);   // 顯形「attackerSide 的英雄／對手」（藍→BlueHero、紅→RedOpponent），顯形對象＝victimSide
+>     public void NotifyUnitHit(RevealUnit unit, int victimSide);// 巨獸打人
+>     public void Tick(float dt);                                // 各格 remaining −= dt、夾 0
+>     public bool IsRevealedTo(RevealUnit unit, int viewerSide); // remaining > 0 && viewerSide == 該格的顯形對象
+>     public float Remaining(RevealUnit unit);
+>     public void Reset();
+> }
+> // CaptureVisibilityLogic 新多載（第 1.5 步；tracker==null 時跳過 1.5 步）：
+> public static bool CanSee(CaptureMatchLogic match, RevealTracker tracker, RevealUnit targetUnit, int viewerSide,
+>     float viewerX, float viewerZ, bool viewerKnockedOut, float targetX, float targetZ);
+> // 既有多載 CanSee(match, viewerSide, viewerX, viewerZ, viewerKnockedOut, targetX, targetZ) 保留，
+> // 等同 tracker==null 的新多載（地形規則照樣由 match.Spec.Terrain 決定），T7 不改即可編譯。
+> ```
+> `RevealTracker` 由 `Phase1Bootstrap` 持有並傳入（`CaptureMatchLogic` 屬 V14-A18 零改動檔，不放進 match）。
 
 ### 4.6 不變的規則（【解讀】）
 
@@ -264,10 +283,10 @@ namespace Vow.Core.Logic
 | 實體／系統 | 本批處理 |
 |---|---|
 | 英雄、紅方對手（共用 `HeroLocomotion`） | 水平位移照舊（`ApplyDisplacement` 的 SphereCast 裁切＋格點繞路）；**每次改動水平位置後** y＝`HeightAt(x,z,TerrainLayer)`。會改位置的入口（起草時清點，B 步開工重數）：`Step` 走路、`MicroCadenceMover` 滑步（兩者經 `ApplyDisplacement`）、`EjectFromBox`、`WarpTo`、`SyncAgent`、`HeroController.ResetForDuel`、`TrainingOpponent.RespawnAt`、地熱點飛行（新）。y 更新集中在 `HeroLocomotion` 一個私有方法，其他入口呼叫它。`_terrain == null`（Off 模式）時 y 不動，行為與 v0.13.1 逐行相同。 |
-| `EjectFromBox`（被牆壓到時推出） | 最近空格搜尋加上「`IsSameFloor`」條件（**使用者 2026-09-30 裁定改寫**：兩點都不在崖壁格，且水平線段 p0→p1 `CrossesCliff==false`——與 §9 共同遵守的穿崖判準同一個函式；不再用坡度門檻，因為「高度差 ≤ 0.25×距離」在相距 ≥ 8m 時會把谷底與崖台誤判為同層，日後陡坡更嚴重）。否則谷底貼崖壁被牆壓到時，最近的空格可能在崖台上，等於穿崖。 |
+| `EjectFromBox`（被牆壓到時推出） | 最近空格搜尋加上「`IsSameFloor`」條件（**使用者 2026-09-30 裁定改寫**：兩點都不在崖壁格，且水平線段 p0→p1 `CrossesCliff==false`——與 §9 共同遵守的穿崖判準同一個函式；不再用坡度門檻，因為「高度差 ≤ 0.25×距離」在相距 ≥ 8m 時會把谷底與崖台誤判為同層，日後陡坡更嚴重）。否則谷底貼崖壁被牆壓到時，最近的空格可能在崖台上，等於穿崖。**「崖壁格」定義（r1，審稿 M-4；純幾何、與格點無關）**：點到 `CanyonTerrainSpec` 任一崖壁線段（有限線段）的水平距離 ≤ 0.35（＝`NavGridTuning.BodyRadius`，與崖壁蓋格的外擴量相同）即為在崖壁格；**不得**用 `BlockGrid.IsBlocked` 判斷（格點無法區分崖壁引用與牆引用，推出時英雄所在格必被牆蓋住）。有條件搜尋為 `BlockGrid` **新增**方法 `TryFindNearestFreeSameFloor(float x, float z, int maxRadiusCells, ITerrainQuery terrain, int layer, out int cx, out int cz)`：掃描順序與比較式和 `TryFindNearestFree` 逐行相同，只多跳過 `!terrain.IsSameFloor(x, z, layer, 格心x, 格心z, layer)` 的候選；零配置。 |
 | NavMeshAgent | **不重烘**：維持 v0.13.1 的平地 NavMesh，只用它的水平 `desiredVelocity`；崖壁靠 `BlockGrid` 蓋格讓 `GridNavigator` 判「沒有視線」而改走整合場（和符印牆同一套機制）。`SyncAgent` 已經把 y 從 agent 讀回時覆寫成角色自己的 y（`HeroLocomotion.cs` 的 `clamped.y = _self.position.y`），B 步要實測 y 偏離 NavMesh ±1m 時 `isOnNavMesh` 與 `nextPosition` 夾回行為不變（V14-B03 探針）。 |
 | 崖壁實體 | 每段崖壁線段一個 `BoxCollider`（厚 0.1m、y 從 −2 到 +4，放 Ignore Raycast 層：擋身體 SphereCast〔`Physics.AllLayers`〕、不擋點地射線〔`DefaultRaycastLayers`〕）。沒有它，從高處往低處走時 SphereCast（高度 +0.9）掃不到下方的地形塊，會直接走下崖。 |
-| 地形碰撞體（點地與地面） | 19 塊各用 3 個旋轉 90°／±60° 的 `BoxCollider`（R×2h 矩形三個一組＝正六角，ARCHITECTURE §壹「碰撞器一律 Primitive」），頂面在該層高度、底在 −2；6 條斜坡各一個傾斜 `BoxCollider`；棋盤外 4 塊長條（頂面 0）。全在 Default 層。進入正式佔領局時啟用，Off 模式停用並恢復平地 `Ground_40x40` 的碰撞體（§13 Q2）。 |
+| 地形碰撞體（點地與地面） | 19 塊各用 3 個旋轉 90°／±60° 的 `BoxCollider`（R×2h 矩形三個一組＝正六角，ARCHITECTURE §壹「碰撞器一律 Primitive」），頂面在該層高度、底在 −2；6 條斜坡各一個傾斜 `BoxCollider`；棋盤外 4 塊長條（頂面 0）。全在 Default 層。進入正式佔領局時啟用，Off 模式停用並恢復平地 `Ground_40x40` 的碰撞體（§13 Q2）。**已知灰盒限制（r1，審稿 M-12，接受不修）**：高端塊的六角盒頂面在該層高度，會蓋住斜坡伸進高端塊的那一半（交界處最多高出坡面 0.5m）；點地射線點在斜坡上半段會打到盒頂而非坡面（高度誤差 ≤0.5m、52° 俯角下水平誤差 ≤0.39m）。身體位移基本不受影響（推導：坡面上 SphereCast 球心高出腳底 0.9、半徑 0.35；腳底在交界前水平距離 d 處時球心比盒頂邊緣高 0.4−0.25d。1/60 下每步 0.092m，球心到盒頂邊緣的距離最小值 √min(d²+(0.4−0.25d)²)＝0.388 > 0.35，不接觸；低幀率單步 > 0.62m 時可能以法線 y < 0.7 接觸而被裁切一步，裁切後 d ≤ 0.35、球心高 ≥ 0.3125，下一步接觸法線 y ≥ 0.89 被 `ApplyDisplacement` 視為地面而通過，不會卡死；V14-B05(a) 的 45 幀窗口對 C# 名目 18／24 幀留有裕度；本批 y 一律由 `HeightAt` 決定）。V14-D08 未驗證清單須列「斜坡上半段的點地落點誤差」；本批沒有條文點擊斜坡上半段。 |
 | 點地射線 | 沿用 `PlayerInputService` 的 `Physics.RaycastNonAlloc(…, DefaultRaycastLayers)`，打到地形頂面／坡面拿到正確的 (x,y,z)。平地 `Ground_40x40` 在峽谷模式必須停用，否則點谷底會先打到 y＝0 的平面（52° 俯角下水平誤差 1/tan52°＝0.78m）。 |
 | 先鋒（中立） | 生成於 (0, −1, 0)；不移動。 |
 | 巨獸 | 路線 BFS 改用 `WalkNeighbor`（原本用 `CaptureBoardSpec.Neighbor`，會規劃出 0→2 這種崖壁邊）；沿路 y＝`HeightAt`；位移 SphereCast（半徑 0.48、高度 +1）被崖壁碰撞體擋住。 |
@@ -277,14 +296,15 @@ namespace Vow.Core.Logic
 | 裂風矢貫穿射線（`HeroController.cs:427`） | 【解讀】起點 +0.9、方向改為指向目標的 +0.9（含 y 分量），否則谷底往崖台射時水平射線從目標腳下穿過。 |
 | 對手遮擋射線（`TrainingOpponent.cs:510`） | 射線緩衝滿時直接判「被擋」；地形碰撞體會多佔命中數。B 步要實測谷底對崖台出手時命中數 < 緩衝大小（或把地形碰撞體排除在這條射線的 LayerMask 外）。 |
 | 鏡頭 | `FollowCameraRig` 跟隨目標含 y，谷底時鏡頭一起下降 1m；52°／17m／FOV 40 不變。 |
+| 佔領待機（Lobby）的對手位置（r1，審稿 M-13） | 現行 `_spawn`＝(−4,8) 在峽谷模式落在 1 號谷底、距 1\|18 崖壁線段只有 0.1138m（在 0.35 外擴帶內，膠囊與崖壁碰撞體相交；C# r1 重算）。**峽谷模式**（`spec.Terrain != null`）回 Lobby 時對手改傳送到 `CanyonLobbyOpponentSpawn`＝(−4, 0, 12)（18 號平原、距最近崖壁線段 1.8861m，r1 C# 重算）；`Terrain == null` 時仍用 `_spawn`（V9_C01 不受影響）。常數放 `CanyonTuning`。由 V14-C04 驗。 |
 
-§6.1-7 分母（B 步開工時必做，寫進回報）：①`grep -rn "Physics\.\(Raycast\|SphereCast\|OverlapSphere\|OverlapBox\|Linecast\|CapsuleCast\)" Assets/Scripts`（起草時 6 個呼叫點：`AbyssalVanguardTarget:271`、`Projectile:99`、`TrainingOpponent:510`、`HeroController:427`、`HeroLocomotion:453`、`PlayerInputService:387`）逐一判定是否受高度影響；②`grep -rn "\.y = 0f\|, 0f, " Assets/Scripts/{Combat,Bootstrap,Core}`（起草時 52 行；凍結前複查 58 行：世界位置 5、水平方向 36、其他 17）逐行分類為「水平方向向量（不用改）」或「世界位置（改讀 HeightAt）」，回報兩類各幾行；③會改英雄／對手／巨獸 `transform.position` 的入口（`grep -rn "position = \|\.Warp(\|WarpTo(" Assets/Scripts`）逐一標明是否經過 y 更新與 `IsSameFloor`。
+§6.1-7 分母（B 步開工時必做，寫進回報）：①`grep -rn "Physics\.\(Raycast\|SphereCast\|OverlapSphere\|OverlapBox\|Linecast\|CapsuleCast\)" Assets/Scripts`（起草時 6 個呼叫點：`AbyssalVanguardTarget:271`、`Projectile:99`、`TrainingOpponent:510`、`HeroController:427`、`HeroLocomotion:453`、`PlayerInputService:387`）逐一判定是否受高度影響；②`grep -rn "\.y = 0f\|, 0f, " Assets/Scripts/{Combat,Bootstrap,Core}`（起草時 52 行；凍結前複查 58 行：世界位置 5、水平方向 36、其他 17）逐行分類為「水平方向向量（不用改）」或「世界位置（改讀 HeightAt）」，回報兩類各幾行；③會改英雄／對手／巨獸 `transform.position` 的入口（`grep -rn "position = \|\.Warp(\|WarpTo(" Assets/Scripts`）逐一標明是否經過 y 更新與 `IsSameFloor`。**補掃（r1，審稿 M-14；②③ 兩條 grep 有盲區，見 `v0140-prefreeze-tests.md` §2 ④⑤）**：④`grep -rn "new Vector3(" Assets/Scripts/{Combat,Bootstrap,Core}` 逐行分類為「世界位置（改讀 HeightAt）／水平方向／常數偏移（如 `0.03f` 貼地）／其他」，已知盲區至少含 `TrainingOpponent.cs:446`、`:475`、`RageAuraView.cs:78`、`ElementZoneView.cs:48`、`CombatFeedbackService.cs:134`；⑤`grep -rn "_self.position\|clamped" Assets/Scripts/Core/HeroLocomotion.cs` 逐一標明（`EjectFromBox`、`SyncAgent`、`ApplyDisplacement` 尾端）。回報寫出 ①～⑤ 各自的 N 與分類。
 
 ---
 
 ## 6. 紅方 AI
 
-> **主對話凍結前修訂（缺口 G2、G7）**：走路距離選塔與巨獸走路圖**只在 `spec.Terrain != null` 時啟用**；`Terrain == null`（平地夾具、舊規格）一律沿用 v0.13.1：選塔直線距離、巨獸路線用 `CaptureBoardSpec.Neighbor`。`SelectTargetTile` 以新增多載帶入 `ITerrainQuery`（null＝直線），不改既有簽章。新增 **V14-A21 選塔走路距離**：`V0140Canyon`、對手在 (0,0)、只剩 2 號與 13 號兩塊可選（其餘紅方）→ 選 13（走路 15.16 vs 2 號 37.89）；同盤面 `terrain=null` → 選 2（直線 7.58 vs 15.16）。**紅燈實作**：峽谷仍用直線（選 2）；夾具也改走路（選 13）。突變 **C17**：`SelectTargetTile` 忽略 terrain 一律直線 → A21 第一組紅。
+> **主對話凍結前修訂（缺口 G2、G7）**：走路距離選塔與巨獸走路圖**只在 `spec.Terrain != null` 時啟用**；`Terrain == null`（平地夾具、舊規格）一律沿用 v0.13.1：選塔直線距離、巨獸路線用 `CaptureBoardSpec.Neighbor`。`SelectTargetTile` 以新增多載帶入 `ITerrainQuery`（null＝直線），不改既有簽章。新增 **V14-A21 選塔走路距離**：`V0140Canyon`、對手在 (0,0)、只剩 2 號與 13 號兩塊可選（其餘紅方）→ 選 13（走路 15.16 vs 2 號 37.89）；同盤面 `terrain=null` → 選 2（直線 7.58 vs 15.16）。**紅燈實作**：峽谷仍用直線（選 2）；夾具也改走路（選 13）。突變 **K17**（r1 由 C17 改名，§10）：`SelectTargetTile` 忽略 terrain 一律直線 → A21 第一組紅。**起點塊（r1，審稿 M-8）**：走路距離的起點塊＝`TileAt(對手 x, z)`；`TileAt==−1`（棋盤外，例如場邊復活點）時取塔心平面距離平方最小的塊（嚴格 `<`，平手取索引小）；站在斜坡上時 `TileAt` 照常回傳所在塊（斜坡不另算）。此規則與 §12.1-1 C# 參考模型的假設逐行相同（`v0140-refcs/Sim.cs` `SelectTarget`），V14-C01 窗口不變。
 
 - **只走斜坡**：對手移動本來就經 `HeroLocomotion`＋`GridNavigator`；崖壁蓋格後，它到任何目標只能沿整合場經斜坡繞行，不需要另寫「AI 專用路線」。
 - **不用地熱點**：由 §4.5「只有藍方英雄會觸發」在結構上保證；另以 V14-B06 驗「對手站在踏點上 3 秒不會被彈上去」。
@@ -297,7 +317,7 @@ namespace Vow.Core.Logic
 
 ### 7.1 新檔（純邏輯，`Assets/Scripts/Core/Logic/`）
 
-- `ITerrainQuery.cs`（§1.3）、`CanyonTerrainSpec.cs`（§5.1；靜態唯讀實例 `CanyonTerrainSpec.V0140`）、`CanyonTuning.cs`（`CliffRangePercent=10`、`CliffVisionRadius=8f`、`CanyonWaterBonusMeters=1f`、`VentChannelSeconds=0.6f`、`VentCooldownSeconds=8f`、`VentFlightSeconds=0.5f`、`VentPadRadius=0.375f`（二進位有限小數，邊界可精確構造）、`RampWidth=3.5f`、`RampLength=4f`、`CliffBarrierThickness=0.1f`）、`CanyonRules.cs`（`AttackRange`、`WaterRadius`）、`GeothermalVentLogic.cs`（§4.5，固定 2 點、零配置）。
+- `ITerrainQuery.cs`（§1.3）、`CanyonTerrainSpec.cs`（§5.1；靜態唯讀實例 `CanyonTerrainSpec.V0140`）、`CanyonTuning.cs`（`CliffRangePercent=10`、`CliffVisionRadius=8f`、`CanyonWaterBonusMeters=1f`、`VentChannelSeconds=0.6f`、`VentCooldownSeconds=8f`、`VentFlightSeconds=0.5f`、`VentPadRadius=0.375f`（二進位有限小數，邊界可精確構造）、`RampWidth=3.5f`、`RampLength=4f`、`CliffBarrierThickness=0.1f`）、`CanyonRules.cs`（`AttackRange`、`InAttackRange`、`WaterRadius`）、`GeothermalVentLogic.cs`（§4.5，固定 2 點、零配置）、`RevealTracker.cs`（§4.7 介面）。`CanyonTuning` 另含 `RevealSeconds=1.5f`、`CanyonLobbyOpponentSpawnX=-4f`／`Z=12f`（§5.2）。
 - `CaptureBoardSpec`：新增 `Terrain`（`ITerrainQuery`，舊三套為 null）、`FogEnabled` 旗標、靜態實例 `V0140Canyon`（幾何與 `V0100Sanctuary` 逐值相等、6 個規則旗標相同、另加地形）。`V0100Sanctuary` 保留為夾具（既有 EditMode 逐字不動）。
 
 ### 7.2 崖壁蓋格
@@ -307,6 +327,13 @@ namespace Vow.Core.Logic
 ### 7.3 Unity 端改動清單（B 步）
 
 `Phase1Bootstrap`（換 `V0140Canyon`、蓋格、地形啟停、地熱點 tick、水域半徑、射程查詢、種子入口）、`HeroLocomotion`（y 更新、`TerrainLayer`、飛行鎖定、`EjectFromBox` 同樓地板）、`HeroController`（射程、裂風矢方向）、`TrainingOpponent`（出手距離、遮擋射線）、`AbyssalVanguardTarget`（生成 y、路線圖、y 更新）、`ElementField`（水域半徑）、`CaptureBoardView`（顯示高度）、`CaptureVisibilityLogic`（§4.3）、`CaptureOpponentPolicy`（§13 Q4 定案後）、`VOWPhase1SceneBuilder`（地形碰撞體、崖壁碰撞體、斜坡、地熱點圓盤；全部由 `CanyonTerrainSpec` 產生）、`DebugHud`（地熱點冷卻讀數，灰盒字串）。
+
+**本批新增的 editor-only 測試入口（r1，審稿 H-2／H-4／M-5；全部 `#if UNITY_EDITOR`，受 V14-D01 檢查）**：
+- `Phase1Bootstrap.UseFlatCaptureSpecForTest()`：§8 G1。
+- `Phase1Bootstrap.HoldOpponentForTest(bool hold)`：`hold==true` 期間 `TrainingOpponent` 的佔領 AI **不執行任何行動**——不下移動指令、不走、不放符印牆、不進入前搖；當下的移動指令清掉。**保持** `_active`（可被鎖定、可受傷），`CanSeeHero()` 照常可查詢、視野與顯形照常計算。`hold==false` 的當幀起恢復原行為。取代草案的「以種子停止移動」（草案語意未定義；`StopRound()` 會把 `_active` 設 false、連受傷都關掉，不可用）。
+- `Phase1Bootstrap.SpawnRuneWallForTest(int side, float x, float z, float normalX, float normalZ)`：以真實 `RuneWall` 物件在 (x, `HeightAt`, z) 立一面牆（尺寸 4×2×0.6，`forward`＝(normalX,0,normalZ)），走與真實施放相同的 `RegisterNavBlocker`→`Stamp(+1)`→推出路徑。
+- `Phase1Bootstrap.SeedBehemothForTest(int side, float x, float z)`：以與「核心引導完成」相同的程式路徑讓 side 取得巨獸（邏輯層進入 Behemoth 階段、`BehemothOwner==side`），唯一差別是巨獸物件先傳送到 (x, `HeightAt`, z) 再呼叫 `ActivateBehemoth(side)`（路線由該位置的 `TileAt` 起算，與正式路徑同一個 `BuildRoute`）。
+- `AbyssalVanguardTarget.CopyRouteForTest(int[] buffer)`：回傳目前路線長度並把塊序列寫進 buffer（零配置）。
 
 ### 7.4 紅線與零配置
 
@@ -318,15 +345,14 @@ namespace Vow.Core.Logic
 
 | 編號 | 測試 | 原因 | 建議處理 |
 |---|---|---|---|
-| T1～T3 | EditMode `AbyssalVanguardLogicTests` 三條（§3） | 核心位置、半徑、不重疊規則被 Q1 甲推翻 | 字面值改寫；不重疊條文由 V14-A10 取代（§13 Q3） |
-| T4 | PlayMode `AbyssalVanguardPlayTests` 第 74、146、197 行 | 寫死 (4.375,0) 落在崖壁頂點 | 改讀核心座標、y 取高度（斷言不動） |
+| T1～T4 | （r1 作廢）EditMode `AbyssalVanguardLogicTests` 三條、PlayMode `AbyssalVanguardPlayTests` 第 74／146／197 行 | 核心改由 `ForSpec` 依規格取用、預設值不改（§3），平地夾具下這些條文仍成立 | **不改**（斷言一字不改；`AbyssalVanguardPlayTests` 只屬 T5 的 SetUp 新增一行） |
 | T5 | PlayMode 佔領類套件：`Capture19PlayTests`（22）、`CapturePlayTests`（21）、`CaptureSanctuaryPlayTests`（9）、`CaptureSanctuaryMatchPlayTests`（2）、`CaptureFogTargetPlayTests`（5）、`PactDamagePlayTests`（5）、`AbyssalVanguardPlayTests`（6）、`Capture19RageScript`（18）、`CaptureDummyPlayTests`（4） | 正式規則集改成峽谷後，傳送座標（起草時 grep 到 79 處 `WarpTo`／`RespawnAt`／`position =`）、點地路線、幀數窗口都以平地為前提；例如出生點走到 4 號、0 號的路線現在要經 13→4 斜坡，塔心 2／3／5／6 要繞外圈 | **必須裁定（§13 Q2）**：建議這批套件在 `SetUp` 以 editor-only 入口把地形關掉（仍用 `V0100Sanctuary` 規則＝v0.13.1 平地行為，斷言一字不動），另外新增峽谷專屬套件（§9-B/C）覆蓋同樣的端到端流程 |
 | T6 | `LowFrameRateArrivalPlayTests`、`WallDetourPlayTests`、`DuelPlayTests` 等 Off 模式套件 | Off 模式維持平地（§13 Q2 建議） | 不改；V14-B15 要求它們保持綠燈（Off 零影響的證據） |
 | T7 | EditMode `CaptureVisibilityLogicTests` | `AppliesTo` 改讀旗標；`V0100Sanctuary` 旗標為 true → 行為不變 | 不改，應維持綠燈 |
 
-**主對話凍結前修訂（缺口 G1）— 關地形入口的定義**：editor-only `Phase1Bootstrap.UseFlatCaptureSpecForTest()`（`#if UNITY_EDITOR`，受 V14-D01 檢查），須在進入佔領模式前呼叫；效果＝正式佔領局改用 `CaptureBoardSpec.V0100Sanctuary`（`Terrain==null`），因此由規格推導出的一切同時回到 v0.13.1：地形／崖壁物件停用、平地碰撞體啟用、不蓋崖壁格、核心 `ForSpec`＝(4.375,0)／1.8、選塔直線距離、巨獸用原鄰接、無崖台射程／視野／淺水／地熱點；開火顯形仍生效（規則不依賴地形）。T5 的 9 個套件只在 `SetUp` 加這一行呼叫（新增行，刪除行數 0，符合 V14-A18）。判讀結果（`vow-toolchain/v0140-prefreeze-tests.md`）：92 條中確定會紅 2 條（都是核心座標，已由 §3 修訂框改為依規格取用而消解）、不確定 2 條（V9_C03、V10_C05 零配置，靠實作守零配置）、其餘 88 條不受影響。
+**主對話凍結前修訂（缺口 G1）— 關地形入口的定義**：editor-only `Phase1Bootstrap.UseFlatCaptureSpecForTest()`（`#if UNITY_EDITOR`，受 V14-D01 檢查），須在進入佔領模式前呼叫；效果＝正式佔領局改用 `CaptureBoardSpec.V0100Sanctuary`（`Terrain==null`），因此由規格推導出的一切同時回到 v0.13.1：地形／崖壁物件停用、平地碰撞體啟用、不蓋崖壁格、核心 `ForSpec`＝(4.375,0)／1.8、選塔直線距離、巨獸用原鄰接、無崖台射程／視野／淺水／地熱點；開火顯形仍生效（規則不依賴地形）。T5 中**使用 `Phase1Bootstrap` 的 8 個套件**（r1，審稿 M-2：`PactDamagePlayTests` 不經 `Phase1Bootstrap`，`grep -c Phase1Bootstrap` 為 0，不加、也不受地形影響）只在 `SetUp` 加這一行呼叫（新增行，刪除行數 0，斷言一字不改，符合 V14-A18）。判讀結果（`vow-toolchain/v0140-prefreeze-tests.md`）：92 條中確定會紅 2 條（都是核心座標，已由 §3 修訂框改為依規格取用而消解）、不確定 2 條（V9_C03、V10_C05 零配置，靠實作守零配置）、其餘 88 條不受影響。
 
-§12.1-3 要在凍結前逐條讀 T5 的每一個檔，把「確定會紅／確定不受影響／不確定」分三類寫進本表。
+§12.1-3 的逐檔三分類（r1，審稿 L-10）：**以 `vow-toolchain/v0140-prefreeze-tests.md` §1 為準**（已完成，逐方法列出；92 條＝確定會紅 2＋不確定 2＋確定不受影響 88），本表不重抄。確定會紅的 2 條（核心座標）已由 §3 的 `ForSpec` 消解；不確定的 2 條（V9_C03、V10_C05 零配置）由 B 步實跑判定，紅了算實作未守零配置。
 
 ---
 
@@ -335,7 +361,7 @@ namespace Vow.Core.Logic
 順序 `A → B → C → D`，每步一個可審查的提交；開工前保存 `git status --short --branch` 與 `git rev-parse HEAD`。任一步沒過就回到該步起點修，不在壞掉的基線上疊下一步。
 
 **所有 V14 條文共同遵守**（承接 V0100 §3）：
-- 期望值一律寫成字面值，**不得讀 `CanyonTerrainSpec`／`CanyonTuning`／`CaptureBoardSpec` 的欄位**來算期望值。
+- 期望值一律寫成字面值，**不得讀 `CanyonTerrainSpec`／`CanyonTuning`／`CaptureBoardSpec` 的欄位**來算期望值。**明文例外（r1，審稿 L-11）**：Unity 層（B／C 步）的「場景與規格一致」及「行為落在規格上」這兩類斷言，可以拿被測物的 `GetCliffSegment`、`HeightAt`、`ClassAt`、`CrossesCliff`、`TileAt` 當判準（例：B01 比對崖壁碰撞體端點、B03～B06 的 |y−H| 與穿崖檢查）——這些函式在 A 步已被字面值釘死（A02、A03、A06、A16、A22），B／C 步量的是「場景／接線是否照它走」。除此之外不得用它們產生期望值。
 - 純邏輯時序 dt＝1/64（地熱點 0.6 秒門檻）或 0.25（其餘）；PlayMode 固定 `Time.captureDeltaTime = 1/60`（低幀率條文另註），在 TearDown 還原；窗口幀數寫死，**不得拉長 timeout、加 retry、加 sleep**。
 - 「沒發生／相等」的斷言都附活性證據。每條新測試都要證明錯誤實作會紅：純邏輯由 `mutation_check.py`（§10）；Unity 測試由實作者把關鍵行改壞跑一次紅、寫進回報（附紅在哪個斷言），用**改壞前的備份**還原。
 - 「不穿崖」一律用同一個判準函式 `CrossesCliff(p0, p1)`：線段 p0→p1（水平）與 `CanyonTerrainSpec` 任一崖壁線段相交（含端點）即為真。PlayMode 每幀記錄 (x,z)，相鄰兩幀連線不得穿崖。
@@ -346,7 +372,7 @@ namespace Vow.Core.Logic
 
 ### A. 純邏輯：地形規格、高度、崖壁蓋格、可達性、規則、地熱點、核心
 
-**工作**：§7.1 新檔；`AbyssalVanguardTuning` 核心值；`CaptureVisibilityLogic` §4.3；新增 `Assets/Tests/EditMode/Canyon*Tests.cs`；§8 T1～T3 經同意的改寫；`mutation_check.py` 尾端加 §10 突變。不碰場景與 MonoBehaviour。
+**工作**：§7.1 新檔；`AbyssalVanguardTuning.ForSpec`／`IsInCore`（§3，預設值不改）；`CaptureVisibilityLogic` §4.3／§4.7 新多載；`BlockGrid.TryFindNearestFreeSameFloor`（只新增）；新增 `Assets/Tests/EditMode/Canyon*Tests.cs`；`mutation_check.py` 尾端加 §10 突變（K1～K18）。既有測試檔一律不改（r1：原「§8 T1～T3 經同意的改寫」已作廢）。不碰場景與 MonoBehaviour。
 
 以下 `T＝CanyonTerrainSpec.V0140`，`S＝CaptureBoardSpec.V0140Canyon`。
 
@@ -359,50 +385,54 @@ namespace Vow.Core.Logic
 - **V14-A07 崖壁蓋格**：新 `BlockGrid(−20,−20,0.5,80,80)`，`StampCliffs(grid, 0.35f, +1)` 後 `BlockedCount==764`（§12.1-1 C# float32 重建值，與 float64 模型相同；外擴 0.3499／0.3501 也都是 764，沒有格子卡在邊界）；以下格子不是 Blocked：19 個塔心、6 條斜坡中心、2 個踏點、2 個落點；以下格子是 Blocked：20 段完整崖壁中點。再 `StampCliffs(grid, 0.35f, −1)` → `BlockedCount==0`、`NegativeStampCount==0`。**紅燈實作**：沒外擴（BlockedCount 小很多、崖壁中點旁的格仍空）；斜坡邊整條蓋掉（斜坡中心 Blocked）；撤銷時少撤。
 - **V14-A08 格點全圖可達（真實 GridNavigator）**：`BlockGrid` 蓋場地外圈（316 格，同 `Phase1Bootstrap.RegisterArenaBoundary` 的規則）＋崖壁；`new GridNavigator(grid, new NavGridTuning())`。(a) 從藍出生點 (0,−16.65625) 對 19 個塔心各 `ResolveGoal` → 全部 `substituted==false`；從紅出生點 (0,16.65625) 同樣。(b) `grid.HasLineOfSight(0,0 → 6.5625,3.7890625)==false`；沿每條斜坡長軸，低端往內 0.25 到高端往內 0.25 的線段 `HasLineOfSight==true`。(c) 從 (0,0) 出發的整合場成本（`FlowField` 以 2 號塔心為源建場後讀 (0,0) 格）≥ 600（≈30m；平地約 7.6m＝152 左右），且 < int.MaxValue。**紅燈實作**：沒蓋崖壁（(b) 視線為真、(c) 成本 ~150）；斜坡封死（2／3／5／6 的 `substituted==true`）。
 - **V14-A09 高度連續不變量（掃全格）**：A08 的格點上，對每對「FlowField 規則下可一步走到」的相鄰空格（8 鄰接、不切角），|H(格心₁)−H(格心₂)| ≤ 0.25×格心距＋1e-5 → 違反 0 組；活性：高度差不為 0 的相鄰對 ≥ 100（斜坡上確實有連續爬升）、三種高度的空格都存在。**紅燈實作**：斜坡側牆沒蓋（坡面格與旁邊地面格相鄰、差 >0.125）；斜坡寬度與蓋格寬度不一致。
-- **V14-A10 核心移位**：`new AbyssalVanguardTuning()`：`CoreX==0f`、`CoreZ==0f`、`CoreRadius==2.5f`、`CoreChannelSeconds==3.5f`。`IsInCore(0,2.5)==true`、`IsInCore(0,2.5078125)==false`、`IsInCore(2.5,0)==true`。對 `S` 的 19 塊：0 號塔心距 0；其餘 18 塊塔心距 ≥ 5.0（核心圈與它們的佔塔圈不重疊）。取樣：(0,0)、(1.5,1.5)、(0,2.5)、(0,2.5078125)、(2.5,0.0078125) 各點 `IsInCore` 與 `S.CircleAt(x,z,2.5f)==0` 的真假逐點相同（活性：真假兩種都出現）。**紅燈實作**：半徑仍 1.8；圓心仍在 (4.375,0)。
-- **V14-A11 崖台射程 +10%**：`CanyonRules.AttackRange(5f, ax, az, T)`：攻擊者在 2 號塔心 → 5.5f；10 號塔心 → 5f；0 號塔心 → 5f；R0 中心（斜坡）→ 5f；`terrain==null` 時攻擊者在 2 號塔心 → 5f。邊界（目標水平距離平方與射程平方比較，含邊界）：攻擊者 (6.5625,3.7890625)、目標 (12.0625,3.7890625)（距 5.5）→ 在射程內；目標 (12.078125,3.7890625)（距 5.515625）→ 不在；攻擊者 (13.125,0)、目標 (8.125,0)（距 5.0）→ 在；(8.109375,0)（距 5.015625）→ 不在。對手：`AttackRange(1.8f, …)` 攻擊者在崖台時，目標距 1.9765625 → 在、1.984375 → 不在；在平原時 1.796875 → 在、1.8046875 → 不在。目標所在層不影響：攻擊者在 10 號塔心、目標在 2 號崖台 (8.125,0) 同樣是 5.0 → 在。**紅燈實作**：看目標所在層；斜坡也加成；乘 1.1 並在平原也套用；加成只給藍方。
+- **V14-A10 核心移位**（r1 改寫，審稿 M-1／L-6）：令 `C＝AbyssalVanguardTuning.ForSpec(CaptureBoardSpec.V0140Canyon)`。**第一個斷言** `C.CoreX==0f`；再 `C.CoreZ==0f`、`C.CoreRadius==2.5f`、`C.CoreChannelSeconds==3.5f`。活性（兩規格真的不同）：`ForSpec(V0100Sanctuary)` 的 `CoreX==4.375f`、`CoreRadius==1.8f`。`C.IsInCore(0,2.5)==true`、`C.IsInCore(0,2.5078125)==false`、`C.IsInCore(2.5,0)==true`。對 `S` 的 19 塊：0 號塔心距 0；其餘 18 塊塔心距 ≥ 5.0（核心圈與它們的佔塔圈不重疊）。取樣：(0,0)、(1.5,1.5)、(0,2.5)、(0,2.5078125)、(2.5,0.0078125) 各點 `C.IsInCore` 與 `S.CircleAt(x,z,2.5f)==0` 的真假逐點相同（活性：真假兩種都出現）。**紅燈實作**：`ForSpec` 對峽谷仍回傳 v0.13.1 值（半徑 1.8、圓心 (4.375,0)）；`ForSpec` 對兩規格回傳同一組值（活性斷言紅）。
+- **V14-A11 崖台射程 +10%**（r1 拆成兩個測試方法，審稿 H-1／M-9；兩方法各自獨立，順序照下列寫死）：
+  - **A11a `AttackRange` 取值**：`CanyonRules.AttackRange(5f, ax, az, T)`，**第一個斷言**＝攻擊者在 R0 中心 (9.84375,5.68359375)（斜坡，`TileAt`＝2）→ 5f；再：攻擊者在 2 號塔心 → 5.5f；10 號塔心 → 5f；0 號塔心 → 5f；`terrain==null` 時攻擊者在 2 號塔心 → 5f；`AttackRange(1.8f, 2 號塔心, T)` → `1.8f*110/100f`（= 1.98f，逐位相等）、`AttackRange(1.8f, 10 號塔心, T)` → 1.8f。
+  - **A11b `InAttackRange` 邊界**（§4.1 介面；目標水平距離平方與射程平方比較，含邊界）：**第一組（目標所在層不影響，排第一）**：攻擊者 10 號塔心 (13.125,0)、目標 (8.125,0)（`TileAt`＝2 崖台，距 5.0）→ 在；目標 (8.109375,0)（`TileAt`＝2 崖台，距平方 25.156494 > 25）→ **不在**。第二組（攻擊者在崖台）：攻擊者 2 號塔心 (6.5625,3.7890625)、目標 (12.0625,3.7890625)（9 號平原，距 5.5）→ 在；(12.078125,3.7890625)（距 5.515625）→ 不在。第三組（對手出手距離）：`InAttackRange(1.8f, 2 號塔心, 目標, T)`，目標 (8.5390625,3.7890625)（距 1.9765625）→ 在、(8.546875,3.7890625)（距 1.984375）→ 不在；`InAttackRange(1.8f, 10 號塔心, 目標, T)`，目標 (11.328125,0)（距 1.796875）→ 在、(11.3203125,0)（距 1.8046875）→ 不在。各點 `TileAt` 已以 C# r1 重算（`refcs-r1-output.txt` H-1 節）。
+  - **紅燈實作**：看目標所在層（A11b 第一組 (8.109375,0) 判「在」）；斜坡也加成（A11a 第一個斷言得 5.5）；乘 1.1 並在平原也套用；加成只給藍方（A11b 第三組崖台 1.9765625 判「不在」）。
 - **V14-A12 視野合成**：`V0140Canyon` Active 局，`TryStart` 後以 `SeedOwnershipForTest` 設盤面。(a) 崖台觀看者 (6.5625,3.7890625)：目標 (14.5625,3.7890625)（距 8，9 號、中立）→ 看得到；(14.578125,3.7890625) → 看不到。(b) 平原觀看者 (13.125,0)：目標 (13.125,6.0) → 看得到；(13.125,6.015625) → 看不到。(c) 谷底觀看者 (0,0)：目標 G0 落點 (4.59375,2.0703125)（距 5.04，2 號中立）→ **看不到**；同盤面 2 號改為觀看方持有 → 看得到（真視野優先）；2 號改為對方持有 → 看不到。(d) 谷底觀看者 (0,7.578125)：目標 (4.5,10.5)（8 號平原，距 5.37）→ 看得到。(e) 崖台看谷底：觀看者 (4.59375,2.0703125)、目標 (0,0) → 看得到。(f) 觀看者倒地、目標所在塊由觀看方持有 → 看得到；倒地且不持有 → 看不到。(g) `V0100Sanctuary` 局同 (a) 座標：距 6.0 以內才看得到（崖台加成不存在；`(12.5625,3.7890625)` 看得到、`(12.578125,3.7890625)` 看不到）、同 (c) 座標看得到（無地形）。紅藍兩方各跑一次（互換 `viewerSide`）。**紅燈實作**：谷底規則排在真視野之前（(c) 持有時仍看不到）；8m 給所有人（(b) 6.015625 看得到）；谷底規則雙向（(e) 看不到）；夾具也套地形規則（(g)）。
 - **V14-A13 淺水**：`CanyonRules.WaterRadius(3f, 0f, x, z, T)`：4 號塔心 (0,−7.578125) → 4f；13 號塔心 → 3f；R5 中心 → 3f；2 號塔心 → 3f。潮汐 `WaterRadius(3f, 2f, 4 號塔心)` → 6f、13 號塔心 → 5f。`terrain==null` → 3f／5f。**紅燈實作**：乘法（谷底 ×4/3，潮汐時得 6.67）；斜坡算谷底；潮汐與淺水擇一。
-- **V14-A14 地熱點時序（dt＝1/64，`GeothermalVentLogic` 直接驅動）**：英雄位置為輸入，「在 G0」＝(2.09375,2.0625)，「遠處」＝(1000,1000)。(a) 第 1 個 tick 起在 G0：第 38 個 tick 後 `LaunchCount==0`、`Progress(G0)==0.59375`；第 39 個 tick 後 `LaunchCount==1`、`LastLaunchPad==0`、`LastLandingX==4.59375f`、`LastLandingZ==2.0703125f`、`Cooldown(G0)==8f`、`Cooldown(G1)==0f`。(b) 冷卻：(a) 之後英雄仍在 G0（測試驅動）→ 第 550 個 tick 後 `LaunchCount==1`、`Progress(G0)==0`；第 589 個 tick 後 `LaunchCount==2`（第 551 個 tick 起重新累加）。(c) 受傷：同 (a)，第 20 個 tick 後 `NotifyDamaged()` → 第 21 個 tick 後 `Progress==0`（不累加），第 59 個 tick 後仍 1 次都沒發射、第 60 個 tick 後 `LaunchCount==1`；`Cooldown(G0)` 在第 59 個 tick 後為 0（中斷不觸發冷卻）。(d) 離開：同 (a)，第 31 個 tick 在遠處、其餘在 G0 → 第 69 個 tick 後 0 次、第 70 個 tick 後 1 次。(e) 各點獨立：(a) 發射後第 40 個 tick 起英雄改在 G1 (−2.09375,−2.0625) → 第 78 個 tick 後 `LaunchCount==2`、`LastLaunchPad==1`、落點 (−4.59375,−2.0703125)。(f) 邊界：英雄在 (2.46875, 2.0625)（距踏點圓心恰 0.375）→ 視為在踏點（第 39 個 tick 發射）；(2.4765625, 2.0625)（距 0.3828125）→ 跑 100 個 tick 0 次。(g) 倒地（`SetHeroAlive(false)`）或非 Active：跑 100 個 tick 0 次、`Progress==0`。(h) dt＝0.25：第 2 個 tick 後 0 次、第 3 個 tick 後 1 次。(i) `Reset()` 後兩點冷卻與進度為 0。**紅燈實作**：受傷不歸零（(c) 第 39 個 tick 發射）；冷卻兩點共用（(e) 不發射）；冷卻只擋發射、不擋累加（(b) 第 550 個 tick 後 `Progress≠0`、第 551 個 tick 就發射）；離開不歸零（(d) 第 40 個 tick 發射）；受傷後當 tick 仍累加（(c) 第 59 個 tick 發射）。
+- **V14-A14 地熱點時序（dt＝1/64，`GeothermalVentLogic` 直接驅動）**：以 §4.5「介面」的 `Tick(dt, heroX, heroZ, heroCanTrigger)` 驅動；除 (g) 外 `heroCanTrigger` 恆為 true（邏輯層不追蹤飛行，(e) 的第二次發射時間不含飛行鎖）。英雄位置為輸入，「在 G0」＝(2.09375,2.0625)，「遠處」＝(1000,1000)。(a) 第 1 個 tick 起在 G0：第 38 個 tick 後 `LaunchCount==0`、`Progress(G0)==0.59375`；第 39 個 tick 後 `LaunchCount==1`、`LastLaunchPad==0`、`LastLandingX==4.59375f`、`LastLandingZ==2.0703125f`、`Cooldown(G0)==8f`、`Cooldown(G1)==0f`。(b) 冷卻：(a) 之後英雄仍在 G0（測試驅動）→ 第 550 個 tick 後 `LaunchCount==1`、`Progress(G0)==0`；第 589 個 tick 後 `LaunchCount==2`（第 551 個 tick 起重新累加）。(c) 受傷：同 (a)，第 20 個 tick 後 `NotifyDamaged()` → 第 21 個 tick 後 `Progress==0`（不累加），第 59 個 tick 後仍 1 次都沒發射、第 60 個 tick 後 `LaunchCount==1`；`Cooldown(G0)` 在第 59 個 tick 後為 0（中斷不觸發冷卻）。(d) 離開：同 (a)，第 31 個 tick 在遠處、其餘在 G0 → 第 69 個 tick 後 0 次、第 70 個 tick 後 1 次。(e) 各點獨立：(a) 發射後第 40 個 tick 起英雄改在 G1 (−2.09375,−2.0625) → 第 78 個 tick 後 `LaunchCount==2`、`LastLaunchPad==1`、落點 (−4.59375,−2.0703125)。(f) 邊界：英雄在 (2.46875, 2.0625)（距踏點圓心恰 0.375）→ 視為在踏點（第 39 個 tick 發射）；(2.4765625, 2.0625)（距 0.3828125）→ 跑 100 個 tick 0 次。(g) 英雄在 G0 但 `heroCanTrigger==false`（代表倒地／飛行鎖定／非 Active，由呼叫端合成）：跑 100 個 tick 0 次、`Progress(G0)==0`；接著改 true → 第 39 個 tick 後發射（活性：同一位置可觸發）。(h) dt＝0.25：第 2 個 tick 後 0 次、第 3 個 tick 後 1 次。(i) `Reset()` 後兩點冷卻與進度為 0。**紅燈實作**：受傷不歸零（(c) 第 39 個 tick 發射）；冷卻兩點共用（(e) 不發射）；冷卻只擋發射、不擋累加（(b) 第 550 個 tick 後 `Progress≠0`、第 551 個 tick 就發射）；離開不歸零（(d) 第 40 個 tick 發射）；受傷後當 tick 仍累加（(c) 第 59 個 tick 發射）。
 - **V14-A15 巨獸路線**：`T.FindWalkRoute(start, dest, buffer)`（BFS、平手取索引小）：0→13＝[0,4,13]；0→7＝[0,1,7]；2→13＝[2,3,11,12,13]；6→7＝[6,17,18,7]；每一步相鄰兩塊都在 `WalkNeighbor` 內。零配置（呼叫端給緩衝）。**紅燈實作**：沿用 `CaptureBoardSpec.Neighbor`（2→13 得 [2,0,4,13]，穿 0|2 崖壁）。
-- **V14-A16 同樓地板**：`T.IsSameFloor`：(0,0)↔(0,−7.578125)（谷底對谷底）→ true；(3.5,0)↔(5.0,0)（谷底對崖台，跨 0|3／0|2 崖壁線）→ false；R5 低端 (0,−9.3671875)↔R5 高端 (0,−13.3671875) → true（坡度 0.25）；(1.7421875,−10.5)↔(1.7578125,−10.5)（坡面對側邊外地面）→ false。另（推出條件）：`BlockGrid` 蓋場地外圈＋崖壁後，英雄點取 (3.375,0)（谷底、距 0|2／0|3 崖壁頂點 1.0m），再以 `StampBox` 蓋一個「英雄所在格與谷底側大片格子都被蓋住」的牆盒（盒子座標由實作者選定並寫在測試註解；選定標準＝下一句的活性斷言成立）；以新增的「有條件最近空格」搜尋（`IsSameFloor` 為條件）找到的格子，其格心 `HeightAt == −1`；**活性**：同一盤面用既有 `TryFindNearestFree`（無條件）找到的格子 `HeightAt == 1`（證明這個盤面真的會把人推上崖台）。**紅燈實作**：`IsSameFloor` 恆真（推到崖台上）。
-- **V14-A17 純邏輯零配置（只在 dotnet 跑；Unity 端 Ignore 寫明理由）**：`HeightAt`、`ClassAt`、`IsSameFloor`、`CanSee`（V0140）、`AttackRange`、`WaterRadius`、`GeothermalVentLogic.Tick`、`FindWalkRoute` 各呼叫 10000 次，配置 0 byte；活性：`HeightAt` 三種高度與坡面值都出現、`CanSee` 真假都出現、發射 ≥ 1 次。**紅燈實作**：`FindWalkRoute` 每次 new 佇列。
-- **V14-A18 夾具與零改動**：`git diff 96730fd -- Assets/Scripts/Core/Logic/CaptureMatchLogic.cs Assets/Scripts/Core/Logic/HexBoardLayout.cs Assets/Scripts/Core/Logic/GridNavigator.cs Assets/Scripts/Core/Logic/FlowField.cs Assets/Tests/EditMode/Capture19BoardTests.cs Assets/Tests/EditMode/Capture19EncircleTests.cs Assets/Tests/EditMode/CaptureSanctuary*.cs Assets/Tests/EditMode/GridNavigatorTests.cs Assets/Tests/EditMode/BlockGridTests.cs Assets/Tests/EditMode/CaptureVisibilityLogicTests.cs` 輸出為空（`BlockGrid.cs` 若需加有條件的最近空格搜尋，只能新增方法、不得改既有方法；`git diff` 的刪除行數為 0）；`git diff --numstat 96730fd -- Assets/Tests` 中，除 §8 經同意改寫的檔外，既有檔刪除行數全為 0；`verify.sh` 純邏輯 0 失敗、通過數 ≥ 基線＋本步新增數（基線於 §12.1-2 記錄）。**紅燈實作**：為了讓新測試過而改既有斷言；改了 `GridNavigator` 行為。
-- **V14-A20 開火顯形**：`V0140Canyon` Active 局、2 號中立。谷底觀看者（紅方）(0,0)、目標藍英雄在 G0 落點（崖台）→ 看不到（活性：§4.3 第 4 步生效）；`NotifyHit(藍英雄, 紅方)` 後立刻看得到；dt＝0.25 驅動：第 5 個 tick 後（1.25 秒）仍看得到、第 6 個 tick 後（1.5 秒）看不到（`> 0` 才顯形，1.5−6×0.25＝0）。顯形只對受害陣營：同一時刻藍方觀看者看紅對手不受影響（對手未命中過）。重設不累加：第 4 個 tick 後再 `NotifyHit` → 從那一刻起再 6 個 tick 才消失（總共第 10 個 tick 後看不到）。倒地觀看者、顯形中 → 看得到（第 1.5 步在倒地之前）。`Reset()` 後歸 0。`V0100Sanctuary` 局同樣生效（距離外的目標命中後看得到）。**紅燈實作**：顯形放在谷底規則之後（命中後仍看不到）；顯形對雙方都生效；重設改累加；用 `>=0` 判定（第 6 個 tick 後仍看得到）。
-- **V14-A21 選塔走路距離**：見 §6 修訂框。
-- **V14-A19 突變全抓**：§10 的 C1～C17 在獨立 worktree 實跑：`突變被抓到：N / N`、還原後全綠、`RESULT: ALL MUTATIONS CAUGHT`；既有突變全部仍 CAUGHT（沒有因原文改動變成 SKIP）。**紅燈實作**：任一新條文只測到「有回傳值」而沒測行為（對應突變 MISSED）；本批改動讓既有突變原文失效卻沒重新定位（SKIP）。
+- **V14-A16 同樓地板**：`T.IsSameFloor`：(0,0)↔(0,−7.578125)（谷底對谷底）→ true；(3.5,0)↔(5.0,0)（谷底對崖台，跨 0|3／0|2 崖壁線）→ false；R5 低端 (0,−9.3671875)↔R5 高端 (0,−13.3671875) → true（坡度 0.25）；(1.7421875,−10.5)↔(1.7578125,−10.5)（坡面對側邊外地面）→ false。崖壁格（§5.2 定義，距任一崖壁線段 ≤ 0.35）：(3.5,0.5)（距 0|2 線段 0.5078）→ 與 (0,0) 同樓地板 true；(1.7421875,−10.5)（距 R5 側牆 0.0078）↔ (1.5,−10.5) → false（端點在崖壁格，雖然兩點都在坡面上且不穿崖）。另（推出條件，r1 寫死盤面，審稿 M-5）：`BlockGrid(−20,−20,0.5,80,80)` 蓋場地外圈（316 格）＋崖壁（外擴 0.35），英雄點 **p0＝(3.875, 0)**（谷底，距 0|2／0|3 崖壁線段 0.4330 > 0.35），再以 `StampBox(3.625f, 0f, 1f, 0f, 2f, 0.3f, 0.35f, +1)` 蓋一面與真實符印牆同尺寸的牆（中心 (3.625,0)、法線 (1,0)、半寬 2、半厚 0.3、外擴 0.35；與 V14-B05(c) 的真實牆同一盤面）。以 `TryFindNearestFreeSameFloor(3.875f, 0f, 20, T, 0, …)` 找到的格子，格心 `HeightAt == −1` 且 `CrossesCliff(p0, 格心)==false`（C# r1：格心 (2.25,−0.25)，距 1.644）；**活性**：同一盤面用既有 `TryFindNearestFree(3.875f, 0f, 20, …)`（無條件）找到的格子 `HeightAt == 1`（C# r1：格心 (4.75,−0.75)，距 1.152；兩者距離差 0.49m，非 float 邊界）。**紅燈實作**：`IsSameFloor` 恆真（推到崖台上）；「崖壁格」改用 `grid.IsBlocked` 判定（p0 格被牆蓋住 → 有條件搜尋找不到任何格，斷言紅）。
+- **V14-A17 純邏輯零配置（只在 dotnet 跑；Unity 端 Ignore 寫明理由）**：`HeightAt`、`ClassAt`、`IsSameFloor`、`CanSee`（V0140，新舊兩個多載）、`AttackRange`、`InAttackRange`、`WaterRadius`、`GeothermalVentLogic.Tick`、`RevealTracker.Tick`／`IsRevealedTo`、`BlockGrid.TryFindNearestFreeSameFloor`、`FindWalkRoute` 各呼叫 10000 次，配置 0 byte；活性：`HeightAt` 三種高度與坡面值都出現、`CanSee` 真假都出現、發射 ≥ 1 次。**紅燈實作**：`FindWalkRoute` 每次 new 佇列。
+- **V14-A18 夾具與零改動**：`git diff 96730fd -- Assets/Scripts/Core/Logic/CaptureMatchLogic.cs Assets/Scripts/Core/Logic/HexBoardLayout.cs Assets/Scripts/Core/Logic/GridNavigator.cs Assets/Scripts/Core/Logic/FlowField.cs Assets/Tests/EditMode/Capture19BoardTests.cs Assets/Tests/EditMode/Capture19EncircleTests.cs Assets/Tests/EditMode/CaptureSanctuary*.cs Assets/Tests/EditMode/GridNavigatorTests.cs Assets/Tests/EditMode/BlockGridTests.cs Assets/Tests/EditMode/CaptureVisibilityLogicTests.cs` 輸出為空（`BlockGrid.cs` 若需加有條件的最近空格搜尋，只能新增方法、不得改既有方法；`git diff` 的刪除行數為 0）；`git diff --numstat 96730fd -- Assets/Tests` 中，既有檔刪除行數全為 0（r1：無例外——原「除 §8 經同意改寫的檔外」所指的 T1～T4 已作廢；T5 的 8 個套件只有新增行）；`verify.sh` 純邏輯 0 失敗、通過數 ≥ 基線＋本步新增數（基線於 §12.1-2 記錄）。**紅燈實作**：為了讓新測試過而改既有斷言；改了 `GridNavigator` 行為。
+- **V14-A20 開火顯形**（r1 依 §4.7「介面」改寫，審稿 B-3／M-6）：`V0140Canyon` Active 局，`SeedOwnershipForTest` 設 19 塊全中立；`tr＝new RevealTracker(1.5f)`；以下 `CanSee` 一律用新多載。**①（第一組，排第一）** 紅方觀看者 (0,0)（谷底）、目標 `BlueHero` 在 G0 落點 (4.59375,2.0703125)（崖台）→ 看不到（活性：§4.3 第 4 步生效）；`tr.NotifyHit(藍, 紅)` 後**立刻**看得到。**② 只顯形攻擊方、不顯形受害方**：同一時刻，藍方觀看者 (0,−7.578125)（4 號谷底）、目標 `RedOpponent` 在 G1 落點 (−4.59375,−2.0703125)（5 號崖台）→ 看不到（受害方的單位不因被打而顯形）；活性：另外 `tr.NotifyHit(紅, 藍)` 後同一查詢看得到（③ 之前以 `tr.Reset()` 後重新 `NotifyHit(藍, 紅)` 復原 ① 的狀態）。**③ 計時**（dt＝0.25 呼叫 `tr.Tick`）：① 的查詢在第 5 個 tick 後（1.25 秒）仍看得到、第 6 個 tick 後（1.5 秒）看不到（`> 0` 才顯形，1.5−6×0.25＝0）。**④ 重設不累加**：重新 `NotifyHit(藍, 紅)`，第 4 個 tick 後再 `NotifyHit(藍, 紅)` → 從那一刻起再 6 個 tick 才消失（總共第 10 個 tick 後看不到、第 9 個 tick 後仍看得到）。**⑤** 倒地觀看者、顯形中 → 看得到（第 1.5 步在倒地之前）；**⑥** `Reset()` 後 `Remaining(BlueHero)==0`、① 的查詢看不到；**⑦** `tracker==null`（舊多載）→ ① 的查詢看不到（命中不影響舊多載）；**⑧** `V0100Sanctuary` 局：紅方觀看者 (0,0)、`BlueHero` 在 (13.125,0)（距 13.125 > 6，10 號中立）→ 看不到；`NotifyHit(藍, 紅)` 後看得到。**紅燈實作**：顯形放在谷底規則之後（① 命中後仍看不到）；顯形給錯陣營——攻擊方／受害方對調（① 仍看不到）或兩方都顯形（② 看得到）；重設改累加（④ 第 10 個 tick 後仍看得到）；用 `>=0` 判定（③ 第 6 個 tick 後仍看得到）。
+- **V14-A21 選塔走路距離**：見 §6 修訂框（含 r1 起點塊規則）。另加一組起點塊 −1：對手在 (0,19)（棋盤外、`TileAt==−1`，塔心平面距離最近＝7 號）、只剩 2 號與 12 號可選 → 起點塊 7：到 2 走路 22.73（7-8-9-2）、到 12 走路 37.89（7-1-0-4-13-12）→ 選 2。**紅燈實作**：起點塊 −1 時直接回 −1 或當成 0 號（從 0 算：到 2 為 37.89、到 12 為 22.73 → 選 12）。
+- **V14-A22 斜坡任意落差**（r1 新增，審稿 M-11；落實使用者裁定「斜坡支援任意落差」）：以 §2.2 的公開建構子建一個**測試用**規格 `T7＝new CanyonTerrainSpec(CaptureBoardSpec.V0140Canyon, 高度{0,1,4＝−1；2,3,5,6＝+1；其餘 0}, low{9,11,15,17,1,4,0}, high{2,3,5,6,7,13,3})`——比本批多第 7 條斜坡 0→3（谷底 −1 → 崖台 +1，**落差 2m**、坡度 0.5；只是測試資料，不是版面改動）。第 7 條斜坡中心＝0|3 共用邊中點 (3.28125,−1.8945312)、長軸≈(0.8660139,−0.5000199)（C# r1）。斷言（±1e-5）：**第一個斷言** `T7.HeightAt(3.28125f,−1.8945312f,0)==0`（中心）；`HeightAt(2.415236f,−1.3945113f,0)==−0.5`（沿軸 −1m）；`HeightAt(4.147264f,−2.3945513f,0)==0.5`（沿軸 +1m）；`ClassAt(中心)==Ramp`。`IsSameFloor`：沿軸 −1.75 (1.7657257,−1.0194964) ↔ 沿軸 +1.75 (4.7967744,−2.769566) → **true**（兩點高差 1.75、相距 3.5，坡度 0.5；兩點距崖壁 1.75、不穿崖）；沿軸 −1 的坡面點 (2.415236,−1.3945113) ↔ 橫向 −2.75 的谷底點 (1.0401813,−3.7760496)（0 號，H＝−1，距崖壁 1.0）→ **false**（穿過第 7 條斜坡的側牆；高差 0.5／距 2.75＝0.18，任何坡度門檻寫法都會誤判為 true）。活性：`CrossesCliff` 對第 7 條斜坡的側牆有反應——同一對點在 `T7` 上 `CrossesCliff==true`；且 `T`（本批 V0140）在中心點 `HeightAt==−1`、沿軸 ±1.75 那對點 `CrossesCliff==true`（證明第 7 條斜坡確實由資料產生）。全部點位與結果以 C# r1 重算（`refcs-r1-output.txt` M-11 節）。**紅燈實作**：內插寫死落差 1m（`low + t×1`：中心得 −0.5）；`IsSameFloor` 用坡度門檻（0.25：第一對得 false；或放寬到 0.5：第二對得 true）；崖壁線段寫死 V0140 的 44 段（第 7 條沒有開口與側牆：第一對 false、第二對不穿崖）。
+- **V14-A19 突變全抓**：§10 的 K1～K18 在獨立 worktree 實跑：`突變被抓到：N / N`、還原後全綠、`RESULT: ALL MUTATIONS CAUGHT`；既有突變全部仍 CAUGHT（沒有因原文改動變成 SKIP）。**紅燈實作**：任一新條文只測到「有回傳值」而沒測行為（對應突變 MISSED）；本批改動讓既有突變原文失效卻沒重新定位（SKIP）。
 
 **回退**：回到 A 的起點；不得帶著半套邏輯進 B。
 
 ### B. Unity：地形幾何與接線
 
-**工作**：§7.3；新增 `Assets/Tests/PlayMode/CanyonPlayTests.cs`；§8 經同意的改寫放在同一提交，提交訊息逐條寫「舊寫法 → 新寫法」。「開局」＝真實點 `CAPTURE` 再真實點對手；「幀」＝一次 `yield return null`；captureDeltaTime＝1/60（另註者除外）。
+**工作**：§7.3；新增 `Assets/Tests/PlayMode/CanyonPlayTests.cs`；§8 G1 的 8 個套件 `SetUp` 各新增一行 `UseFlatCaptureSpecForTest()`（只新增、斷言不動），放在同一提交，提交訊息逐檔列出（r1：草案的「§8 經同意的改寫」已作廢）。「開局」＝真實點 `CAPTURE` 再真實點對手；「幀」＝一次 `yield return null`；captureDeltaTime＝1/60（另註者除外）。
 
 - **V14-B01 場景單一來源**：建場景後：`CanyonTerrain` 根物件下有 19×3 個地形 `BoxCollider`、6 個斜坡 `BoxCollider`、4 個棋盤外長條；`CliffBarriers` 下恰 44 個 `BoxCollider`，第 i 個的兩端（中心 ± 半長×切線）與 `T.GetCliffSegment(i)` 相差 ≤ 1e-3、`bounds.min.y ≤ −2`、`bounds.max.y ≥ 4`、layer＝Ignore Raycast；全場沒有 `MeshCollider`、沒有 `NavMeshObstacle`。另以純幾何取樣驗證「3 個旋轉矩形＝正六角」：每塊 441 個取樣點，`TileAt` 判在塊內 ⇔ 落在 3 個盒子之一的 x/z 投影內（邊界 1e-4 內的點略過）。**紅燈實作**：手抄座標漏一段；崖壁放 Default 層（點谷底打到隱形牆）；六角只用 1 個盒子。
 - **V14-B02 模式啟停**：Off 模式：`CanyonTerrain`、`CliffBarriers` 停用、`Ground_40x40` 碰撞體啟用、`_navGrid.BlockedCount==316`（加上存活中的牆）。點 `CAPTURE` 後：地形啟用、平地碰撞體停用、`BlockedCount==1080`（316＋764）。回 Off → 恢復、`NegativeStampCount==0`。英雄回 Off 時 y＝0。**紅燈實作**：Off 模式也有峽谷；回 Off 沒撤格（Off 模式 `BlockedCount` 仍含崖壁，單挑被看不見的崖壁擋路）。
-- **V14-B03 高度跟隨與 NavMesh 探針**：開局後英雄在藍出生點；點 R5 低端往北 1m 的地面投影點 (0,−8.3671875) → 360 幀內到達（≤0.05m）；全程每幀 |y − H(x,z)| ≤ 1e-3、`NavMeshAgent.isOnNavMesh==true`；經過 R5 矩形的幀數 ≥ 20（活性：真的走坡道）；最後 y＝−1±1e-3。**紅燈實作**：y 沒更新（谷底仍 0）；y 用 agent 的 y（恆為 0）。
-- **V14-B04 走斜坡到崖台、不穿崖（1/60）**：開局後英雄傳送到 (0,0)（y 自動 −1）、對手 `ReceiveDamage(1000)` 倒地並在復活時再次擊倒；等 30 幀；真實點 2 號塔心 (6.5625,1,3.7890625) 的投影點。斷言：① 第 300 幀前**沒有**進入 2 號光圈（直線只要約 83 幀；證明有繞路）；② 第 600 幀前進入 2 號光圈；③ 全程相鄰幀 `CrossesCliff==false`；④ 依序經過 R4（7→1）與 R0（9→2）矩形各至少 1 幀；⑤ 每幀 |y−H| ≤ 1e-3。**紅燈實作**：崖壁沒蓋格＋沒碰撞體（① 紅：直線穿崖）；只有碰撞體沒蓋格（貼著崖壁滑到卡死，② 紅）。
-- **V14-B05 低幀率不穿崖（dt＝1/3 與 1/4 各一次）**：(a) 同 B04 的起點與點擊，跑 45 幀：③⑤ 成立、最後在 2 號光圈內。(b) 英雄在 (3.25,0)（谷底貼 0|2／0|3 崖壁），面向 +x，連續 3 次微滑步（真實輸入）→ 每幀 `CrossesCliff==false`、y 恆為 −1。(c) 英雄在 V14-A16 推出條件組的同一座標，以種子入口在同一個盒子位置立符印牆（牆尺寸不夠時連立兩面）→ `EjectFromBox` 後英雄 y＝−1、`CrossesCliff(推前, 推後)==false`；活性：回報附上「若不加條件會被推到的格子」（由 A16 同盤面算出，高度 1）。**紅燈實作**：`EjectFromBox` 不限同樓地板（(c) 被推上 2／3 號崖台）；崖壁碰撞體太矮（(a) 從崖台往下走時穿過）。
-- **V14-B06 紅方 AI 走斜坡**：開局後種子歸屬：2 號中立、其餘 18 塊紅方（讓 `SelectTargetTile` 必選 2 號）；英雄傳送到 (−17,0,−17) 並倒地保持；對手傳送到 (0,0)（f0）。斷言：① f0＋300 幀前沒有進入 2 號光圈（直線到光圈邊約 5.1m，4m/s 約 76 幀；重建格點路徑約 32.8m，約 492 幀）；② f0＋900 幀前進入 2 號光圈並開始引導；③ 全程 `CrossesCliff==false`、|y−H| ≤ 1e-3；④ 經過至少 1 條峽谷斜坡（R4 或 R5）與 1 條崖台斜坡（R0 或 R1）的矩形。另：對手傳送到 G0 踏點中心、`Stop()` 後停 180 幀 → 地熱點 `LaunchCount` 不變、對手 y 恆為 −1。**紅燈實作**：對手走另一套沒有格點的移動（穿崖）；地熱點對任何人都觸發。
+- **V14-B03 高度跟隨與 NavMesh 探針**：開局後英雄在藍出生點；點 R5 低端往北 1m 的地面投影點 (0,−8.3671875) → 360 幀內到達（≤0.05m；C# r1 名目 90 幀、路徑 8.25m，4 倍裕度）；全程每幀 |y − H(x,z)| ≤ 1e-3、`NavMeshAgent.isOnNavMesh==true`；經過 R5 矩形的幀數 ≥ 20（活性：真的走坡道）；最後 y＝−1±1e-3。**紅燈實作**：y 沒更新（谷底仍 0）；y 用 agent 的 y（恆為 0）。
+- **V14-B04 走斜坡到崖台、不穿崖（1/60）**：開局後英雄傳送到 (0,0)（y 自動 −1）、對手 `ReceiveDamage(1000)` 倒地並在復活時再次擊倒；等 30 幀；真實點 2 號塔心 (6.5625,1,3.7890625) 的投影點（點擊當幀＝f0，以下幀數自 f0 起算）。斷言：① f0＋198 幀前**沒有**進入 2 號光圈（證明有繞路；r1 依審稿 H-6 重訂：C# r1 以 5.5m/s 實跑名目 **340 幀**〔路徑 31.17m，經 R4 首幀 103、R0 首幀 304〕，直線到光圈邊 5.08m＝**55.4 幀**，門檻取兩者中點 197.7→198；草案的 300 只比名目少 40 幀）；② f0＋600 幀前進入 2 號光圈（名目 340，裕度 1.76 倍）；③ 全程相鄰幀 `CrossesCliff==false`；④ 依序經過 R4（7→1）與 R0（9→2）矩形各至少 1 幀；⑤ 每幀 |y−H| ≤ 1e-3。**紅燈實作**：崖壁沒蓋格＋沒碰撞體（① 紅：直線穿崖）；只有碰撞體沒蓋格（貼著崖壁滑到卡死，② 紅）。
+- **V14-B05 低幀率不穿崖（(a)(b)(d) 在 dt＝1/3 與 1/4 各跑一次；(c) 為一次性推出，1/60）**：(a) 同 B04 的起點與點擊，跑 45 幀：③⑤ 成立、最後在 2 號光圈內（C# r1 名目：1/3 為 18 幀、1/4 為 24 幀）。(b) 英雄在 (3.25,0)（谷底貼 0|2／0|3 崖壁），面向 +x，連續 3 次微滑步（真實輸入）→ 每幀 `CrossesCliff==false`、y 恆為 −1。(c)（r1 改寫，審稿 M-5）英雄傳送到 V14-A16 的 p0＝(3.875,−1,0)，以 `SpawnRuneWallForTest(藍, 3.625f, 0f, 1f, 0f)` 立一面真實符印牆（與 A16 的 `StampBox` 同一盤面：中心、法線、4×0.6、外擴 0.35）→ 推出後英雄 y＝−1、`HeightAt(推後)==−1`、`CrossesCliff(推前, 推後)==false`、推後位置與 p0 不同（活性：真的被推過）；**活性（量在 B05 本身的實際格點上）**：立牆後、推出前（或以同一 `_navGrid` 於推出後）呼叫無條件 `TryFindNearestFree(3.875f, 0f, 20, …)`，其格心 `HeightAt == 1`（C# r1：(4.75,−0.75)）。(d)（r1 新增，審稿 M-10；Q7「崖台不能直接跳下」的行為驗收）英雄傳送到 G0 落點 (4.59375,1,2.0703125)（2 號崖台，距 0|2 崖壁線段 1.2246），面向 −x（谷底方向），連續 3 次微滑步（真實輸入；`CombatTuning.DashDistances` 1.4／0.9／0.5，前兩步累計 2.3m 已超過到崖壁線的 −x 距離 1.41m）→ 每幀 `CrossesCliff==false`、y 恆為 1、`ClassAt==Cliff`；活性：最後英雄到 0|2 崖壁線段的距離 ≤ 0.55（真的貼到崖壁碰撞體；名目 0.40＝半徑 0.35＋碰撞體半厚 0.05）。**紅燈實作**：`EjectFromBox` 不限同樓地板（(c) 被推上 2／3 號崖台）；崖壁碰撞體缺失或太矮（(d) 第 2 次滑步從崖台走下谷底，`CrossesCliff` 為真）；崖壁碰撞體放在 SphereCast 掃不到的層（同 (d)）。
+- **V14-B06 紅方 AI 走斜坡**：開局後種子歸屬：2 號中立、其餘 18 塊紅方（讓 `SelectTargetTile` 必選 2 號）；英雄傳送到 (−17,0,−17) 並倒地保持；對手傳送到 (0,0)（f0）。斷言：① f0＋272 幀前沒有進入 2 號光圈（r1 重訂：直線到光圈邊 5.08m，4m/s＝**76.2 幀**；C# r1 以 4m/s 實跑名目 **467 幀**〔路徑 31.13m〕；門檻取中點 271.6→272）；② f0＋900 幀前進入 2 號光圈並開始引導（名目 467，裕度 1.93 倍）；③ 全程 `CrossesCliff==false`、|y−H| ≤ 1e-3；④ 經過至少 1 條峽谷斜坡（R4 或 R5）與 1 條崖台斜坡（R0 或 R1）的矩形。另：對手傳送到 G0 踏點中心、`Stop()` 後停 180 幀 → 地熱點 `LaunchCount` 不變、對手 y 恆為 −1。**紅燈實作**：對手走另一套沒有格點的移動（穿崖）；地熱點對任何人都觸發。
 - **V14-B07 地熱點接線**：開局後英雄傳送到 G0 踏點中心（f0）、對手倒地保持。① f0＋35 幀時仍在谷底（y＝−1）；② f0＋38 幀前發射；③ 發射後 30～32 幀（0.5 秒）內落地，落地點距 (4.59375, 2.0703125) ≤ 0.05、y＝1±1e-3、`ClassAt==Cliff`；④ 飛行中點地指令被忽略（飛行第 10 幀真實點地，落地後 5 幀內英雄仍在落點 0.05 內）。受傷（另一個測試案例、重新載入場景）：英雄傳送到 G0（f0），f0＋20 幀 `TakeDuelDamage(1)` → f0＋55 幀前不發射、f0＋64 幀前發射（受傷當幀歸零並跳過下一 tick，約第 22 幀起重新累加 36 幀）。冷卻（接第一組）：落地後 5 幀內把英雄傳回 G0 並停住 → 第一次發射後第 510 幀前不再發射（8 秒＝480 幀＋重新引導 36 幀）、第 530 幀前第二次發射。**紅燈實作**：地熱點沒接到受傷事件；冷卻沒接；落地 y 沒設（仍 −1，在崖台下方）。
-- **V14-B08 射程接線**：先鋒未出現前（已過時間 < 600 秒）。(a) 英雄傳送到 G0 落點 (4.59375,1,2.0703125)（2 號崖台）、對手傳送到 (0,−1,0)（谷底，水平距離 5.0387m）並以種子入口停止移動；2 號、0 號種子為藍方（真視野，排除視野干擾）。等 30 幀後真實點對手 → 90 幀內第一次命中，且命中前英雄水平位移 ≤ 0.05（射程 5.5 內，不必走近）。(b) 對照：英雄在 (13.125,0,0)（10 號平原）、對手在 (8.0859375,1,0)（2 號崖台，水平 5.0390625m），同樣種子與點擊 → 命中前英雄水平位移 ≥ 0.3（射程 5.0，要先走近）。(c) 對手：英雄在谷底 (2.8125,−1,1.625)（距 0|2 崖壁線約 0.54m），對手在英雄沿 (0.8660254, 0.5) 方向水平 1.9m 處（2 號崖台內，測試以此計算傳送座標），0 號種子紅方（對手看得見英雄）→ 對手開始前搖時水平位移 ≤ 0.05（出手距離 1.98 內）。(d) 對照 (c)：兩者都放在平原（10 號塊內相距 1.9m）→ 對手先移動 ≥ 0.05 才前搖。**紅燈實作**：`HeroController.IsTargetInAttackRange` 仍讀原始 `AttackRange`；對手的停步距離沒加成。
-- **V14-B09 視野接線**：開局、雙方存活。英雄在 (0,−1,0)、對手在 G0 落點 (4.59375,1,2.0703125)（2 號中立）→ 60 幀內對手 renderer 不可見、點對手不會鎖定；2 號種子藍方 → 下一幀可見。英雄在 (6.5625,1,3.7890625)（崖台）、對手在 (13.5,0,5.0)（距 7.04、9 號中立）→ 可見；英雄改在 (13.125,0,0)（平原）、對手在 (13.125,0,7.04)（9 號中立，距 7.04）→ 不可見。紅方：英雄在 2 號崖台、對手在 0 號谷底（2 號中立）→ `TrainingOpponent.CanSeeHero==false`、對手不追打。**紅燈實作**：下游自己另算半徑；對手端沒接地形規則。
+- **V14-B08 射程接線**：先鋒未出現前（已過時間 < 600 秒）。(a) 英雄傳送到 G0 落點 (4.59375,1,2.0703125)（2 號崖台）、對手傳送到 (0,−1,0)（谷底，水平距離 5.03872m），並呼叫 `HoldOpponentForTest(true)`（§7.3：對手不走、不放牆、不前搖，但可被鎖定、可受傷）；2 號、0 號種子為藍方（真視野，排除視野干擾）。等 30 幀後真實點對手 → 90 幀內第一次命中，且命中前英雄水平位移 ≤ 0.02（射程 5.5 內，不必走近；r1 依審稿 H-3 由 0.05 收緊：錯誤實作〔射程仍 5.0〕至少要走 5.03872−5.0＝0.0387m 才進射程，0.02 門檻對它必紅）。(b) 對照：英雄在 (13.125,0,0)（10 號平原）、對手在 (8.0859375,1,0)（2 號崖台，`TileAt`＝2，水平 5.0390625m）並 `HoldOpponentForTest(true)`，同樣種子與點擊 → 300 幀內第一次命中，且命中前英雄水平位移 ≥ 0.03（r1 依審稿 H-3 重訂：射程 5.0 下，由三角不等式，任何正確實作進入射程前的水平位移 ≥ 5.0390625−5.0＝**0.0390625**，門檻 0.03 留 0.009 裕度；錯誤實作〔看目標層、射程 5.5〕不必走、位移 ≈0。C# r1 名目：流場沿 R0 繞行，108 幀後進射程、位移 5.93m；300 幀＝108＋(a) 的 90 幀出手上限，再留 1.5 倍）。(c) 對手（不 hold）：英雄在谷底 (2.8125,−1,1.625)（距 0|2 崖壁線段 0.5407m，C# r1），對手在英雄沿 (0.8660254, 0.5) 方向水平 1.9m 處＝(4.457948,1,2.575)（2 號崖台內、距崖壁 1.3593，C# r1），0 號種子紅方（對手看得見英雄）→ 120 幀內對手開始前搖（名目：第一次佔領 AI 更新即判定追打並進入前搖，≤ 3 幀；120 幀只防開局初始化順序），且前搖時水平位移 ≤ 0.05（出手距離 1.98 內；錯誤實作〔停步距離仍 1.8〕至少要走 0.1m，必紅）。(d) 對照 (c)：兩者都放在平原（英雄 (13.125,0,0)、對手 (13.125,0,1.9)，10 號塊內相距 1.9m，10 號種子紅方）→ 120 幀內前搖，且對手先移動 ≥ 0.05 才前搖（正確實作至少要走 1.9−1.8＝0.1m）。**紅燈實作**：`HeroController.IsTargetInAttackRange` 仍讀原始 `AttackRange`；對手的停步距離沒加成。
+- **V14-B09 視野接線**（r1 補座標與幀窗口，審稿 L-9）：開局、雙方存活，全程 `HoldOpponentForTest(true)`（對手不移動，量測不受 AI 走位影響）；每種配置＝傳送雙方後等 2 幀再斷言，斷言持續到該配置第 60 幀。① 英雄在 (0,−1,0)、對手在 G0 落點 (4.59375,1,2.0703125)（2 號中立）→ 第 2～60 幀對手 renderer 皆不可見、第 30 幀真實點對手不會鎖定；② 接著 2 號種子藍方 → 1 幀內可見。③ 英雄在 (6.5625,1,3.7890625)（崖台）、對手在 (13.5,0,5.0)（距 7.04、9 號中立）→ 第 2～60 幀皆可見；④ 英雄改在 (13.125,0,0)（平原）、對手在 (13.125,0,7.04)（9 號中立，距 7.04）→ 第 2～60 幀皆不可見。⑤ 紅方：英雄在 G0 落點（2 號崖台）、對手在 (0,−1,0)（0 號谷底；2 號中立）→ 第 2～60 幀 `TrainingOpponent.CanSeeHero==false`（「不追打」由 `CaptureOpponentPolicy.Decide` 的 `heroVisible==false` 在結構上保證）；活性：接著 2 號種子紅方 → 1 幀內 `CanSeeHero==true`。各點類別已以 C# r1 重算。**紅燈實作**：下游自己另算半徑；對手端沒接地形規則。
 - **V14-B10 淺水接線（兩個入口）**：開局後英雄在 4 號塊，對 4 號塔心施放水 → 生成的水域半徑 4（讀 `ElementZoneView`／邏輯場的半徑欄位，容差 1e-4）；在 13 號施放 → 3。另從 `ElementField.CastWater` 入口（元素反應路徑）在谷底生成 → 4。**紅燈實作**：只改了其中一個入口。
-- **V14-B11 先鋒、核心、巨獸**：`SeedCaptureMatchElapsedForTest(599.75)` → 先鋒出現在 (0,−1,0)±1e-3；擊倒後英雄站 (0,−1,0) 引導 3.5 秒取得巨獸，且同時翻下 0 號塔（若未持有）；巨獸從 (0,0) 走向紅母：路線 [0,1,7]、全程 `CrossesCliff==false`、|y−H| ≤ 1e-3、2400 幀內抵達 7 號塔心 0.6m 內。**紅燈實作**：巨獸用原鄰接（規劃 0→2）；生成 y 為 0（浮在谷底上方 1m）。
-- **V14-B12 符印牆高度**：英雄在 (0,−1,−3) 面向 +z 極速施放 → 牆中心 y＝−1；英雄在 (6.5625,1,3.7890625) 面向 −x 極速施放（中心 (2.5625,3.789)，落在谷底 0 號塊）→ 牆中心 y＝−1、牆仍成形、格點計數增加。**紅燈實作**：牆 y 固定 0。
-- **V14-B13 谷底遮擋閘門（Q4）**：螢幕 844×390、`FollowCameraRig.SnapToTarget()` 後（52°、17m、FOV 40）。位置清單＝`docs/v0140-b13-positions.csv`（258 點＝腳本最差 8 個＋谷底所有崖壁段谷底側 0.37m、每 0.25m 一點；§12.1-1 C# 產生，測試逐點寫死）；每個位置把英雄傳送過去、等 1 幀、再 `SnapToTarget`，對英雄取 15 個取樣點（腳底往上 0.1／0.5／0.9／1.3／1.7m × 橫向 −0.3／0／+0.3m，橫向沿鏡頭右方），`Physics.Linecast(鏡頭, 取樣點, 地形層)` 沒被擋的算可見——**只算看得見的地形盒子，不含崖壁隱形碰撞牆**（**主對話凍結前修訂**：原條文遮罩含崖壁層，但 §5.2 規定崖壁碰撞牆高到 +4m、不渲染；照字面 C# 重建有 140 點 0/15、161 點不符門檻，任何符合 §5.2 的實作都必紅，屬 02 §2.1 例外。隱形牆不擋玩家視線，量它不是在量「英雄被遮住」。改寫後 C# 重建最差 3/15、頭頂全可見、0 點不符；仍會抓「崖台頂做成 +2」「鏡頭不含 y」兩種紅燈實作）。**通過判準（§13 Q10 裁定）**：建議＝每個位置 ≥ 2／15 個點可見且頭頂點（1.7m、橫向 0）可見；腳本模型最差 3／15（0.20，(4.055,−0.185) 與 (4.055,7.393)）、頭頂點全部可見、完全被遮 0 個。**紅了＝停手回報，依 Q4 提前做網點透視，不得調低崖壁或改鏡頭來過關**。**紅燈實作**（會讓這條紅的地形／鏡頭實作）：崖壁碰撞體或地形盒子比 §2 的高度高（例如崖台頂做成 +2）；鏡頭跟隨目標改成不含 y（谷底時鏡頭仍在平地高度、俯角變淺）；Linecast 遮罩漏了地形層（這種錯會讓它假綠，所以回報要附一個「故意把英雄放進崖壁內」的對照點必為 0／15）。
-- **V14-B14 既有測試**：依 §13 Q2 裁定處理 §8 T5；T6、T7 與其餘全部既有 EditMode／PlayMode 0 失敗（基線 §12.1-2）。**紅燈實作**：地形漏到 Off 模式；迷霧 `AppliesTo` 沒接新規則集。
-- **V14-B16 開火顯形接線**：開局、2 號中立、0 號中立；英雄在 G0 落點（崖台）、對手在 (0,−1,0) 並以種子停止移動。① 開局後 30 幀 `TrainingOpponent.CanSeeHero==false`、對手 renderer 對藍方可見（崖台看谷底）；② 真實點對手、英雄第一次命中的那幀起 → 同幀或下一幀 `CanSeeHero==true`；③ 命中後英雄停止攻擊（下 Stop 指令），命中後第 85 幀仍 `true`、第 95 幀 `false`（1.5 秒＝90 幀）；④ 顯形期間對手開始朝英雄移動（任一幀水平位移 ≥ 0.05）。反向：對手打中英雄時英雄側 `CanSee(對手)` 同樣翻真。**紅燈實作**：傷害入口沒接 `NotifyHit`；只接了普攻沒接元素（另以一次元素命中重跑 ②）。
+- **V14-B11 先鋒、核心、巨獸**：`SeedCaptureMatchElapsedForTest(599.75)` → 先鋒出現在 (0,−1,0)±1e-3；擊倒後英雄站 (0,−1,0) 引導 3.5 秒取得巨獸，且同時翻下 0 號塔（若未持有）；巨獸從 (0,0) 走向紅母：路線 [0,1,7]、全程 `CrossesCliff==false`、|y−H| ≤ 1e-3、2400 幀內抵達 7 號塔心 0.6m 內（名目 15.16m÷3m/s＝303 幀）。**第二案（r1 新增，審稿 H-2；重新載入場景）**：開局後 `SeedBehemothForTest(藍, 6.5625f, 3.7890625f)`（巨獸在 2 號崖台塔心生成）→ 下一幀 `CopyRouteForTest` 得 **[2,9,8,7]**（`WalkNeighbor` 圖上 2→7 唯一最短路；原 42 條鄰接的 `BuildRoute` 會得 [2,1,7]，C# r1 以同一 BFS 寫法重算）；240 幀內巨獸 `TileAt==9`（名目：沿 R0 長軸 3m/s，第 76 幀越過 2|9 邊）、全程 `CrossesCliff==false`、|y−H| ≤ 1e-3。**紅燈實作**：`AbyssalVanguardTarget.BuildRoute` 仍用 `CaptureBoardSpec.Neighbor`（第二案路線 [2,1,7]，且朝 1 號走會被崖壁擋住、進不了 9 號；第一案 [0,1,7] 兩種寫法相同，抓不到，所以第二案必要）；生成 y 為 0（浮在谷底上方 1m）。
+- **V14-B12 符印牆高度**：英雄在 (0,−1,−3) 面向 +z 極速施放 → 牆中心 y＝−1；英雄在 G0 落點 (4.59375,1,2.0703125)（2 號崖台）面向 −x 極速施放 → 牆中心 (0.59375,2.0703125)（`TileAt`＝0、谷底，C# r1）→ 牆中心 y＝−1、牆仍成形、格點計數增加（r1 依審稿 B-1 更正：草案的英雄 (6.5625,3.7890625) 施放後牆心 (2.5625,3.7890625) 其實落在 2 號崖台內〔`TileAt`＝2、`HeightAt`＝+1〕，照字面必紅）。**紅燈實作**：牆 y 固定 0。
+- **V14-B13 谷底遮擋閘門（Q4）**：螢幕 844×390、`FollowCameraRig.SnapToTarget()` 後（52°、17m、FOV 40）。位置清單＝`docs/v0140-b13-positions.csv`（258 點＝腳本最差 8 個＋谷底所有崖壁段谷底側 0.37m、每 0.25m 一點；§12.1-1 C# 產生，測試逐點寫死）；每個位置把英雄傳送過去、等 1 幀、再 `SnapToTarget`，對英雄取 15 個取樣點（腳底往上 0.1／0.5／0.9／1.3／1.7m × 橫向 −0.3／0／+0.3m，橫向沿鏡頭右方），從鏡頭到取樣點的線段沒有被遮擋的算可見。**遮擋量法（r1 寫死，審稿 B-2）**：以 `Physics.RaycastNonAlloc(鏡頭, 方向, buffer, 線段長, Physics.AllLayers, QueryTriggerInteraction.Ignore)`（buffer ≥ 64，命中數＝buffer 長度即判紅，不得靜默截斷）取得線段上所有命中，**只計 `collider.transform.IsChildOf(CanyonTerrain 根物件)` 的命中**；英雄與對手膠囊、塔、牆、`CliffBarriers`、先鋒等其他碰撞體一律不算遮擋。理由：地形與英雄膠囊都在 Default 層，15 個取樣點全在英雄膠囊（半徑 0.35、高 1.8）內，用層遮罩的 `Physics.Linecast` 必先打到英雄自己而 0/15；C# 參考模型本來就只含地形盒與坡道（`refvalues` §3），所以下列數字不變。——**只算看得見的地形盒子，不含崖壁隱形碰撞牆**（**主對話凍結前修訂**：原條文遮罩含崖壁層，但 §5.2 規定崖壁碰撞牆高到 +4m、不渲染；照字面 C# 重建有 140 點 0/15、161 點不符門檻，任何符合 §5.2 的實作都必紅，屬 02 §2.1 例外。隱形牆不擋玩家視線，量它不是在量「英雄被遮住」。改寫後 C# 重建最差 3/15、頭頂全可見、0 點不符；仍會抓「崖台頂做成 +2」「鏡頭不含 y」兩種紅燈實作）。**通過判準（§13 Q10 裁定）**：建議＝每個位置 ≥ 2／15 個點可見且頭頂點（1.7m、橫向 0）可見；腳本模型最差 3／15（0.20，(4.055,−0.185) 與 (4.055,7.393)）、頭頂點全部可見、完全被遮 0 個。**紅了＝停手回報，依 Q4 提前做網點透視，不得調低崖壁或改鏡頭來過關**。**紅燈實作**（會讓這條紅的地形／鏡頭實作）：地形盒子比 §2 的高度高（例如崖台頂做成 +2）；鏡頭跟隨目標改成不含 y（谷底時鏡頭仍在平地高度、俯角變淺）。（r1，審稿 L-4：草案的「崖壁碰撞體比 §2 高」已不會讓它紅——崖壁不在量測內——刪除。）假綠防護：量法漏了地形（例如過濾條件寫錯、一個都不算）會讓它假綠，所以回報要附一個「英雄腳底放在 (6.5625,−1,3.7890625)、埋進 2 號崖台地形盒內」的對照點（`HeightAt` 會把傳送的 y 拉回 +1，所以對照點不傳送英雄：鏡頭位置與 15 個取樣點都由這個合成腳底位置照同一套幾何算出〔鏡頭＝腳底沿鏡頭 forward 後退 17m，即 (x, y+13.396, z−10.466)〕，只做遮擋量測），必為 0／15（C# 參考模型 0/15）。
+- **V14-B14 既有測試**：依 §13 Q2 裁定處理 §8 T5（8 個套件 SetUp 加關地形入口，`PactDamagePlayTests` 不動）；T6、T7 與其餘全部既有 EditMode／PlayMode 0 失敗（基線 §12.1-2）。**紅燈實作**：地形漏到 Off 模式；迷霧 `AppliesTo` 沒接新規則集。
+- **V14-B16 開火顯形接線**（r1 改寫，審稿 H-4／L-9）：開局、`SeedOwnershipForTest` 讓 2 號、0 號中立；英雄在 G0 落點 (4.59375,1,2.0703125)（崖台）、對手在 (0,−1,0)（谷底，水平距離 5.03872）並 `HoldOpponentForTest(true)`（§7.3 語意：不走、不放牆、不前搖，保持可受傷，`CanSeeHero` 照常計算）。**案例一**：① 開局後第 1～30 幀 `TrainingOpponent.CanSeeHero==false`、對手 renderer 對藍方可見（崖台看谷底）；② 真實點對手、英雄第一次命中的那幀（h）→ h 或 h＋1 幀 `CanSeeHero==true`；③ h 當幀英雄下 Stop 指令（停止攻擊），h＋85 幀仍 `true`、h＋95 幀 `false`（1.5 秒＝90 幀，兩側各留 5 幀）。**案例二（重新載入場景，驗 AI 反應）**：同一設定，h 當幀英雄下 Stop 並 `HoldOpponentForTest(false)` → h＋1～h＋90 幀內對手水平位移 ≥ 0.05（顯形後追打：水平距離 5.04 ≤ `ChaseStartDistance` 6）；活性對照：案例一的 h＋95 幀之後（顯形已消失）`HoldOpponentForTest(false)`，再 60 幀對手與英雄的水平距離減少量 ≤ 0.05（看不到就不追；它站在 0 號光圈內佔 0 號）。**案例三（反向，重新載入場景）**：英雄在谷底 (2.8125,−1,1.625)、對手（不 hold）在 (4.457948,1,2.575)（2 號崖台，與 B08(c) 同座標）；2 號中立、0 號種子紅方（對手靠真視野看得見英雄而出手）。開局後藍方對對手 `CanSee==false`（谷底看崖台）；對手第一次命中英雄的那幀（h′，名目：前搖 0.7 秒＝42 幀）→ h′ 或 h′＋1 幀藍方 `CanSee(對手)==true`，h′＋85 幀仍 `true`、h′＋95 幀 `false`（對手下一次命中在 h′＋102 幀〔恢復 1.0＋前搖 0.7 秒〕之後，不會提早重設）。**紅燈實作**：傷害入口沒接 `NotifyHit`（① 以後全紅）；只接了普攻沒接元素（另以一次元素命中重跑案例一 ②）；對手受傷入口接了、英雄受傷入口沒接（案例三紅）。
 - **V14-B15 Off 模式零影響**：`LowFrameRateArrivalPlayTests`、`WallDetourPlayTests`、`DuelPlayTests`、`ShieldAndProjectilePlayTests`、`RuneWallPlayTests`、`ElementReactionPlayTests`、`GreyboxSmokeTests` 逐字不改、全綠；Off 模式英雄 y 全程 0。**紅燈實作**：`HeroLocomotion` 在 `_terrain==null` 時也改了 y。
 
 **指令**：建場景 → `verify.sh` → EditMode → PlayMode（依序、不並行）。**回退**：回到 B 的起點；不改 A 的驗收值遷就場景。
 
 ### C. 完整一局、AI、效能
 
-- **V14-C01 峽谷放置整局（captureDeltaTime＝1/10）**：開局後英雄完全不輸入，直到回 Lobby 或 9600 幀。斷言：① `LAST: RED WINS`；② 紅方在結束前至少翻過 2 塊崖台與 1 塊谷底（活性：AI 真的上崖、下谷）；③ 全程對手相鄰幀 `CrossesCliff==false`、|y−H| ≤ 1e-3；④ 地熱點 `LaunchCount==0`；⑤ 結束時已過時間 ∈ [336.8, 505.2] 秒（§12.1-1 C# 參考模型名目 421.016 秒 ±20%；同模型跑平地得 411.016，與 v0.10 Unity 實跑 412.016 差 1.0 秒；先鋒不會出現，600 秒前就結束）。**紅燈實作**：AI 卡在某條斜坡（②紅或時間到）；穿崖（③）。
-- **V14-C02 AI 不卡斜坡（回歸）**：對手依序被指定 19 塊為目標（種子歸屬讓每次只剩該塊非紅），從上一個目標出發；每一段在「參考模型格點路徑長 ÷ 4m/s × 60 × 1.5（向上取整）」幀內進入光圈；起點：第 0 段從紅出生點 (0,16.65625)、第 k 段從第 k−1 塊塔心出發；目標依 0,1,…,18；每段窗口幀＝372,169,629,169,629,634,169,510,184,179,169,180,179,184,195,179,180,169,179（§12.1-1 C#，`vow-toolchain/v0140-refvalues.md` §4；移速已確認 4m/s）；任何一段超時即紅、不得加 retry。**紅燈實作**：斜坡淨寬不足讓整合場繞進死角。
+- **V14-C01 峽谷放置整局（captureDeltaTime＝1/10）**：開局後英雄完全不輸入，直到回 Lobby 或 9600 幀。斷言：① `LAST: RED WINS`；② 紅方在結束前至少翻過 2 塊崖台與 1 塊谷底（活性：AI 真的上崖、下谷）；③ 全程對手相鄰幀 `CrossesCliff==false`、|y−H| ≤ 1e-3；（原 ④ `LaunchCount==0` 於 r1 刪除，審稿 L-5：英雄不輸入、對手不觸發，對任何實作恆綠；「AI 不觸發地熱點」由 B06 負責）；⑤ 結束時已過時間 ∈ [336.8, 505.2] 秒（§12.1-1 C# 參考模型名目 421.016 秒 ±20%；同模型跑平地得 411.016，與 v0.10 Unity 實跑 412.016 差 1.0 秒；先鋒不會出現，600 秒前就結束）。**紅燈實作**：AI 卡在某條斜坡（②紅或時間到）；穿崖（③）。
+- **V14-C02 AI 不卡斜坡（回歸）**：開局後英雄傳送到 (−17,0,−17) 並保持倒地（寫法同 B06；r1 依審稿 H-5 補：英雄預設站在藍出生點、距第 14 段起點約 1.5m < `ChaseStartDistance` 6，對手會改去追打英雄而超時；參考模型未模擬英雄）。對手依序被指定 19 塊為目標（種子歸屬讓每次只剩該塊非紅），從上一個目標出發；每一段在「參考模型格點路徑長 ÷ 4m/s × 60 × 1.5（向上取整）」幀內進入光圈；起點：第 0 段從紅出生點 (0,16.65625)、第 k 段從第 k−1 塊塔心出發；目標依 0,1,…,18；每段窗口幀＝372,169,629,169,629,634,169,510,184,179,169,180,179,184,195,179,180,169,179（§12.1-1 C#，`vow-toolchain/v0140-refvalues.md` §4；移速已確認 4m/s）；任何一段超時即紅、不得加 retry。**紅燈實作**：斜坡淨寬不足讓整合場繞進死角。
 - **V14-C03 佔領對局零配置**：寫法同 V10-C05（暖機局只碰量測局不會用到的東西）；量測局：開局後英雄走 R5 下谷、站 G0 引導並發射、落地；對手追逐；量 480 幀；活性：y 更新 ≥ 400 次、`CanSee` 真假都出現、地熱點發射 1 次、巨獸路線不在此局；`UpdateBytes==0`、`LateUpdateBytes==0`。另：對局中 `_navGrid.Version` 只在符印牆出現／消失時改變（不因崖壁重蓋）。**紅燈實作**：`HeightAt` 或路線每幀配置；每幀重蓋崖壁。
-- **V14-C04 模式切換與第二局**：Off → 佔領 → 結算 → Lobby → Off → 佔領，兩次進入後 `BlockedCount` 相同、`NegativeStampCount==0`、地熱點冷卻歸 0、先鋒與核心重置、英雄 y 正確。**紅燈實作**：第二次進入重複蓋格或少撤。
+- **V14-C04 模式切換與第二局**：Off → 佔領 → 結算 → Lobby → Off → 佔領，兩次進入後 `BlockedCount` 相同、`NegativeStampCount==0`、地熱點冷卻歸 0、先鋒與核心重置、英雄 y 正確。另（r1，審稿 M-13）：結算後回到 Lobby 的那一幀起 5 幀內，對手在 (−4, 0, 12) 的 0.05m 內（峽谷模式的 `CanyonLobbyOpponentSpawn`，18 號平原），且對手位置到任一崖壁線段的水平距離 > 0.35（不在崖壁外擴帶內；(−4,12) 為 1.8861，C# r1）。**紅燈實作**：第二次進入重複蓋格或少撤；峽谷模式仍傳回 (−4,8)（距 1\|18 崖壁 0.114m，最後一句紅）。
 - **V14-C05 全套回歸**：`verify.sh` ALL PASS；EditMode 0 失敗；PlayMode 0 失敗；突變 ALL CAUGHT；V14-A18 的 diff 檢查再跑一次。**紅燈實作**：任一套件失敗或新增略過（新增 Ignore 只允許 V14-A17）。
 - **效能（記錄、不當及格線，同 V0100 §4-9 的精神）**：Editor 內 `ProfilerRecorder("Main Thread")` 在 C03 量測局的中位數與 P95 寫進回報，與 v0.13.1 同一局型對照；WebGL 實際幀率在 D 步以截圖時間戳粗估並列為「未驗證」。
 
@@ -412,14 +442,14 @@ namespace Vow.Core.Logic
 
 **工作**：版本 0.14.0（`VowVersion.cs`＋bundleVersion）；WebGL 建置與部署；驗收指南新增 §25、`HANDOFF.md`、`ARCHITECTURE.md` 補「地形查詢介面」一節；線上腳本 `<T>/v0140-online-check.py`、`<T>/v0140-webkit-check.py`，截圖放 `<T>/browser-screenshots/v0140-*`。截圖判讀由主對話逐項勾選，任一項看不到就算紅。
 
-- **V14-D01 版本與建置**：`VowVersion.Version=="0.14.0"`；三套測試全綠；WebGL 建置成功；`grep -n "Seed.*ForTest" Assets/Scripts` 每一處都在 `#if UNITY_EDITOR` 內（含本批新增）。**紅燈實作**：版本沒改；關地形／種子入口被編進正式版。
+- **V14-D01 版本與建置**：`VowVersion.Version=="0.14.0"`；三套測試全綠；WebGL 建置成功；每一個 `ForTest` **方法宣告**都在 `#if UNITY_EDITOR` 內：`grep -rnE "(public|internal|private|protected)[^(=]*ForTest\s*\(" Assets/Scripts --include=*.cs`，排除 `Assets/Scripts/Core/Logic/`（純邏輯既有慣例：`CaptureMatchLogic.cs:295` 註解說明權限收斂由 Unity 端入口負責，dotnet 測試也要呼叫得到）後逐一核對（r1，審稿 M-2：草案的 `Seed.*ForTest` 比對不到 `UseFlatCaptureSpecForTest`、`HoldOpponentForTest`、`SpawnRuneWallForTest`、`CopyRouteForTest`，且會誤中 `Phase1Bootstrap` 既有的 `?devvanguard` 呼叫點——那是呼叫不是宣告，不在本條範圍）。**紅燈實作**：版本沒改；關地形／種子／hold 入口被編進正式版。
 - **V14-D02 送達證明**：`SKIP_BUILD=1 bash Tools/deploy-webgl.sh` 成功；`git log origin/gh-pages -1` 顯示本次部署；Chromium（844×390、DPR 2、觸控）讀到 `v0.14.0 · build … · <來源 sha7>`。**紅燈實作**：線上仍舊版（先排除 PWA 快取）。
 - **V14-D03 WebKit 載入**：同 V10-D03（WebKit 載入到可點 `CAPTURE`、版本列正確）。**紅燈實作**：地形材質或新 shader 在 WebKit 下編譯失敗導致黑畫面或 console error。
 - **V14-D04 開局畫面**：點 `CAPTURE` → 點對手 → 截圖：看得出峽谷比兩側低、崖台比平原高、13→4 斜坡；HUD 不被地形遮住。**紅燈實作**：WebGL 下地形沒畫或整片黑。
 - **V14-D05 線上下谷**：點 (0,−8.3671875) 的地面投影點（用 `v0140_coords.py` 以鏡頭參數算，點擊前斷言離四邊 ≥16px）→ 不做其他輸入、等 6 秒 → 截圖：英雄在峽谷底、沒有卡在坡道上。**紅燈實作**：WebGL 建置裡平地碰撞體沒停用（點擊落點偏北約 0.78m、英雄停在坡頂）；斜坡碰撞體缺失（英雄卡在 13 號與 4 號交界）。
-- **V14-D06 線上地熱點**：接 D05，點 G0 踏點 (2.09375,−1,2.0625) 的投影點 → 等 3 秒不輸入 → 截圖：英雄在 2 號崖台上（比谷底高、位於東北崖台）。**紅燈實作**：WebGL 下地熱點不觸發。
+- **V14-D06 線上地熱點**：接 D05，點 G0 踏點 (2.09375,−1,2.0625) 的投影點 → 等 5 秒不輸入 → 截圖（r1 依審稿 H-6 由 3 秒改 5 秒：C# r1 名目＝走進踏點圓 112 幀＝1.867 秒〔路徑 10.27m〕＋引導 0.6＋飛行 0.5＝**落地 2.967 秒**，原 3 秒只留 33ms；5 秒留 2.03 秒給點擊延遲與幀抖動。落地後英雄停在落點〔§4.5 發射時清除移動目的地〕，多等不會改變畫面）：英雄在 2 號崖台上（比谷底高、位於東北崖台）。**紅燈實作**：WebGL 下地熱點不觸發。
 - **V14-D07 console 乾淨**：D02～D06 全程 `pageerror`＝0、`console.error`＝0。**紅燈實作**：`HeroLocomotion` 在 y 偏離 NavMesh 時噴「不在 NavMesh 上」錯誤；地形初始化順序錯誤。
-- **V14-D08 文件**：`HANDOFF.md` 寫入來源 SHA、gh-pages SHA 與時間、實跑輸出摘要；驗收指南 §25 寫規則摘要、試玩步驟、實測結果與「未驗證」清單，至少包含：①原生手機手感與觸控點崖台的精準度；②線上 AI 走斜坡（只有 PlayMode 證據）；③線上遮擋（只有 V14-B13 PlayMode＋腳本模型）；④WebGL 實際幀率；⑤PWA 舊版快取處理方式。**紅燈實作**：HANDOFF 的 SHA 與 `git log origin/gh-pages -1` 不一致；未驗證項漏列（例如把 PlayMode 證據寫成線上已驗證）。
+- **V14-D08 文件**：`HANDOFF.md` 寫入來源 SHA、gh-pages SHA 與時間、實跑輸出摘要；驗收指南 §25 寫規則摘要、試玩步驟、實測結果與「未驗證」清單，至少包含：①原生手機手感與觸控點崖台的精準度；②線上 AI 走斜坡（只有 PlayMode 證據）；③線上遮擋（只有 V14-B13 PlayMode＋腳本模型）；④WebGL 實際幀率；⑤PWA 舊版快取處理方式；⑥斜坡上半段的點地落點誤差與光圈／坡面交界顯示（§5.2 灰盒限制，r1）。**紅燈實作**：HANDOFF 的 SHA 與 `git log origin/gh-pages -1` 不一致；未驗證項漏列（例如把 PlayMode 證據寫成線上已驗證）。
 
 **回退**：v0.13.1 的 `e82603c`（來源 `eb3c164`）是可回退的送達點；D 沒過就不宣稱 v0.14.0 已送達。
 
@@ -427,29 +457,32 @@ namespace Vow.Core.Logic
 
 ## 10. 突變定義（加入 `mutation_check.py` 尾端）
 
-格式同既有：`(代號, 說明, 檔案, 原文, 改壞後, 至少要變紅的測試)`。原文要在凍結時的實作裡唯一出現（A 步完成後由實作者依實際程式碼填入 before／after 全文，**說明與預期紅的測試不得改**）。每一條都是一份「能編譯、只改行為」的完整錯誤實作，不是只動一個常數；「外層保護不會先擋掉」的意思是：預期紅的那條測試，第一個失敗的斷言必須是下表「紅在哪」欄的行為斷言，不是前面的 `IsNotNull`／計數斷言或編譯錯誤——A 步回報時逐條附第一個失敗斷言的訊息。
+格式同既有：`(代號, 說明, 檔案, 原文, 改壞後, 至少要變紅的測試)`。代號用前綴 **K**（r1，審稿 L-1：避開 `mutation_check.py` 既有的 C1～C18、C13b、C17b，§14 裁定紀錄中的「C15～C16」＝本表 K15～K16）。原文要在凍結時的實作裡唯一出現（A 步完成後由實作者依實際程式碼填入 before／after 全文，**說明與預期紅的測試不得改**）。每一條都是一份「能編譯、只改行為」的完整錯誤實作，不是只動一個常數；「外層保護不會先擋掉」的意思是：預期紅的那條測試，第一個失敗的斷言必須是下表「紅在哪」欄的行為斷言，不是前面的 `IsNotNull`／計數斷言或編譯錯誤——A 步回報時逐條附第一個失敗斷言的訊息。
 
 | 代號 | 錯誤實作（完整描述） | 預期紅的測試 | 紅在哪（第一個失敗的斷言） | 外層為什麼擋不住 |
 |---|---|---|---|---|
-| C1 | `WalkNeighbor` 直接回傳 `CaptureBoardSpec` 的 42 條原始鄰接 | V14-A05 | 從 13 到 2 的步數 3≠4 | A04 會一起紅，但 A05 測試內沒有先斷言鄰接數；BFS 寫在測試裡，只讀 `WalkNeighbor` |
-| C2 | `StampCliffs` 對斜坡邊也蓋整條（忘了留開口），側牆照蓋 | V14-A08 | 2 號塔心 `substituted==true` | A07 的斜坡中心格斷言也會紅；A08 不斷言計數，先跑 `ResolveGoal` |
-| C3 | 斜坡側牆線段不產生（清單只有 32 段），蓋格照清單 | V14-A09 | 違反組數 >0 | A09 不讀線段數，只掃格子 |
-| C4 | `HeightAt` 的斜坡內插用 `h1 + (h0−h1)·t`（方向反） | V14-A02 | R5 低端 0≠−1 | 塔心斷言排在後面；A02 第一個斷言就是 R5 低端（實作者須照此排序） |
-| C5 | `AttackRange` 看目標位置的地形類別 | V14-A11 | 「攻擊者在 10 號、目標在崖台」得 5.5 | 攻擊者在 2 號時兩者都在崖台上，所以把「目標層不影響」那組排第一 |
-| C6 | `ClassAt` 先查 `TileAt` 再查斜坡（斜坡被歸為所在塊） | V14-A11 | R0 中心攻擊者得 5.5 | 同時會紅 A03；A11 內 R0 組排在最前 |
-| C7 | `CanSee` 把谷底規則（第 4 步）放到真視野（第 2 步）之前 | V14-A12 | (c) 2 號由觀看方持有時仍看不到 | (a)(b) 不涉及谷底，放後面；(c) 排第一 |
-| C8 | 局部視野一律 8m | V14-A12 | (b) 距 6.015625 看得到 | 同上，(b) 在 (c) 之後但它是獨立斷言；`mutation_check` 只看測試名 |
-| C9 | 淺水改乘法 `r × 4/3` | V14-A13 | 潮汐組 6.6666≠6 | 無潮汐組 3×4/3＝4 會綠，所以潮汐組排第一 |
-| C10 | 地熱點受傷只設旗標、不歸零進度 | V14-A14 | (c) 第 59 個 tick 後已發射 | (a) 會綠；(c) 獨立建立 logic 實例 |
-| C11 | 冷卻用單一欄位（兩點共用） | V14-A14 | (e) 第 78 個 tick 後仍只有 1 次 | (a)～(d) 只用 G0，全綠 |
-| C12 | 冷卻中照樣累加引導，只在 ⑤ 擋發射（冷卻一結束就用累積的進度立刻發射） | V14-A14 | (b) 第 550 個 tick 後 `Progress(G0)` 不為 0 | (a) 第一次發射前沒有冷卻，(a) 全綠 |
-| C13 | 核心半徑仍 1.8、圓心 (4.375,0)（還原 v0.13.1） | V14-A10 | `CoreX==0f` | 同時紅 `Tuning_*`（改寫後）；A10 第一個斷言就是 CoreX |
-| C14 | `IsSameFloor` 恆回 true | V14-A16 | 谷底對崖台得 true | 其他組都是 true，不會先紅 |
-| C15 | `CanSee` 把開火顯形檢查放到谷底規則（第 4 步）之後 | V14-A20 | `NotifyHit` 後仍看不到 | A20 第一組就是谷底看崖台＋命中 |
-| C17 | `SelectTargetTile` 忽略 terrain、一律直線距離 | V14-A21 | 峽谷盤面選 2 而非 13 | A21 第一組就是峽谷盤面 |
-| C16 | `RevealTracker` 顯形對所有陣營生效（忽略 victimSide） | V14-A20 | 藍方觀看者看紅對手變成看得到 | 雙陣營組排在計時組之前 |
+| K1 | `WalkNeighbor` 直接回傳 `CaptureBoardSpec` 的 42 條原始鄰接 | V14-A05 | 從 13 到 2 的步數 3≠4（逐塊依索引斷言，0、1 號兩種鄰接同步數，第一個不同的是 2 號） | A04 會一起紅，但 A05 測試內沒有先斷言鄰接數；BFS 寫在測試裡，只讀 `WalkNeighbor` |
+| K2 | `StampCliffs` 對斜坡邊也蓋整條（忘了留開口），側牆照蓋 | V14-A08 | (a) 藍出生點對 **0 號**塔心 `substituted==true`（r1 更正：峽谷兩個入口 13→4、7→1 都被封死，依索引第一個就是 0 號，不是草案寫的 2 號） | A07 的斜坡中心格斷言也會紅；A08 不斷言計數，先跑 `ResolveGoal` |
+| K3 | 斜坡側牆線段不產生（清單只有 32 段），蓋格照清單 | V14-A09 | 違反組數 >0 | A09 不讀線段數，只掃格子 |
+| K4 | `HeightAt` 的斜坡內插用 `h1 + (h0−h1)·t`（方向反） | V14-A02 | R5 低端 0≠−1 | 依 A02 本文順序，前面的塔心、棋盤外在突變下同值，R5 中心 t＝0.5 時兩種內插同為 −0.5，第一個不同的就是 R5 低端（不需另外排序） |
+| K5 | `InAttackRange` 以**目標**位置的地形類別算射程（呼叫 `AttackRange(baseRange, tx, tz, terrain)`） | V14-A11b | 第一組：攻擊者 10 號、目標 (8.109375,0)（崖台，距平方 25.156494）得「在」（突變射程 5.5） | r1 依審稿 H-1 改寫：草案的「目標 (8.125,0) 距 5.0」在突變下仍判「在」，恆綠；A11b 第一組就是它 |
+| K6 | `ClassAt` 先查 `TileAt` 再查斜坡（斜坡被歸為所在塊） | V14-A11a | R0 中心攻擊者得 5.5 | 同時會紅 A03；A11a 第一個斷言就是 R0 中心（與 K5 分在不同測試方法，排序不再衝突） |
+| K7 | `CanSee` 把谷底規則（第 4 步）放到真視野（第 2 步）之前 | V14-A12 | (c)「2 號由觀看方持有 → 看得到」得看不到 | (a)(b) 不涉及谷底、突變下同值；(c) 第一句（中立時看不到）也同值，第一個不同的是持有那一句 |
+| K8 | 局部視野一律 8m | V14-A12 | (b) 距 6.015625 看得到 | (a) 的觀看者本來就在崖台（8m）、突變下同值；第一個不同的是 (b) |
+| K9 | 淺水改乘法：谷底時回傳 `(baseRadius + talentBonus) * 4f / 3f`（左結合、先乘後除，3f×4f/3f＝4f 在 float32 精確；r1 依審稿 L-2 寫明乘在含潮汐的總和上） | V14-A13 | 潮汐 4 號塔心 (3＋2)×4/3＝6.6667≠6 | 無潮汐組 3×4/3＝4 與非谷底組都同值，第一個不同的就是潮汐組 |
+| K10 | 地熱點受傷只設旗標、不歸零進度（③ 只跳過累加） | V14-A14 | (c) 第 21 個 tick 後 `Progress==0`（突變保留 20/64＝0.3125）（r1 依審稿 M-9 更正：草案寫第 59 個 tick） | (a)(b) 不涉及受傷、同值 |
+| K11 | 冷卻用單一欄位（兩點共用） | V14-A14 | (a) 第 39 個 tick 後 `Cooldown(G1)==0f`（共用欄位＝8）（r1 依審稿 M-9 更正：草案寫 (e)） | (a) 前面的 `LaunchCount`、`LastLaunchPad`、落點、`Cooldown(G0)` 都同值 |
+| K12 | 冷卻中照樣累加引導，只在 ⑤ 擋發射（冷卻一結束就用累積的進度立刻發射） | V14-A14 | (b) 第 550 個 tick 後 `Progress(G0)` 不為 0 | (a) 第一次發射前沒有冷卻，(a) 全綠；(b) 的 `LaunchCount==1` 在突變下同值（⑤ 仍擋發射） |
+| K13 | `ForSpec(V0140Canyon)` 回傳 v0.13.1 值（半徑 1.8、圓心 (4.375,0)） | V14-A10 | 第一個斷言 `ForSpec(V0140Canyon).CoreX==0f` | r1 依審稿 L-3 改寫：預設值不改，既有 `Tuning_*` 在突變下仍綠（它們測的是預設／平地），只有 A10 會紅 |
+| K14 | `IsSameFloor` 恆回 true | V14-A16 | (3.5,0)↔(5.0,0)（谷底對崖台）得 true | 第一組谷底對谷底本來就是 true |
+| K15 | `CanSee` 把開火顯形檢查放到谷底規則（第 4 步）之後 | V14-A20 | ①`NotifyHit(藍,紅)` 後紅方看藍英雄仍看不到 | ① 命中前那句（看不到）同值 |
+| K16 | `RevealTracker.NotifyHit` 把攻擊方與受害方對調（顯形 victimSide 的英雄／對手，顯形對象＝attackerSide） | V14-A20 | ①`NotifyHit(藍,紅)` 後紅方看藍英雄仍看不到（被顯形的是紅對手） | r1 依審稿 B-3 改寫：草案的「忽略 victimSide、對所有陣營生效」在兩陣營遊戲裡只差「看自己人」的查詢，A20 沒有這種查詢，是等價突變，已刪除；本突變改變了「誰被顯形」，① 必紅 |
+| K17 | `SelectTargetTile` 忽略 terrain、一律直線距離 | V14-A21 | 峽谷盤面選 2 而非 13 | A21 第一組就是峽谷盤面 |
+| K18 | `HeightAt` 斜坡內插寫死落差 1m（`low + t × 1f`） | V14-A22 | 第一個斷言：第 7 條斜坡中心得 −0.5≠0 | r1 新增：本批 V0140 的 6 條斜坡落差都是 1m，A02 在突變下全綠，只有 A22 的 2m 測試斜坡抓得到 |
 
 A 步另外要依 V0100 R10 的做法重新定位受本批改動影響的既有突變原文（例如 `AbyssalVanguardTuning` 相關），任何一條變成 SKIP 都算 V14-A19 紅。
+
+**等價突變檢查（r1）**：K1～K18 逐條以「突變後，預期紅那一欄的斷言在所有合法實作細節下是否必然改變結果」審過：每條都改變了至少一個被斷言的回傳值（見「紅在哪」欄的突變值），無等價突變。草案 C16 屬等價突變，已由 K16 取代。
 
 ---
 
@@ -477,7 +510,7 @@ A 步另外要依 V0100 R10 的做法重新定位受本批改動影響的既有�
 
 承接 `V0100_SANCTUARY_PLAN.md` §4 全文（凍結範圍、只能由主對話＋使用者針對該條明確同意才能修改、實作者只能回報不能自改、移動及格線的判準、恆真／恆假由主對話修正後事後告知、每步回報格式）。本批另外：
 
-- **【凍結前補】的欄位**只能填 §12.1 實跑出來的值，不得依實作結果回填。
+- **【凍結前補】的欄位**只能填 §12.1 實跑出來的值，不得依實作結果回填（r1：計畫內已無待補欄位）。
 - **V14-B13 是閘門**：它紅不代表實作錯，而是觸發 Q4 的範圍變更；不得為了讓它綠而改崖壁高度、鏡頭參數、取樣點或門檻。
 - **斜坡寬度、地熱點座標**是【解讀】草案值，凍結後改動一律走本節。
 
@@ -485,7 +518,7 @@ A 步另外要依 V0100 R10 的做法重新定位受本批改動影響的既有�
 
 1. **參考值實跑**：由沒有對話史的 fresh agent 在 repo 外的臨時專案，把 §2 的地形規則寫成 C#（float32，與 `BlockGrid` 同精度）重算：V14-A07 的 `BlockedCount`、A08 (c) 的成本、B13 的位置清單與可見比例、C01 的結束時間窗口、C02 每段幀數；並獨立重跑 `v0140-reachability.py` 比對 §2.5 兩張 BFS 表（重建模型 vs. C# 重建，兩者都不是 Unity 實跑，回報時標明）。
 2. **基線**：在 `96730fd` 跑 `verify.sh`、EditMode、PlayMode，記錄通過／略過數量寫進 V14-A18、B14。**主對話審稿補**：`96730fd` 與 v0.13.1 程式提交 `227f0fd` 之間只差 `ProjectSettings.asset` 的 bundleVersion 與文件（`eb3c164`、`96730fd`），測試程式與被測碼逐字相同，可沿用 `227f0fd` 的實跑結果當基線：verify 305 過／1 略過（`vow-toolchain/v0131-verify.log`）、EditMode 306 項 299 過／0 敗／7 略過（`v0131-edit.xml`）、PlayMode 211／211（`v0131-play.xml`）。凍結前以 `git diff --stat 227f0fd 96730fd` 確認只含上述檔案。
-3. **§8 T5 逐檔判讀**：逐檔讀 9 個佔領類 PlayMode 套件，分三類（確定會紅／確定不受影響／不確定）寫進 §8。
+3. **§8 T5 逐檔判讀**：逐檔讀 9 個佔領類 PlayMode 套件，分三類（確定會紅／確定不受影響／不確定）。（已完成：`v0140-prefreeze-tests.md` §1，§8 引用之。）
 4. **分母複查**：§4.3 的 `CaptureVisibilityLogic.` 呼叫點、§4.4 的 `WaterRadius`、§5.2 末三項 grep 在凍結當下重跑一次。
 
 ---
@@ -507,11 +540,39 @@ A 步另外要依 V0100 R10 的做法重新定位受本批改動影響的既有�
 - **Q11 斜坡寬 3.5m、長 4m 與地熱點座標是否接受？** 【解讀】草案值（§2.2、§2.4），依據是格點淨寬與「格子不被外擴蓋掉」。**➡️ 建議：接受，試玩再調**（改寬度只改 `CanyonTuning` 一個值，但連帶 V14-A06／A07 的字面值要重算、走 §12）。
 - **Q12（資訊，不需裁定）** 歸屬連通（BFS 斷能、包夾、圍城）照舊用 42 條邊，崖壁不切斷地脈（§4.6）。若你希望崖壁也切斷地脈，是策略改動，另開一批。
 - **Q13（資訊，不需裁定）** GDD §伍-1 寫「4 處固有斜坡」，本批依裁定做 6 處；GDD 是否同步由你決定，本批不改 GDD。
+- **Q14（r1 新增，需使用者確認；審稿 M-15）Q3 的執行方式偏離了你的裁定**：你在 Q3 照建議同意「刪除 v0.13.1『核心圈不得與任何佔塔圈重疊』舊條文、由 V14-A10 取代」。凍結前修訂（§3）改成核心**依棋盤規格取用**（峽谷＝(0,0)／2.5；平地夾具仍是 v0.13.1 的 (4.375,0)／1.8），舊條文測的是平地夾具，照樣成立，於是改為**保留、不刪**。方向是保守的（少刪測試），但這是你沒有裁定過的做法。(甲) **保留舊條文**：舊條文繼續守平地夾具，峽谷的核心由 A10 守；既有測試零刪除，V14-A18「刪除行數全為 0」不需例外。(乙) **照原裁定刪除**：A18 要加「`AbyssalVanguardLogicTests` 例外」，§8 恢復 T1～T3 的刪改列，且平地夾具的核心從此沒有測試。**➡️ 建議：(甲)**。
 
 ---
 
 ## 14. 修訂紀錄
 
+- **凍結前審稿修訂（r1，2026-09-30）**：依 `vow-toolchain/v0140-plan-review.md`（對 `8860e23`；BLOCKER 3、HIGH 6、MEDIUM 15、LOW 11，共 35 項）。處置：BLOCKER／HIGH／MEDIUM **24 項全部修訂**；LOW 11 項全部順手修（「LOW 不修」：無）；轉使用者裁定 1 題（§13 Q14，屬 M-15 的告知與確認）。規則一律未改（開火顯形 §4.7、斜坡任意落差、`IsSameFloor` 用 `CrossesCliff`、Q1～Q11、核心於峽谷 (0,0)/2.5 且平地夾具保留 v0.13.1）；改的是量法、座標、字面值、定義與介面。新字面值的 C# 重算：`vow-toolchain/v0140-refcs/Extra.cs`（`dotnet run -c Release -- r1` → `refcs-r1-output.txt`，重建模型、非 Unity 實跑）。逐項：
+  - **B-1** V14-B12 第二組：改為英雄在 G0 落點 (4.59375,1,2.0703125) 面向 −x，牆心 (0.59375,2.0703125)，C# `TileAt`＝0、H＝−1。
+  - **B-2** V14-B13：量法寫死為 `RaycastNonAlloc`＋只計 `CanyonTerrain` 根物件下的碰撞體（英雄膠囊、`CliffBarriers` 等不算）；C# 模型本就只含地形盒，數字不變；對照點改為合成腳底位置量測。
+  - **B-3** §10 C16：確認為等價突變並刪除，改為 K16「NotifyHit 攻擊方／受害方對調」；A20 加 ② 只顯形攻擊方的斷言（藍方看崖台上的紅對手，含活性）。
+  - **H-1** V14-A11 拆成 A11a（`AttackRange` 取值，R0 排第一）與 A11b（新定義的 `CanyonRules.InAttackRange`，目標層不影響組排第一、改用 (8.109375,0) 判「不在」）；§4.1 寫出兩個簽章；K5／K6 排序衝突消失。
+  - **H-2** V14-B11 加第二案：`SeedBehemothForTest` 讓巨獸從 2 號出發，`CopyRouteForTest`＝[2,9,8,7]（原鄰接為 [2,1,7]）、240 幀內進 9 號（名目 76 幀）；§7.3 新增兩個入口。
+  - **H-3** V14-B08：(b) 門檻改「位移 ≥ 0.03」（三角不等式下限 0.0390625），加 300 幀窗口（C# 名目 108 幀＋出手 ≤90）；(a) 門檻由 0.05 收緊為 0.02（錯誤實作至少走 0.0387）；(c)(d) 補座標與 120 幀窗口。
+  - **H-4** 定義 `HoldOpponentForTest(bool)`（不走、不放牆、不前搖，保持可受傷與視野計算），B08／B09／B16 改用它；B16 的「對手開始移動」拆成案例二（命中當幀解除 hold），並加反向案例三。
+  - **H-5** V14-C02：開局後英雄傳送到 (−17,0,−17) 並保持倒地。
+  - **H-6** D06 等待 3→5 秒（C# 名目落地 2.967 秒）；B04 ① 300→198 幀（C# 名目 340 幀與直線 55.4 幀的中點）；順帶 B06 ① 300→272 幀（名目 467 與直線 76.2 的中點），B03／B05(a) 補名目值。
+  - **M-1** 刪改 §3 舊清單、§8 T1～T4 列、§9-A 工作、A10 本文（改寫為 `ForSpec`）、K13（原 C13）外層欄、A18 豁免句。
+  - **M-2** G1 框改為「8 個套件（Pact 除外）」；D01 改為掃所有 `ForTest` 方法宣告（排除 `Core/Logic/` 既有慣例）。
+  - **M-3** A09 維持字面 0.25；§2.2 改寫；任意落差改由新增 A22 驗收。
+  - **M-4** §5.2 寫明「崖壁格」＝距任一崖壁線段 ≤ 0.35 的純幾何定義，禁止用 `IsBlocked`；定義新增方法 `TryFindNearestFreeSameFloor`。A16 加兩句崖壁格斷言。
+  - **M-5** A16 與 B05(c) 改用同一個寫死盤面（p0＝(3.875,0)、真實牆尺寸 `StampBox(3.625,0,1,0,2,0.3,0.35)`，C# 驗證有條件→(2.25,−0.25) H＝−1、無條件→(4.75,−0.75) H＝1，差 0.49m）；B05(c) 的活性改在 B05 自己的格點上量；新增 `SpawnRuneWallForTest`。
+  - **M-6** §4.7 寫死 `RevealUnit`、`RevealTracker` 全部簽章與 `CanSee` 新多載；舊多載保留；tracker 由 `Phase1Bootstrap` 持有。
+  - **M-7** §4.5 寫死 `GeothermalVentLogic` 簽章；邏輯層不追蹤飛行／存活／對局狀態，由呼叫端傳 `heroCanTrigger`；A14 (g) 改寫並加活性。
+  - **M-8** §6 寫明起點塊＝`TileAt`、−1 時取最近塔心（與 C# 參考模型相同，C01 窗口不變）；A21 加起點塊 −1 的一組。
+  - **M-9** §10「紅在哪」逐條重核並更正：K10→(c) 第 21 個 tick、K11→(a) `Cooldown(G1)`、K5 見 H-1；另更正 K2（0 號而非 2 號）、K4／K7／K8／K9 的外層說明。
+  - **M-10** 新增 B05(d)：英雄在 G0 落點面向谷底連續 3 次微滑步，不穿崖、y 恆為 1，活性為最後貼到崖壁碰撞體（距線段 ≤ 0.55）。
+  - **M-11** 新增 V14-A22：落差 2m 的第 7 條測試斜坡（0→3），內插與 `IsSameFloor` 以 C# 重算的字面值驗收；新增 K18。
+  - **M-12** 接受不修：§5.2 記為灰盒限制並附推導（位移不卡、只影響斜坡上半段點地），D08 未驗證清單加 ⑥。
+  - **M-13** 峽谷模式 Lobby 對手改傳送到 (−4,0,12)（18 號平原、距崖壁 1.8861）；C04 加斷言。
+  - **M-14** §5.2 末加補掃 ④ `new Vector3(` 與 ⑤ `_self.position|clamped`，並列出已知盲區。
+  - **M-15** 本條記錄＋§13 Q14 請使用者確認「Q3 改為保留不刪」。
+  - **L-1** 突變代號改前綴 K（K1～K18）。**L-2** K9 寫明 (base＋talent)×4/3。**L-3** K13 外層改指 A10 的 `ForSpec` 斷言。**L-4** 刪除 B13 紅燈實作「崖壁碰撞體比 §2 高」。**L-5** 刪除 C01 ④（原編號保留空位，⑤ 不重編）。**L-6** 寫出 `IsInCore`（§3）與地熱點 Active 輸入（§4.5）。**L-7** 改為「斷言一字不改」。**L-8** 附表補 §4.7、§6、A21、A22、B05(d) 等對照列。**L-9** B16 反向案補座標與幀窗口；B09 補 hold 與逐配置幀窗口。**L-10** §8 T5 三分類改為以 `v0140-prefreeze-tests.md` §1 為準（已完成）。**L-11** §9 共同遵守加 B／C 步一致性檢查的明文例外。
+  - 順帶更正（非審稿編號）：§2.4 G0 落點到崖壁的距離 0.8457→1.2246（C# 重算）。
 - **裁定（2026-09-30，使用者）**：§13 Q1～Q11 全部照建議（Q1＝甲 6 處斜坡；使用者先問丁案利弊，主對話回答後仍選甲）；另加兩項工程調整：斜坡支援任意落差（§2.2）、`IsSameFloor` 改用 `CrossesCliff`（§5.2）。開火顯形納入本批（使用者「照建議」）：§4.7、V14-A20、B16、突變 C15～C16。
 - **草案（2026-09-30）**：依 `vow-toolchain/v0140-alignment.md` 起草。可達性、斜坡淨寬、高度連續與遮擋由 `vow-toolchain/v0140-reachability.py` 推導（重建模型）；斜坡寬度從 3.0m 改為 3.5m 的理由見 §2.2（3.0m 時崖台斜坡格點淨寬只剩 1.15m）；地熱點座標以腳本搜尋（原本畫在示意圖位置的初值 (2.59375,1.5)／落點 (3.96875,2.2890625) 在格點上被外擴蓋掉，改用搜尋結果）。
 
@@ -527,4 +588,9 @@ A 步另外要依 V0100 R10 的做法重新定位受本批改動影響的既有�
 | Q3 雙層接口 | §1.3 | A01 |
 | Q4 高度與遮擋 | §5、§9-B13 | A02、B03、B13 |
 | Q5 淺水 | §4.4 | A13、B10 |
-| Q6 AI 只走斜坡 | §6 | B06、C01、C02 |
+| Q6 AI 只走斜坡 | §6 | B06、C01、C02、A21 |
+| Q7 崖台不能直接跳下（照裁定） | §5.2 崖壁實體 | B05(d)、B01 |
+| 開火顯形（使用者 2026-09-30 裁定） | §4.7 | A20、B16 |
+| Q4 選塔走路距離 | §6 | A21、C01 |
+| 斜坡任意落差（使用者 2026-09-30 工程裁定） | §2.2 | A22 |
+| `IsSameFloor` 用 `CrossesCliff`（使用者 2026-09-30 工程裁定） | §5.2 | A16、A22、B05(c) |
