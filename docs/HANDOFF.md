@@ -1,6 +1,16 @@
 # VOW 誓約 — Codex 接手紀錄（2026-09-30 更新）
 
-## 目前狀態：v0.13.1 深淵先鋒已部署（線上現役），待使用者試玩
+## 本次接手：v0.14.0 深淵峽谷步驟 A 驗收通過（2026-09-30，Codex）
+
+- 工作分支 `v0140-abyssal-canyon`；計畫凍結 `db73474`，Claude 純邏輯實作 `c1854be`。使用者已裁定 C 案與計畫 §14 的玩法，延續既定條件，不重新設計。
+- 截圖中的 149 項為中途進度；原突變 log 最終為 190／190 CAUGHT、還原後 327 項／0 失敗。
+- Codex 實跑 Unity EditMode 發現 A11a 的 Mono 中間精度差異；修補 `cc51bf8` 只改 `CanyonRules.AttackRange` 的乘積 `(float)` 收斂，未改 10%、測試、容差或計畫。
+- 修後完整 `verify.sh` 為 326 過／1 略／0 敗、ALL PASS；定向 Unity 7 過／0 敗／1 預定略；完整 EditMode 319 過／0 敗／8 預定略、PlayMode 211／211 通過。修後全 190 項突變分批 64／64、63／63、63／63 CAUGHT，SKIP 0、MISSED 0；各批還原後 327 項／0 失敗，退出碼 0。
+- 最後獨立彙核已直接讀原始 XML、三份突變日誌與工作樹，APPROVE、無未解 finding；A18 指定 diff 空，既有測試零刪行。**步驟 A 已驗收，可進 B；v0.14.0 整版未驗證、未部署。**
+- 完整證據與待辦見 `docs/V0140_STEP_A_ACCEPTANCE.md`。B 的唯讀準備在 `vow-toolchain/v0140-B-codex-readback.md`；Unity 接線、整局驗收與部署尚未開始。線上仍為 v0.13.1。
+- 工作區原有 `GDD.md` 與 `docs/PLAYER_EXPERIENCE_BLUEPRINT.md` 變更保留，不納入本次提交。
+
+## v0.13.1 深淵先鋒（線上現役；歷史交接）
 
 - 分支 `v0130-abyssal-vanguard`（已推 origin；未併 main，main 仍在 `f5bda92`）。Codex 實作到一半撞額度中斷，Claude 接手收尾：`74c7e3b` 主體＋測試、`66ff098` 試玩捷徑 `?devvanguard`（開局跳到第 590 秒）、`e816036` HUD 讓位修正（建置來源）。規格 `docs/V0130_ABYSSAL_VANGUARD_PLAN.md`；玩法、試玩清單、證據在驗收指南 §24。
 - 驗證：verify 304／1、`RESULT: ALL PASS`；EditMode 298／7 略過／0 失敗；PlayMode 211／211；兩輪對抗審查（`vow-toolchain/REVIEW-v0130-r1.md`、`r2.md`）無未解 CRITICAL／HIGH；8 組 PlayMode 手動突變全抓到。突變全套 168／172、4 SKIP 為 v0.11／v0.12 起就過期的定義（S5、C16、N15、N17），先鋒邏輯尚未納入 `mutation_check.py`。
