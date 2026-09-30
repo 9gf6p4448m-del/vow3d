@@ -11,7 +11,8 @@ namespace Vow.Core.Logic
         {
             if (terrain == null) return baseRange;
             if (terrain.ClassAt(ax, az, 0) != TerrainClass.Cliff) return baseRange;
-            return baseRange * (100 + Tuning.CliffRangePercent) / 100f;
+            // 明確將乘積收斂為 float32，避免 Mono 保留較高中間精度而與常數運算差一個 ULP。
+            return (float)(baseRange * (100 + Tuning.CliffRangePercent)) / 100f;
         }
 
         // 水平距離平方 ≤ 射程平方（含邊界）；射程一律以攻擊者位置計算。
