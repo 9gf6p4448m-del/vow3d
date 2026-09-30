@@ -89,5 +89,51 @@ namespace Vow.Core.Logic
             }
             return best;
         }
+
+        // v0.14.0 多載（V0140_CANYON_PLAN.md §6 修訂框、V14-A21）：terrain 為峽谷地形時改用「走路距離」
+        // （WalkNeighbor 圖上以塔心連線長為權重的最短路，平手取索引小）；terrain == null（平地夾具、舊規格）
+        // 或不是 CanyonTerrainSpec 時沿用上面的直線距離規則。
+        // 起點塊＝TileAt(對手)；棋盤外（-1）時取塔心平面距離平方最小的塊（嚴格 <，平手取索引小）；站在斜坡上照常取所在塊。
+        public static int SelectTargetTile(float opponentX, float opponentZ, int[] ownership, CaptureBoardSpec spec,
+                                           ITerrainQuery terrain)
+        {
+            CanyonTerrainSpec canyon = terrain as CanyonTerrainSpec;
+            if (canyon == null) return SelectTargetTile(opponentX, opponentZ, ownership, spec);
+
+            int start = spec.TileAt(opponentX, opponentZ);
+            if (start < 0) start = NearestCenterTile(opponentX, opponentZ, spec);
+
+            int chosen = -1;
+            float chosenWalk = 0f;
+            for (int t = 0; t < spec.TileCount; t++)
+            {
+                if (ownership[t] == CaptureMatchLogic.RedFactionId) continue;
+                float walk = canyon.WalkDistance(start, t);
+                if (chosen < 0 || walk < chosenWalk)
+                {
+                    chosen = t;
+                    chosenWalk = walk;
+                }
+            }
+            return chosen;
+        }
+
+        private static int NearestCenterTile(float x, float z, CaptureBoardSpec spec)
+        {
+            int nearest = -1;
+            float nearestSq = 0f;
+            for (int t = 0; t < spec.TileCount; t++)
+            {
+                float ex = spec.CenterX(t) - x;
+                float ez = spec.CenterZ(t) - z;
+                float sq = ex * ex + ez * ez;
+                if (nearest < 0 || sq < nearestSq)
+                {
+                    nearest = t;
+                    nearestSq = sq;
+                }
+            }
+            return nearest;
+        }
     }
 }

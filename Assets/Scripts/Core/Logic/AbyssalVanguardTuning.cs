@@ -22,5 +22,27 @@ namespace Vow.Core.Logic
         public float BehemothAttackIntervalSeconds = 1.5f;
         public int BehemothHeroDamage = 12;
         public int BehemothWallDamage = 60;
+
+        // v0.14.0（V0140_CANYON_PLAN.md §3 凍結前修訂）：核心跟著棋盤規格走。有地形（V0140Canyon）→ 谷心 (0,0)、半徑 2.5
+        // （寫字面值，不連動 CaptureTuning.CircleRadius）；否則回傳預設（v0.13.1）。預設值不改。
+        public static AbyssalVanguardTuning ForSpec(CaptureBoardSpec spec)
+        {
+            var tuning = new AbyssalVanguardTuning();
+            if (spec != null && spec.Terrain != null)
+            {
+                tuning.CoreX = 0f;
+                tuning.CoreZ = 0f;
+                tuning.CoreRadius = 2.5f;
+            }
+            return tuning;
+        }
+
+        // r1（審稿 L-6）：核心圈判定的單一事實來源（含邊界）。
+        public bool IsInCore(float x, float z)
+        {
+            float dx = x - CoreX;
+            float dz = z - CoreZ;
+            return dx * dx + dz * dz <= CoreRadius * CoreRadius;
+        }
     }
 }

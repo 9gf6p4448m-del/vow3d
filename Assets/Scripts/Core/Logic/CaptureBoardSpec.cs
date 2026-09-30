@@ -40,6 +40,12 @@ namespace Vow.Core.Logic
         // v0.11.0：正式佔領規則集可開放天賦，舊兩套夾具保持原行為。
         public bool TalentsEnabled { get; }
 
+        // ── v0.14.0（V0140_CANYON_PLAN.md §7.1）：地形與迷霧旗標。
+        // Terrain：V0140Canyon 為 CanyonTerrainSpec.V0140，舊三套為 null（平地）。
+        // FogEnabled：V0100Sanctuary、V0140Canyon 為 true，舊兩套夾具 false（CaptureVisibilityLogic.AppliesTo 讀它）。
+        public ITerrainQuery Terrain { get; private set; }
+        public bool FogEnabled { get; private set; }
+
         private CaptureBoardSpec(
             float circumRadius, float inRadius,
             float[] centerXs, float[] centerZs, int[][] adjacency,
@@ -152,7 +158,24 @@ namespace Vow.Core.Logic
         // ── v0.9.0 十九塊（E1～E6、E20）／v0.10.0 母板塊聖所（V0100_SANCTUARY_PLAN.md E1）：
         // 兩者共用同一份幾何字面值，只有 4 個新旗標不同（V10-A02：兩者逐值相等，容差 0）。
         public static readonly CaptureBoardSpec V090Nineteen = BuildNineteenVariant(false, false, false, false);
-        public static readonly CaptureBoardSpec V0100Sanctuary = BuildNineteenVariant(true, true, true, true);
+        public static readonly CaptureBoardSpec V0100Sanctuary = WithFog(BuildNineteenVariant(true, true, true, true));
+
+        // ── v0.14.0 深淵峽谷（V0140_CANYON_PLAN.md §7.1）：幾何與 V0100Sanctuary 逐值相等、規則旗標相同，另加地形。
+        // V0100Sanctuary 保留為夾具（既有 EditMode 逐字不動）。
+        public static readonly CaptureBoardSpec V0140Canyon = BuildCanyon();
+
+        private static CaptureBoardSpec WithFog(CaptureBoardSpec spec)
+        {
+            spec.FogEnabled = true;
+            return spec;
+        }
+
+        private static CaptureBoardSpec BuildCanyon()
+        {
+            CaptureBoardSpec spec = WithFog(BuildNineteenVariant(true, true, true, true));
+            spec.Terrain = CanyonTerrainSpec.CreateV0140(spec);
+            return spec;
+        }
 
         private static CaptureBoardSpec BuildNineteenVariant(
             bool sanctuaryEnabled, bool siegeEnabled, bool timeLimitEnabled, bool pacedScoringEnabled)

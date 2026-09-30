@@ -290,6 +290,49 @@ namespace Vow.Core.Logic
             return found;
         }
 
+        // v0.14.0（V0140_CANYON_PLAN.md §5.2，只新增）：與 TryFindNearestFree 相同的掃描順序與比較式，
+        // 只多跳過「與 (x,z) 不在同一樓地板」的候選（terrain.IsSameFloor，同一 layer）。被跳過的候選不參與比較，
+        // 所以把同樓地板檢查放在距離比較之後（只對「會更新最佳解」的候選才問）結果完全相同，且省下大部分幾何查詢。零配置。
+        public bool TryFindNearestFreeSameFloor(float x, float z, int maxRadiusCells, ITerrainQuery terrain, int layer,
+                                                out int cx, out int cz)
+        {
+            int originCx = FloorToInt((x - _originX) / _cellSize);
+            int originCz = FloorToInt((z - _originZ) / _cellSize);
+
+            int loCx = originCx - maxRadiusCells;
+            int hiCx = originCx + maxRadiusCells;
+            int loCz = originCz - maxRadiusCells;
+            int hiCz = originCz + maxRadiusCells;
+            if (loCx < 0) loCx = 0;
+            if (loCz < 0) loCz = 0;
+            if (hiCx > _columns - 1) hiCx = _columns - 1;
+            if (hiCz > _rows - 1) hiCz = _rows - 1;
+
+            cx = 0;
+            cz = 0;
+            bool any = false;
+            double bestSq = double.MaxValue;
+
+            for (int gz = loCz; gz <= hiCz; gz++)
+            {
+                for (int gx = loCx; gx <= hiCx; gx++)
+                {
+                    if (IsBlocked(gx, gz)) continue;
+                    CellCenter(gx, gz, out float centerX, out float centerZ);
+                    double offX = centerX - x;
+                    double offZ = centerZ - z;
+                    double sq = offX * offX + offZ * offZ;
+                    if (any && !(sq < bestSq)) continue;
+                    if (!terrain.IsSameFloor(x, z, layer, centerX, centerZ, layer)) continue;
+                    any = true;
+                    bestSq = sq;
+                    cx = gx;
+                    cz = gz;
+                }
+            }
+            return any;
+        }
+
         // 圓（點＋半徑）對 OBB 是否有實體重疊；無 inflate，呼叫端要外擴的話自己把半徑或盒子加大再傳進來。
         public static bool CircleOverlapsBox(float px, float pz, float radius, float centerX, float centerZ,
                                              float normalX, float normalZ, float halfWidth, float halfThickness)

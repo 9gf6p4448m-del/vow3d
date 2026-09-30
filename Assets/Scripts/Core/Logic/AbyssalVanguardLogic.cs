@@ -115,9 +115,7 @@ namespace Vow.Core.Logic
 
         private bool InsideCore(float x, float z)
         {
-            float dx = x - _tuning.CoreX;
-            float dz = z - _tuning.CoreZ;
-            return dx * dx + dz * dz <= _tuning.CoreRadius * _tuning.CoreRadius;
+            return _tuning.IsInCore(x, z);
         }
 
         private void Claim(int owner)
