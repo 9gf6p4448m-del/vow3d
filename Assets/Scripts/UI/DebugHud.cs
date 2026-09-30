@@ -251,7 +251,8 @@ namespace Vow.UI
         // 元素／砲台／敵牆鈕反灰：Off 模式與 v0.7.0 的「DuelState != Dormant」逐列相同（V-A20）。
         private bool ElementsLocked => _duelRound != null && CurrentGate().ElementsLocked;
         private bool DebugToolsLocked => _duelRound != null && CurrentGate().DebugToolsLocked;
-        private bool CaptureDebugControlsLocked => InCaptureMode && DebugToolsLocked;
+        // 峽谷局收起除錯區域，讓世界點選通過；平地規則仍保留既有按鈕攔截與 MatchGate。
+        private bool CaptureDebugControlsLocked => _vents != null && InCaptureMode && DebugToolsLocked;
         private bool _debugRegionsInitialized;
         private bool _debugRegionsLocked;
 
