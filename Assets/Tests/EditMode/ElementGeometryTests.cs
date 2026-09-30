@@ -104,7 +104,16 @@ namespace Vow.Tests
             float[] zs = { 1f, 10f, 0f, 0f, 3f, -3f, 0f, -4.5f };
             int[] outIndices = new int[4];
 
-            int written = ElementGeometry.CollectInsideCircle(xs, zs, xs.Length, 0f, 0f, 5f, outIndices);
+            int written;
+            try
+            {
+                written = ElementGeometry.CollectInsideCircle(xs, zs, xs.Length, 0f, 0f, 5f, outIndices);
+            }
+            catch (System.IndexOutOfRangeException)
+            {
+                Assert.Fail("超過輸出容量時必須停止，不得寫出陣列範圍");
+                return;
+            }
 
             Assert.AreEqual(4, written, "buffer 只有 4 格，寫滿就該停");
             Assert.AreEqual(0, outIndices[0]);
