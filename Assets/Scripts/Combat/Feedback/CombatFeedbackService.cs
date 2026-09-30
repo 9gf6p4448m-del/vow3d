@@ -122,6 +122,9 @@ namespace Vow.Combat.Feedback
             ScreenFlashCount++;
         }
 
+        private Vow.Core.Logic.ITerrainQuery _terrain;
+        public void SetTerrain(Vow.Core.Logic.ITerrainQuery terrain) { _terrain = terrain; }
+
         public void SpawnGroundDecal(Vector3 worldPosition, DecalType type, float duration = 3.0f)
         {
             int slot = _nextDecal;
@@ -131,7 +134,7 @@ namespace Vow.Combat.Feedback
             if (decal == null) return;
 
             Transform decalTransform = decal.transform;
-            decalTransform.position = new Vector3(worldPosition.x, 0.02f + slot * 0.0005f, worldPosition.z); // 逐枚微抬，避免重疊時 z-fighting
+            decalTransform.position = new Vector3(worldPosition.x, (_terrain != null ? _terrain.HeightAt(worldPosition.x, worldPosition.z, 0) : 0f) + 0.02f + slot * 0.0005f, worldPosition.z); // 逐枚微抬，避免重疊時 z-fighting
             decalTransform.rotation = Quaternion.Euler(90f, _noiseSeed * 37f + slot * 53f, 0f);
 
             _decalColors[slot] = ColorFor(type);

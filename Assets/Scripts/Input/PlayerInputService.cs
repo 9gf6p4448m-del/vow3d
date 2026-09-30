@@ -111,6 +111,9 @@ namespace Vow.Input
             _localFaction = faction;
         }
 
+        private RevealTracker _revealTracker;
+        public void SetRevealTracker(RevealTracker tracker) { _revealTracker = tracker; }
+
         public void SetCaptureFog(CaptureMatchLogic match, HeroController viewer)
         {
             _captureFogMatch = match;
@@ -429,7 +432,9 @@ namespace Vow.Input
             if (target is IGlobalObjectiveVisibility objective && objective.IsGloballyVisibleTo(_localFaction)) return false;
             Vector3 viewer = _captureFogViewer.transform.position;
             Vector3 position = target.TargetTransform.position;
-            return !CaptureVisibilityLogic.CanSee(_captureFogMatch, (int)_localFaction,
+            return !CaptureVisibilityLogic.CanSee(_captureFogMatch,
+                target.TargetFaction == Faction.RedTeam || target.TargetFaction == Faction.BlueTeam ? _revealTracker : null,
+                target is IGlobalObjectiveVisibility ? RevealUnit.RedBehemoth : RevealUnit.RedOpponent, (int)_localFaction,
                 viewer.x, viewer.z, !_captureFogViewer.IsAlive, position.x, position.z);
         }
     }

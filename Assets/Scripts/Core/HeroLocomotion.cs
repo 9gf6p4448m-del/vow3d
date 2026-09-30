@@ -16,7 +16,43 @@ namespace Vow.Core
         private const float ChaseRepathInterval = 0.1f;
         private const float CastHeight = 0.9f;
 
-        private readonly RaycastHit[] _hits = new RaycastHit[8];
+        private readonly RaycastHit[] _hits = new RaycastHit[64];
+        private static readonly CanyonTuning CanyonTuning = new CanyonTuning();
+        private ITerrainQuery _terrain;
+        private bool _ventFlying;
+        private Vector3 _ventStart, _ventLanding;
+        private float _ventElapsed;
+        private int _ventStartFrame;
+        public int TerrainLayer { get; private set; }
+        public ITerrainQuery TerrainQuery => _terrain;
+        public bool IsVentFlying => _ventFlying;
+        public event System.Action OnVentLanded;
+
+        public void SetTerrain(ITerrainQuery terrain)
+        {
+            EnsureInitialized();
+            _terrain = terrain;
+            TerrainLayer = terrain != null ? terrain.ResolveLayer(_self.position.x, _self.position.z, _self.position.y) : 0;
+            UpdateTerrainHeight();
+        }
+
+        private void UpdateTerrainHeight()
+        {
+            if (_terrain == null || _ventFlying) return;
+            Vector3 p = _self.position;
+            p.y = _terrain.HeightAt(p.x, p.z, TerrainLayer);
+            _self.position = p;
+        }
+
+        public void BeginVentFlight(float x, float z)
+        {
+            Stop();
+            _ventStart = _self.position;
+            _ventLanding = new Vector3(x, _terrain.HeightAt(x, z, TerrainLayer), z);
+            _ventElapsed = 0f;
+            _ventStartFrame = Time.frameCount;
+            _ventFlying = true;
+        }
 
         private NavMeshAgent _agent;
         private Transform _self;
@@ -68,7 +104,7 @@ namespace Vow.Core
         private bool _movementLocked;
 
         public float SpeedMultiplier => _speedMultiplier;
-        public bool IsMovementLocked => _movementLocked;
+        public bool IsMovementLocked => _movementLocked || _ventFlying;
 
         // 倍率是**指派**不是累乘：多個流沙重疊時不得變成 0.65²（V7 點名 ③）。
         public void SetSpeedMultiplier(float multiplier)
@@ -189,6 +225,7 @@ namespace Vow.Core
 
         public void MoveTo(Vector3 destination)
         {
+            if (_ventFlying) return;
             if (!TryPlaceOnNavMesh()) return; // 不在 NavMesh 上時 SetDestination 只會噴錯；先試著放回去，放不回就不下指令
             _chaseTarget = null;
             _hasOrder = true;
@@ -205,6 +242,7 @@ namespace Vow.Core
 
         public void Chase(Transform target)
         {
+            if (_ventFlying) return;
             if (!TryPlaceOnNavMesh()) return;
             _chaseTarget = target;
             _hasOrder = true;
@@ -235,7 +273,9 @@ namespace Vow.Core
         {
             EnsureInitialized();
             Stop();
+            _ventFlying = false;
             _self.position = position;
+            UpdateTerrainHeight();
             if (_agent.enabled && _agent.isOnNavMesh) _agent.Warp(position);
             else TryPlaceOnNavMesh();
             InvalidateGoalCache();
@@ -258,6 +298,25 @@ namespace Vow.Core
         // 由 HeroController.Update 統一驅動，確保「移動 → 滑步 → 大腦」的執行順序固定。
         public void Step(float dt)
         {
+            if (_ventFlying)
+            {
+                // Bootstrap launches before HeroController.Step in this frame; elapsed flight starts after launch.
+                if (Time.frameCount == _ventStartFrame) { SyncAgent(); return; }
+                _ventElapsed += dt;
+                float t = Mathf.Min(1f, _ventElapsed / CanyonTuning.VentFlightSeconds);
+                Vector3 p = Vector3.Lerp(_ventStart, _ventLanding, t);
+                p.y += 4f * t * (1f - t);
+                _self.position = p;
+                if (t >= 1f)
+                {
+                    _ventFlying = false;
+                    TerrainLayer = 0;
+                    UpdateTerrainHeight();
+                    OnVentLanded?.Invoke();
+                }
+                SyncAgent();
+                return;
+            }
             if (_hasOrder)
             {
                 if (_chaseTarget != null)
@@ -418,8 +477,12 @@ namespace Vow.Core
                 return false;
 
             // M5：搜尋半徑讀 GridNavigator 持有的 tuning，不在這裡另外複製一份常數（NavGridTuning 是單一來源）。
-            if (!_navigator.Grid.TryFindNearestFree(position.x, position.z, _navigator.Tuning.EscapeSearchRadiusCells,
-                                                    out int cx, out int cz))
+            int cx, cz;
+            bool found = _terrain != null
+                ? _navigator.Grid.TryFindNearestFreeSameFloor(position.x, position.z, _navigator.Tuning.EscapeSearchRadiusCells,
+                    _terrain, TerrainLayer, out cx, out cz)
+                : _navigator.Grid.TryFindNearestFree(position.x, position.z, _navigator.Tuning.EscapeSearchRadiusCells, out cx, out cz);
+            if (!found)
                 return false;
 
             _navigator.Grid.CellCenter(cx, cz, out float x, out float z);
@@ -436,7 +499,7 @@ namespace Vow.Core
             // 批 4 的位移防線（§2「位移防線的收斂」）：會真的移動英雄的入口有三個——走路（Step 內）、
             // 滑步（MicroCadenceMover）、被牆壓住時的推出（EjectFromBox）。前兩者都經過這裡，涵蓋 2/3。
             // **第 3 個 EjectFromBox 刻意不涵蓋**（V4-r）：擋掉它，在流沙裡被牆壓到的英雄會永久卡在牆體內。
-            if (_movementLocked) return Vector3.zero;
+            if (IsMovementLocked) return Vector3.zero;
 
             delta.y = 0f;
             Vector3 start = _self.position;
@@ -493,11 +556,13 @@ namespace Vow.Core
         // 把 agent 的內部位置拉到角色身上，再讀回來：位置若落在 NavMesh 之外，agent 會夾回邊界，角色跟著被夾回。
         private void SyncAgent()
         {
+            UpdateTerrainHeight();
             if (!_agent.enabled || !_agent.isOnNavMesh) return;
             _agent.nextPosition = _self.position;
             Vector3 clamped = _agent.nextPosition;
             clamped.y = _self.position.y;
             _self.position = clamped;
+            UpdateTerrainHeight();
         }
     }
 }

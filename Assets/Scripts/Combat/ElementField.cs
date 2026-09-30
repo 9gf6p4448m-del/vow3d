@@ -20,6 +20,12 @@ namespace Vow.Combat
     [DefaultExecutionOrder(-900)]
     public sealed class ElementField : MonoBehaviour, IElementFieldQuery
     {
+        private ITerrainQuery _terrain;
+        public void SetTerrain(ITerrainQuery terrain)
+        {
+            _terrain = terrain;
+            for (int i = 0; i < _views.Length; i++) if (_views[i] != null) _views[i].SetTerrain(terrain);
+        }
         private ElementTuning _tuning = new ElementTuning();
         private ElementZoneField _field;
         private CombatTargetRoster _roster;
@@ -210,7 +216,7 @@ namespace Vow.Combat
         // 水域沒有反應（`ElementReactionLogic.Resolve` 的 Water 分支回 None）：直接生一個水域。
         public int CastWater(Vector3 groundPoint, int factionId)
         {
-            return CastWater(groundPoint, factionId, _tuning.WaterRadius);
+            return CastWater(groundPoint, factionId, CanyonRules.WaterRadius(_tuning.WaterRadius, 0f, groundPoint.x, groundPoint.z, _terrain));
         }
 
         // 潮汐引只影響新水域，既有區域半徑留在 ElementZoneField 中不回溯改寫。
@@ -286,7 +292,7 @@ namespace Vow.Combat
             int labelIndex = ElementCalloutLogic.LabelIndexFor(outcome.Reaction);
             if (labelIndex < 0) return;
             if (!TryGetSnapshot(outcome.ConsumedZoneId, out float cx, out float cz, out float _)) return;
-            _callouts.Show(new Vector3(cx, 0f, cz), labelIndex);
+            _callouts.Show(new Vector3(cx, _terrain != null ? _terrain.HeightAt(cx, cz, 0) : 0f, cz), labelIndex);
         }
 
         private void TakeSnapshot()
@@ -379,7 +385,7 @@ namespace Vow.Combat
                     if ((!enemyUnit && !enemyWall) || !IsElementDamageable(target, faction)) continue;
                     Vector3 position = target.TargetTransform.position;
                     if (!InsideComboArea(sector, position.x, position.z, cx, cz, radius, dirX, dirZ)) continue;
-                    target.ReceiveDamage(target.MaxHealth * 0.08f, DamageType.True, null);
+                    target.ReceiveDamageFromSide(target.MaxHealth * 0.08f, DamageType.True, faction);
                 }
             }
 
@@ -387,7 +393,7 @@ namespace Vow.Combat
             if (faction != CaptureMatchLogic.RedFactionId || _blueHero == null || !_blueHero.IsAlive) return;
             Vector3 heroPosition = _blueHero.transform.position;
             if (InsideComboArea(sector, heroPosition.x, heroPosition.z, cx, cz, radius, dirX, dirZ))
-                _blueHero.TakeDuelDamage(_blueHero.MaxHealth * 0.08f, DamageType.True);
+                _blueHero.TakeDuelDamageFromSide(_blueHero.MaxHealth * 0.08f, DamageType.True, faction);
         }
 
         private bool InsideComboArea(bool sector, float x, float z, float cx, float cz,
@@ -419,7 +425,7 @@ namespace Vow.Combat
 
                 Vector3 position = target.TargetTransform.position;
                 if (!ElementGeometry.IsInsideCircle(position.x, position.z, cx, cz, radius)) continue;
-                target.ReceiveDamage(amount * ElementDamageMultiplier(castFactionId), DamageType.Elemental, null);
+                target.ReceiveDamageFromSide(amount * ElementDamageMultiplier(castFactionId), DamageType.Elemental, castFactionId);
             }
         }
 
@@ -434,7 +440,7 @@ namespace Vow.Combat
                 Vector3 position = target.TargetTransform.position;
                 if (!ElementGeometry.IsInsideSector(position.x, position.z, apexX, apexZ, dirX, dirZ,
                         _tuning.FirestormRangeMeters, _tuning.FirestormAngleDegrees)) continue;
-                target.ReceiveDamage(amount * ElementDamageMultiplier(castFactionId), DamageType.Elemental, null);
+                target.ReceiveDamageFromSide(amount * ElementDamageMultiplier(castFactionId), DamageType.Elemental, castFactionId);
             }
         }
 

@@ -12,7 +12,10 @@ namespace Vow.Input
         private readonly IRuneCastInput _runes;
         private readonly ICombatTarget _opponent;
         private readonly DuelRoundLogic _round;
-        private readonly ICaptureMatchView _capture;
+        private ICaptureMatchView _capture;
+#if UNITY_EDITOR
+        public void SetCaptureViewForFixture(ICaptureMatchView capture) { _capture = capture; }
+#endif
 
         public DuelInputRouter(IPlayerInputService source, IRuneCastInput runes,
                                ICombatTarget opponent, DuelRoundLogic round)
@@ -57,7 +60,9 @@ namespace Vow.Input
             MatchGate.Evaluate(_round.State, CaptureState, _capture == null || !_capture.BlueKnockedOut);
 
         // Off：只有單挑 KO 停頓封鎖（v0.7.0 原樣）；佔領：英雄倒地與結算停頓也封鎖（R2）。
-        private bool IsPaused => Gate.HeroInputBlocked;
+        private Func<bool> _movementInputLocked;
+        public void SetMovementLockQuery(Func<bool> locked) { _movementInputLocked = locked; }
+        private bool IsPaused => Gate.HeroInputBlocked || (_movementInputLocked != null && _movementInputLocked());
 
         private void HandleMove(Vector3 point)
         {

@@ -29,6 +29,9 @@ namespace Vow.Combat
         // 光環顯示／隱藏的累計切換次數（零配置量測的活性，V9-C03）。
         public int ToggleCount { get; private set; }
 
+        private RevealTracker _revealTracker;
+        public void SetRevealTracker(RevealTracker tracker) { _revealTracker = tracker; }
+
         public void Initialize(ICaptureMatchView view, Transform heroBody, Transform opponentBody)
         {
             Initialize(view, heroBody, opponentBody, null);
@@ -62,7 +65,7 @@ namespace Vow.Combat
             {
                 Vector3 hero = _heroBody.position;
                 Vector3 opponent = _opponentBody.position;
-                redVisible = CaptureVisibilityLogic.CanSee(_visibilityMatch, CaptureMatchLogic.BlueFactionId,
+                redVisible = CaptureVisibilityLogic.CanSee(_visibilityMatch, _revealTracker, RevealUnit.RedOpponent, CaptureMatchLogic.BlueFactionId,
                     hero.x, hero.z, _view.BlueKnockedOut, opponent.x, opponent.z);
             }
             Refresh(_redAura, _redTransform, _redY, _opponentBody,
@@ -75,7 +78,7 @@ namespace Vow.Combat
             if (shown && body != null)
             {
                 Vector3 p = body.position;
-                auraTransform.position = new Vector3(p.x, y, p.z);
+                auraTransform.position = new Vector3(p.x, p.y + y, p.z);
             }
             if (aura.enabled == shown) return;
             aura.enabled = shown;

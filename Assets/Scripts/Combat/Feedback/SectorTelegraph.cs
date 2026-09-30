@@ -13,6 +13,9 @@ namespace Vow.Combat.Feedback
     [DisallowMultipleComponent]
     public sealed class SectorTelegraph : MonoBehaviour
     {
+        private Vow.Core.Logic.ITerrainQuery _terrain;
+        public void SetTerrain(Vow.Core.Logic.ITerrainQuery terrain) { _terrain = terrain; }
+
         private const int ArcSegments = 16;
         private const float GroundHeight = 0.05f;
 
@@ -46,7 +49,8 @@ namespace Vow.Combat.Feedback
 
             float half = totalAngleDegrees * 0.5f;
             float baseAngle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg;
-            Vector3 origin = new Vector3(apex.x, GroundHeight, apex.z);
+            float y = (_terrain != null ? _terrain.HeightAt(apex.x, apex.z, 0) : 0f) + GroundHeight;
+            Vector3 origin = new Vector3(apex.x, y, apex.z);
 
             _points[0] = origin;
             for (int i = 0; i <= ArcSegments; i++)
@@ -55,7 +59,7 @@ namespace Vow.Combat.Feedback
                 float degrees = (baseAngle - half) + totalAngleDegrees * t;
                 float radians = degrees * Mathf.Deg2Rad;
                 _points[i + 1] = new Vector3(origin.x + Mathf.Sin(radians) * rangeMeters,
-                                             GroundHeight,
+                                             y,
                                              origin.z + Mathf.Cos(radians) * rangeMeters);
             }
             _points[_points.Length - 1] = origin;

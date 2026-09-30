@@ -17,7 +17,19 @@ namespace Vow.Combat
         [SerializeField] private Material _blueMaterial;
         [SerializeField] private Material _redMaterial;
 
-        private readonly RaycastHit[] _moveHits = new RaycastHit[12];
+        private readonly RaycastHit[] _moveHits = new RaycastHit[64];
+        private Transform _terrainRoot;
+        public int TerrainLayer { get; private set; }
+        public void SetTerrainRoot(Transform root) { _terrainRoot = root; }
+        private float Height(float x, float z) => _board?.Terrain != null ? _board.Terrain.HeightAt(x, z, TerrainLayer) : 0f;
+#if UNITY_EDITOR
+        public int CopyRouteForTest(int[] buffer)
+        {
+            if (buffer == null || buffer.Length < _routeLength) throw new System.ArgumentException("Route buffer too small");
+            for (int i = 0; i < _routeLength; i++) buffer[i] = _route[i];
+            return _routeLength;
+        }
+#endif
         private CapsuleCollider _bodyCollider;
         private TargetOverheadDisplay _overhead;
         private HeroController _hero;
@@ -71,6 +83,14 @@ namespace Vow.Combat
             _queue = new int[tileCount];
             if (_bodyCollider == null) _bodyCollider = GetComponent<CapsuleCollider>();
             _bodyCollider.radius = Mathf.Max(0.1f, bodyRadius);
+            if (_coreRenderer != null)
+            {
+                _coreRenderer.transform.localPosition = new Vector3(0f, 0.05f, 0f);
+                Vector3 scale = _coreRenderer.transform.localScale;
+                scale.x = scale.z = tuning.CoreRadius * 2f;
+                _coreRenderer.transform.localScale = scale;
+            }
+            transform.position = new Vector3(tuning.CoreX, Height(tuning.CoreX, tuning.CoreZ), tuning.CoreZ);
             Deactivate();
         }
 
@@ -79,7 +99,7 @@ namespace Vow.Combat
             if (_tuning == null || _board == null) return;
             Phase = ObjectivePhase.Vanguard;
             BehemothSide = -1;
-            transform.position = new Vector3(_tuning.CoreX, 0f, _tuning.CoreZ);
+            transform.position = new Vector3(_tuning.CoreX, Height(_tuning.CoreX, _tuning.CoreZ), _tuning.CoreZ);
             Configure(_tuning.VanguardMaxHealth, Faction.Neutral);
             SetOwnerFaction(Faction.Neutral);
             _counterattackTimer = _tuning.VanguardCounterattackIntervalSeconds;
@@ -200,7 +220,7 @@ namespace Vow.Combat
                 _opponent.ReceiveDamage(_tuning.BehemothHeroDamage, DamageType.Physical, gameObject);
             else if (BehemothSide == CaptureMatchLogic.RedFactionId && _hero != null &&
                      _hero.IsAlive && HorizontalDistanceSquared(here, _hero.transform.position) <= reach * reach)
-                _hero.TakeDuelDamage(_tuning.BehemothHeroDamage, DamageType.Physical);
+                _hero.TakeDuelDamageFromUnit(_tuning.BehemothHeroDamage, DamageType.Physical, RevealUnit.RedBehemoth);
 
             if (_walls == null) return;
             CombatTargetBehaviour nearest = null;
@@ -274,6 +294,7 @@ namespace Vow.Combat
             {
                 Collider hit = _moveHits[i].collider;
                 if (hit == null || hit == _bodyCollider || hit.transform.IsChildOf(transform)) continue;
+                if (_terrainRoot != null && hit.transform.IsChildOf(_terrainRoot)) continue;
                 if (BehemothSide == CaptureMatchLogic.BlueFactionId && _hero != null &&
                     hit.transform.IsChildOf(_hero.transform)) continue;
                 if (BehemothSide == CaptureMatchLogic.RedFactionId && _opponent != null &&
@@ -281,7 +302,9 @@ namespace Vow.Combat
                 if (_moveHits[i].distance < step + 0.04f)
                     step = Mathf.Max(0f, _moveHits[i].distance - 0.04f);
             }
-            transform.position = here + direction * step;
+            Vector3 moved = here + direction * step;
+            moved.y = Height(moved.x, moved.z);
+            transform.position = moved;
             if (step > 0f) transform.rotation = Quaternion.LookRotation(direction, Vector3.up);
         }
 
@@ -298,9 +321,11 @@ namespace Vow.Combat
             while (read < write && _parents[destination] < 0)
             {
                 int tile = _queue[read++];
-                for (int i = 0; i < _board.NeighborCount(tile); i++)
+                CanyonTerrainSpec canyon = _board.Terrain as CanyonTerrainSpec;
+                int count = canyon != null ? canyon.WalkNeighborCount(tile) : _board.NeighborCount(tile);
+                for (int i = 0; i < count; i++)
                 {
-                    int neighbor = _board.Neighbor(tile, i);
+                    int neighbor = canyon != null ? canyon.WalkNeighbor(tile, i) : _board.Neighbor(tile, i);
                     if (_parents[neighbor] >= 0) continue;
                     _parents[neighbor] = tile;
                     _queue[write++] = neighbor;

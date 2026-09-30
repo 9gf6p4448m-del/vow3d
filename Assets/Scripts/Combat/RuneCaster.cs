@@ -8,6 +8,8 @@ namespace Vow.Combat
     // 虛影（RuneGhostPreview）與按鈕（RuneButtonView）都是純本地回饋，各自獨立訂閱同一組輸入事件，不依賴這個類別。
     public sealed class RuneCaster : MonoBehaviour
     {
+        private ITerrainQuery _terrain;
+        public void SetTerrain(ITerrainQuery terrain) { _terrain = terrain; }
         private RuneTuning _tuning;
         private RuneCastLogic _castLogic;
         private RuneWallRoster _roster;
@@ -110,7 +112,8 @@ namespace Vow.Combat
             int evicted = _roster.Add(index);
             if (evicted >= 0 && evicted < _pool.Length && _pool[evicted] != null) _pool[evicted].CollapseWall(false);
 
-            float centerY = heroGroundY + _tuning.WallHeight * 0.5f;
+            float groundY = _terrain != null ? _terrain.HeightAt(placement.CenterX, placement.CenterZ, 0) : heroGroundY;
+            float centerY = groundY + _tuning.WallHeight * 0.5f;
             Vector3 position = new Vector3(placement.CenterX, centerY, placement.CenterZ);
             Quaternion rotation = Quaternion.LookRotation(new Vector3(placement.NormalX, 0f, placement.NormalZ), Vector3.up);
             _pool[index].Activate(position, rotation, _ownerFaction, this, index);

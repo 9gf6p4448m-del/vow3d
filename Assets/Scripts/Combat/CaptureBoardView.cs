@@ -14,6 +14,17 @@ namespace Vow.Combat
     // 沒有任何 Collider（E23）：不擋路、不吃點擊、不進 BlockGrid。
     public sealed class CaptureBoardView : MonoBehaviour
     {
+        public void SetTerrain(ITerrainQuery terrain)
+        {
+            for (int i = 0; i < _tileCount; i++)
+            {
+                if (_floors[i] == null) continue;
+                Transform tile = _floors[i].transform.parent;
+                Vector3 p = tile.position;
+                p.y = terrain != null ? terrain.HeightAt(p.x, p.z, 0) : 0f;
+                tile.position = p;
+            }
+        }
         private const float DiscHeightScale = 0.01f;
         private const float FogFloorBrightness = 0.28f;
         private const float FogTowerBrightness = 0.48f;
@@ -192,7 +203,7 @@ namespace Vow.Combat
             if (_visibilityMatch != null && _viewer != null && CaptureVisibilityLogic.AppliesTo(_visibilityMatch))
             {
                 Vector3 hero = _viewer.transform.position;
-                fogged = !CaptureVisibilityLogic.CanSee(_visibilityMatch, CaptureMatchLogic.BlueFactionId,
+                fogged = !CaptureVisibilityLogic.CanSee(_visibilityMatch, null, RevealUnit.RedOpponent, CaptureMatchLogic.BlueFactionId,
                     hero.x, hero.z, !_viewer.IsAlive, _visibilityMatch.Spec.CenterX(tile), _visibilityMatch.Spec.CenterZ(tile));
             }
             if (fogged == _shownFog[tile] && owner == _fogOwner[tile]) return;

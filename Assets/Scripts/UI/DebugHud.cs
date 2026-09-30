@@ -183,6 +183,19 @@ namespace Vow.UI
             _readVanguardHealth = readHealth;
         }
 
+        private GeothermalVentLogic _vents;
+        private string[] _ventLabels;
+        public void ConfigureVents(GeothermalVentLogic vents)
+        {
+            _vents = vents;
+            if (_ventLabels != null || vents == null) return;
+            _ventLabels = new string[81];
+            for (int a = 0; a <= 8; a++)
+                for (int b = 0; b <= 8; b++) _ventLabels[a * 9 + b] = "VENT NE " + a + "s  SW " + b + "s";
+        }
+        public string VentStatusLabel => _vents != null && _captureView != null && _captureView.State == CaptureMatchState.Active
+            ? _ventLabels[Mathf.Clamp(Mathf.CeilToInt(_vents.Cooldown(0)), 0, 8) * 9 + Mathf.Clamp(Mathf.CeilToInt(_vents.Cooldown(1)), 0, 8)] : null;
+
         public string VanguardStatusLabel => _vanguardStatusLabel;
 
         public void PressCaptureButton() { if (_pressCapture != null) _pressCapture(); }
@@ -238,6 +251,9 @@ namespace Vow.UI
         // 元素／砲台／敵牆鈕反灰：Off 模式與 v0.7.0 的「DuelState != Dormant」逐列相同（V-A20）。
         private bool ElementsLocked => _duelRound != null && CurrentGate().ElementsLocked;
         private bool DebugToolsLocked => _duelRound != null && CurrentGate().DebugToolsLocked;
+        private bool CaptureDebugControlsLocked => InCaptureMode && DebugToolsLocked;
+        private bool _debugRegionsInitialized;
+        private bool _debugRegionsLocked;
 
         public string CaptureButtonLabel => InCaptureMode ? CaptureHudLabels.CaptureButtonLabelOn : CaptureHudLabels.CaptureButtonLabelOff;
 
@@ -596,6 +612,7 @@ namespace Vow.UI
                 || captureState != _lastCaptureState) RecalculateLayout();
             RefreshTalentRegions();
 
+            RefreshDebugRegions();
             RefreshElementLabels();
             RefreshCaptureLabels();
 
@@ -653,6 +670,9 @@ namespace Vow.UI
 
         private void HandleRegionTapped(int regionId)
         {
+            if (CaptureDebugControlsLocked && (regionId == _hitboxRegion || regionId == _latencyRegion
+                || regionId == _gridRegion || regionId == _enemyWallRegion
+                || regionId == _turretRegion || regionId == _elemRegion)) return;
             if (regionId == _modeRegion && _input != null)
             {
                 _input.ActiveMode = _input.ActiveMode == ControlMode.ModeA_FullScreenFlick
@@ -768,6 +788,23 @@ namespace Vow.UI
             _input.Routing.UpdateUiRegion(_talentThirdRegion, ToScreenRegion(_talentThirdRect));
             _input.Routing.UpdateUiRegion(_talentPanelRegion, ToScreenRegion(_talentPanelRect));
             RefreshTalentRegions();
+            RefreshDebugRegions();
+        }
+
+        private void RefreshDebugRegions()
+        {
+            if (_input == null || _modeRegion < 0) return;
+            bool locked = CaptureDebugControlsLocked;
+            if (_debugRegionsInitialized && locked == _debugRegionsLocked) return;
+            _debugRegionsInitialized = true;
+            _debugRegionsLocked = locked;
+            bool active = !locked;
+            _input.Routing.SetUiRegionActive(_hitboxRegion, active);
+            _input.Routing.SetUiRegionActive(_latencyRegion, active);
+            _input.Routing.SetUiRegionActive(_gridRegion, active);
+            _input.Routing.SetUiRegionActive(_enemyWallRegion, active);
+            _input.Routing.SetUiRegionActive(_turretRegion, active);
+            _input.Routing.SetUiRegionActive(_elemRegion, active);
         }
 
         private void RefreshTalentRegions()
@@ -859,36 +896,41 @@ namespace Vow.UI
             Fill(_modeRect, ButtonColor);
             GUI.Label(_modeRect, modeB ? "Switch to A" : "Switch to B", _buttonLabel);
 
-            bool hitboxOn = _hitboxes != null && _hitboxes.Visible;
-            Fill(_hitboxRect, hitboxOn ? ButtonOnColor : ButtonColor);
-            GUI.Label(_hitboxRect, hitboxOn ? "Hitbox ON" : "Hitbox OFF", _buttonLabel);
-
-            if (_latency != null)
+            // 對局鎖住的除錯區域已撤銷路由；同時收起視覺，世界點選可穿過原矩形。
+            if (!CaptureDebugControlsLocked)
             {
-                LatencyPreset preset = _latency.Preset;
-                Fill(_latencyRect, preset == LatencyPreset.Off ? ButtonColor : ButtonOnColor);
-                GUI.Label(_latencyRect, preset == LatencyPreset.Off ? "NET delay: OFF"
-                                      : preset == LatencyPreset.Ms50 ? "NET delay: 50 ms" : "NET delay: 80 ms", _buttonLabel);
-            }
+                bool hitboxOn = _hitboxes != null && _hitboxes.Visible;
+                Fill(_hitboxRect, hitboxOn ? ButtonOnColor : ButtonColor);
+                GUI.Label(_hitboxRect, hitboxOn ? "Hitbox ON" : "Hitbox OFF", _buttonLabel);
 
-            if (_gridVisible != null)
-            {
-                bool gridOn = _gridVisible();
-                Fill(_gridRect, gridOn ? ButtonOnColor : ButtonColor);
-                GUI.Label(_gridRect, gridOn ? "GRID: ON" : "GRID: OFF", _buttonLabel);
-            }
+                if (_latency != null)
+                {
+                    LatencyPreset preset = _latency.Preset;
+                    Fill(_latencyRect, preset == LatencyPreset.Off ? ButtonColor : ButtonOnColor);
+                    GUI.Label(_latencyRect, preset == LatencyPreset.Off ? "NET delay: OFF"
+                                          : preset == LatencyPreset.Ms50 ? "NET delay: 50 ms" : "NET delay: 80 ms", _buttonLabel);
+                }
 
-            if (_spawnEnemyWall != null)
-            {
-                Fill(_enemyWallRect, DebugToolsLocked ? ButtonCooldownColor : ButtonColor);
-                GUI.Label(_enemyWallRect, EnemyWallButtonLabel, _buttonLabel);
-            }
+                if (_gridVisible != null)
+                {
+                    bool gridOn = _gridVisible();
+                    Fill(_gridRect, gridOn ? ButtonOnColor : ButtonColor);
+                    GUI.Label(_gridRect, gridOn ? "GRID: ON" : "GRID: OFF", _buttonLabel);
+                }
 
-            if (_toggleTurret != null)
-            {
-                bool turretOn = _turretFiring != null && _turretFiring();
-                Fill(_turretRect, DebugToolsLocked ? ButtonCooldownColor : turretOn ? ButtonOnColor : ButtonColor);
-                GUI.Label(_turretRect, TurretButtonLabel, _buttonLabel);
+                if (_spawnEnemyWall != null)
+                {
+                    Fill(_enemyWallRect, DebugToolsLocked ? ButtonCooldownColor : ButtonColor);
+                    GUI.Label(_enemyWallRect, EnemyWallButtonLabel, _buttonLabel);
+                }
+
+                if (_toggleTurret != null)
+                {
+                    bool turretOn = _turretFiring != null && _turretFiring();
+                    Fill(_turretRect, DebugToolsLocked ? ButtonCooldownColor : turretOn ? ButtonOnColor : ButtonColor);
+                    GUI.Label(_turretRect, TurretButtonLabel, _buttonLabel);
+                }
+
             }
 
             // ── 批 4：四顆元素除錯鈕。標籤一律查預建字串表（見 Update 的 RefreshElementLabels）──
@@ -910,7 +952,7 @@ namespace Vow.UI
                     ? ButtonCooldownColor : _windIndexShown > 0 ? ButtonCooldownColor : ButtonColor);
                 GUI.Label(_windRect, _windLabel, _buttonLabel);
             }
-            if (_toggleElementFaction != null)
+            if (_toggleElementFaction != null && !CaptureDebugControlsLocked)
             {
                 Fill(_elemRect, DebugToolsLocked
                     ? ButtonCooldownColor : _elemBlueShown == 1 ? ElemBlueColor : ElemRedColor);
@@ -974,6 +1016,12 @@ namespace Vow.UI
             {
                 Fill(_sanctuaryRowRect, PanelColor);
                 GUI.Label(_sanctuaryRowRect, row, _buttonLabel);
+            }
+            string vent = VentStatusLabel;
+            if (vent != null && _vanguardStatusLabel == null)
+            {
+                Fill(_vanguardStatusRect, PanelColor);
+                GUI.Label(_vanguardStatusRect, vent, _buttonLabel);
             }
             if (_vanguardStatusLabel != null)
             {

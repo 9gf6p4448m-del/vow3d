@@ -140,7 +140,9 @@ namespace Vow.Combat
                 // 敵方／中立石牆擋下，或命中一般目標：都在命中點結算並結束這一發
                 _position += _direction * _sweepHits[i].Distance;
                 _transform.position = _position;
-                target.ReceiveDamage(_tuning.BulletDamage * _flight.DamageMultiplier, DamageType.Physical, gameObject);
+                if (target is CombatTargetBehaviour behaviour)
+                    behaviour.ReceiveDamageFromSide(_tuning.BulletDamage * _flight.DamageMultiplier, DamageType.Physical, (int)_ownerFaction);
+                else target.ReceiveDamage(_tuning.BulletDamage * _flight.DamageMultiplier, DamageType.Physical, gameObject);
                 if (_sweepHits[i].Kind == SweepHitKind.BlockingWall) Blocks++;
                 else TargetHits++;
                 Despawn();

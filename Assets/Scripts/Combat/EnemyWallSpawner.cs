@@ -14,6 +14,8 @@ namespace Vow.Combat
     {
         [SerializeField] private RuneWall[] _pool;
 
+        private ITerrainQuery _terrain;
+        public void SetTerrain(ITerrainQuery terrain) { _terrain = terrain; }
         private RuneTuning _runeTuning;
         private Transform _hero;
         private RuneWallRoster _roster;
@@ -79,7 +81,7 @@ namespace Vow.Combat
             if (evicted >= 0 && evicted < _pool.Length && _pool[evicted] != null) _pool[evicted].CollapseWall(false);
 
             Vector3 position = casterPosition + castDirection * _runeTuning.QuickCastDistance;
-            position.y = casterPosition.y + _runeTuning.WallHeight * 0.5f;
+            position.y = (_terrain != null ? _terrain.HeightAt(position.x, position.z, 0) : casterPosition.y) + _runeTuning.WallHeight * 0.5f;
             Quaternion rotation = Quaternion.LookRotation(castDirection, Vector3.up);
 
             // caster 給 null：敵方牆不屬於玩家名冊，死亡時不得去釋放玩家的名額。

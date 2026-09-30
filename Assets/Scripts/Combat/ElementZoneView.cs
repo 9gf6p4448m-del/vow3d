@@ -15,6 +15,8 @@ namespace Vow.Combat
         [SerializeField] private Material[] _kindMaterials = new Material[5];
         [SerializeField] private Renderer _visual;
 
+        private ITerrainQuery _terrain;
+        public void SetTerrain(ITerrainQuery terrain) { _terrain = terrain; }
         private Transform _self;
         private int _shownKind = -1;
 
@@ -45,7 +47,7 @@ namespace Vow.Combat
             }
 
             // Unity 的 Cylinder 預設高 2m（localScale.y 是半高）；壓成 0.04m 的薄餅，直徑＝2×半徑。
-            _self.position = new Vector3(x, 0.03f, z);
+            _self.position = new Vector3(x, (_terrain != null ? _terrain.HeightAt(x, z, 0) : 0f) + 0.03f, z);
             _self.localScale = new Vector3(radius * 2f, 0.02f, radius * 2f);
             if (_visual != null && !_visual.enabled) _visual.enabled = true;
         }

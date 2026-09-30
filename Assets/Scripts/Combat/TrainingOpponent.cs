@@ -57,6 +57,16 @@ namespace Vow.Combat
         // 旗標關著時 Update 走的是原本的單挑分支，一行都沒改；旗標只由 Phase1Bootstrap 在 CAPTURE 鈕進出模式時切換。
         private ICaptureMatchView _captureView;
         private CaptureMatchLogic _captureMatch;
+        private RevealTracker _revealTracker;
+        private bool _holdForTest;
+        public void SetRevealTrackerForVisibility(RevealTracker tracker) { _revealTracker = tracker; }
+#if UNITY_EDITOR
+        public void HoldForTest(bool hold)
+        {
+            _holdForTest = hold;
+            if (hold) { _locomotion.Stop(); _phase = AttackPhase.Chase; _phaseRemaining = 0f; _telegraph?.HideIndicator(); }
+        }
+#endif
         private CaptureTuning _captureTuning;
         private CaptureBoardSpec _captureSpec;   // v0.9.0：塔心與板塊數讀 spec（V090_ENCIRCLE_PLAN.md §2.1-4、E19）
         private int[] _ownershipBuffer = new int[0]; // ConfigureCapture 時依 spec.TileCount 配置一次
@@ -257,7 +267,8 @@ namespace Vow.Combat
                 _locomotion.Stop();
                 _locomotion.FaceTowards(_hero.transform.position);
                 _attackCenter = _hero.transform.position;
-                _attackCenter.y = 0f;
+                if (_locomotion.TerrainQuery != null) _attackCenter.y = _locomotion.TerrainQuery.HeightAt(_attackCenter.x, _attackCenter.z, _locomotion.TerrainLayer);
+                else _attackCenter.y = 0f;
                 _telegraph?.ShowZoneIndicator(_attackCenter, _tuning.AttackRadius, 0.09f);
                 _phaseRemaining = _tuning.WindupSeconds;
                 _phase = AttackPhase.Windup;
@@ -285,6 +296,7 @@ namespace Vow.Combat
         // CaptureOpponentPolicy；決定追英雄就走與單挑相同的 Chase → Windup → Recovery，前搖與恢復一定跑完（E10）。
         private void UpdateCapture()
         {
+            if (_holdForTest) return;
             if (!_active || _frozen || _hero == null || _captureView == null || _captureTuning == null || _captureSpec == null) return;
             float dt = Time.deltaTime;
             if (_captureView.State != CaptureMatchState.Active) return;
@@ -336,6 +348,8 @@ namespace Vow.Combat
             CaptureOpponentDecision decision = CaptureOpponentPolicy.Decide(
                 self.x, self.z, heroPosition.x, heroPosition.z, !_hero.IsAlive,
                 _chasingHero, CanSeeHero(), _ownershipBuffer, _captureTuning, _captureSpec);
+            if (!decision.ChaseHero && _captureSpec.Terrain != null)
+                decision = new CaptureOpponentDecision(false, CaptureOpponentPolicy.SelectTargetTile(self.x, self.z, _ownershipBuffer, _captureSpec, _captureSpec.Terrain));
 
             if (decision.ChaseHero)
             {
@@ -358,7 +372,7 @@ namespace Vow.Combat
                 // 以下與單挑分支的追擊相位相同（v0.7.0 Chase → Windup）。
                 Vector3 offset = heroPosition - self;
                 offset.y = 0f;
-                float stop = _tuning.OpponentStopDistance;
+                float stop = CanyonRules.AttackRange(_tuning.OpponentStopDistance, self.x, self.z, _locomotion.TerrainQuery);
                 if (offset.sqrMagnitude > stop * stop || HasBlockingWall(heroPosition))
                 {
                     _locomotion.Step(dt);
@@ -368,7 +382,8 @@ namespace Vow.Combat
                 _locomotion.Stop();
                 _locomotion.FaceTowards(heroPosition);
                 _attackCenter = heroPosition;
-                _attackCenter.y = 0f;
+                if (_locomotion.TerrainQuery != null) _attackCenter.y = _locomotion.TerrainQuery.HeightAt(_attackCenter.x, _attackCenter.z, _locomotion.TerrainLayer);
+                else _attackCenter.y = 0f;
                 _telegraph?.ShowZoneIndicator(_attackCenter, _tuning.AttackRadius, 0.09f);
                 _phaseRemaining = _tuning.WindupSeconds;
                 _phase = AttackPhase.Windup;
@@ -420,7 +435,7 @@ namespace Vow.Combat
 
             Vector3 offset = position - self;
             offset.y = 0f;
-            float stop = _tuning.OpponentStopDistance;
+            float stop = CanyonRules.AttackRange(_tuning.OpponentStopDistance, self.x, self.z, _locomotion.TerrainQuery);
             if (offset.sqrMagnitude > stop * stop || HasBlockingWall(position))
             {
                 _locomotion.Step(dt);
@@ -430,7 +445,8 @@ namespace Vow.Combat
             _locomotion.Stop();
             _locomotion.FaceTowards(position);
             _attackCenter = position;
-            _attackCenter.y = 0f;
+            if (_locomotion.TerrainQuery != null) _attackCenter.y = _locomotion.TerrainQuery.HeightAt(_attackCenter.x, _attackCenter.z, _locomotion.TerrainLayer);
+                else _attackCenter.y = 0f;
             _attackVanguard = true;
             _telegraph?.ShowZoneIndicator(_attackCenter, _tuning.AttackRadius, 0.09f);
             _phaseRemaining = _tuning.WindupSeconds;
@@ -443,7 +459,8 @@ namespace Vow.Combat
             _chasingVanguard = false;
             _attackVanguard = false;
             _targetTile = -1;
-            Vector3 core = new Vector3(_vanguardLogic.CoreX, self.y, _vanguardLogic.CoreZ);
+            float coreY = _locomotion.TerrainQuery != null ? _locomotion.TerrainQuery.HeightAt(_vanguardLogic.CoreX, _vanguardLogic.CoreZ, _locomotion.TerrainLayer) : self.y;
+            Vector3 core = new Vector3(_vanguardLogic.CoreX, coreY, _vanguardLogic.CoreZ);
             float dx = core.x - self.x;
             float dz = core.z - self.z;
             if (dx * dx + dz * dz <= _vanguardLogic.CoreRadius * _vanguardLogic.CoreRadius)
@@ -456,12 +473,12 @@ namespace Vow.Combat
             _locomotion.Step(dt);
         }
 
-        private bool CanSeeHero()
+        public bool CanSeeHero()
         {
             if (_captureMatch == null) return true;
             Vector3 self = transform.position;
             Vector3 hero = _hero.transform.position;
-            return CaptureVisibilityLogic.CanSee(_captureMatch, CaptureMatchLogic.RedFactionId,
+            return CaptureVisibilityLogic.CanSee(_captureMatch, _revealTracker, RevealUnit.BlueHero, CaptureMatchLogic.RedFactionId,
                 self.x, self.z, !IsAlive, hero.x, hero.z);
         }
 
@@ -472,7 +489,9 @@ namespace Vow.Combat
                 _locomotion.Stop();
                 return;
             }
-            _locomotion.MoveTo(new Vector3(_captureSpec.CenterX(_targetTile), groundY, _captureSpec.CenterZ(_targetTile)));
+            float x = _captureSpec.CenterX(_targetTile), z = _captureSpec.CenterZ(_targetTile);
+            float y = _locomotion.TerrainQuery != null ? _locomotion.TerrainQuery.HeightAt(x, z, _locomotion.TerrainLayer) : groundY;
+            _locomotion.MoveTo(new Vector3(x, y, z));
         }
 
         private void ResolveAttack()
@@ -497,7 +516,7 @@ namespace Vow.Combat
             if (dx * dx + dz * dz > radius * radius || HasBlockingWall(target)) return;
             float multiplier = _attackDamageMultiplier != null
                 ? _attackDamageMultiplier(transform.position) : 1f;
-            _hero.TakeDuelDamage(_tuning.OpponentDamage * multiplier);
+            _hero.TakeDuelDamageFromSide(_tuning.OpponentDamage * multiplier, DamageType.Physical, CaptureMatchLogic.RedFactionId);
         }
 
         private bool HasBlockingWall(Vector3 target)

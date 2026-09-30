@@ -21,6 +21,26 @@ namespace Vow.Combat
         private Transform _cachedTransform;
         private Collider[] _colliders;
         private float _health;
+        private RevealTracker _revealTracker;
+        public void SetRevealTracker(RevealTracker tracker) { _revealTracker = tracker; }
+        public void ReceiveDamageFromSide(float amount, DamageType type, int attackerSide)
+        {
+            float before = Health;
+            ReceiveDamage(amount, type, null);
+            if (Health < before) NotifyReveal(attackerSide, null);
+        }
+        private void NotifyReveal(int attackerSide, GameObject instigator)
+        {
+            if (!(this is TrainingOpponent)) return;
+            int victimSide = (int)_faction;
+            if (instigator != null && instigator.TryGetComponent<AbyssalVanguardTarget>(out var objective))
+            {
+                if (objective.Phase == AbyssalVanguardTarget.ObjectivePhase.Behemoth)
+                    _revealTracker?.NotifyUnitHit(objective.BehemothSide == 0 ? RevealUnit.BlueBehemoth : RevealUnit.RedBehemoth, victimSide);
+                return;
+            }
+            _revealTracker?.NotifyHit(attackerSide, victimSide);
+        }
         private bool _deathAnnounced;   // 一次生命只宣告一次死亡（OnDied／HandleDeath）
 
         public Transform TargetTransform => _cachedTransform;
@@ -92,6 +112,12 @@ namespace Vow.Combat
             // 真傷不經聖所的 Physical／Elemental 減傷，其他受擊流程照常。
             if (type != DamageType.True) amount = ScaleIncomingDamage(amount);
             float applied = ConsumeDamage(amount);
+            if (applied > 0f && instigator != null)
+            {
+                int attackerSide = instigator.TryGetComponent<HeroController>(out var hero) ? (int)hero.HeroFaction
+                    : instigator.TryGetComponent<CombatTargetBehaviour>(out var source) ? (int)source.TargetFaction : -1;
+                NotifyReveal(attackerSide, instigator);
+            }
             // Phase 2 批 4（GDD 圍欄九）：霧內目標「受傷後顯影 1.5s」。掛在這個唯一的受擊入口上，
             // 不掛在近戰／子彈／元素各自的呼叫端——三條路徑全部收斂在這裡（分母歸一）。
             _concealment.NotifyDamaged();

@@ -34,6 +34,20 @@ namespace Vow.Core
         private ICombatTargetResolver _attackTargetResolver;
         private Func<Vector3, float> _attackDamageMultiplier;
         private CaptureMatchLogic _captureVisibilityMatch;
+        private RevealTracker _revealTracker;
+        public void SetRevealTracker(RevealTracker tracker) { _revealTracker = tracker; }
+        public void TakeDuelDamageFromSide(float amount, DamageType type, int attackerSide)
+        {
+            float before = Health;
+            TakeDuelDamage(amount, type);
+            if (Health < before) _revealTracker?.NotifyHit(attackerSide, CaptureMatchLogic.BlueFactionId);
+        }
+        public void TakeDuelDamageFromUnit(float amount, DamageType type, RevealUnit unit)
+        {
+            float before = Health;
+            TakeDuelDamage(amount, type);
+            if (Health < before) _revealTracker?.NotifyUnitHit(unit, CaptureMatchLogic.BlueFactionId);
+        }
 
         // ── Phase 2 批 4：元素場 ──
         // 英雄只認得 Vow.Core 的查詢介面（Vow.Core 不得反向依賴 Vow.Combat）。
@@ -249,7 +263,11 @@ namespace Vow.Core
 
         private void Update()
         {
-            if (!IsAlive) return;
+            if (!IsAlive)
+            {
+                if (_locomotion.IsVentFlying) _locomotion.Step(Time.deltaTime);
+                return;
+            }
             float dt = Time.deltaTime;
             TickQuicksand(dt);
             _locomotion.Step(dt);
@@ -289,7 +307,10 @@ namespace Vow.Core
             if (CaptureVisibilityLogic.AppliesTo(_captureVisibilityMatch))
             {
                 Vector3 heroPosition = transform.position;
-                if (!CaptureVisibilityLogic.CanSee(_captureVisibilityMatch, (int)_faction,
+                if (!CaptureVisibilityLogic.CanSee(_captureVisibilityMatch,
+                    target.TargetFaction == Faction.RedTeam || target.TargetFaction == Faction.BlueTeam ? _revealTracker : null,
+                    target is IFactionOwned ownedTarget && ownedTarget.OwnerFaction == Faction.RedTeam
+                        && target is IGlobalObjectiveVisibility ? RevealUnit.RedBehemoth : RevealUnit.RedOpponent, (int)_faction,
                     heroPosition.x, heroPosition.z, !IsAlive, targetPosition.x, targetPosition.z)) return false;
                 if (CaptureVisibilityLogic.HasTrueVision(_captureVisibilityMatch, (int)_faction,
                     targetPosition.x, targetPosition.z)) return true;
@@ -303,11 +324,13 @@ namespace Vow.Core
 
         private void HandleMoveSelected(Vector3 destination)
         {
+            if (_locomotion.IsVentFlying) return;
             _brain.CommandMove(new GroundPoint(destination.x, destination.y, destination.z));
         }
 
         private void HandleTargetSelected(ICombatTarget target)
         {
+            if (_locomotion.IsVentFlying) return;
             if (!CanEngage(target)) return;   // 批 4：收斂成單一判準（陣營＋蒸氣遮蔽）
             _brain.CommandAttack(target);
         }
@@ -315,6 +338,7 @@ namespace Vow.Core
         // 螢幕向量 → 世界 XZ 方向（以鏡頭水平朝向為基準，玩家往螢幕哪邊彈，角色就往畫面上的那邊滑）。
         private void HandleCadenceFlick(Vector2 screenDirection)
         {
+            if (_locomotion.IsVentFlying) return;
             Vector3 forward = Vector3.forward;
             Vector3 right = Vector3.right;
             if (_cameraTransform != null)
@@ -358,7 +382,8 @@ namespace Vow.Core
 
             Vector3 offset = targetTransform.position - transform.position;
             offset.y = 0f;
-            return offset.sqrMagnitude <= _tuning.AttackRange * _tuning.AttackRange;
+            return CanyonRules.InAttackRange(_tuning.AttackRange, transform.position.x, transform.position.z,
+                targetTransform.position.x, targetTransform.position.z, _locomotion.TerrainQuery);
         }
 
         public void MoveTo(GroundPoint destination)
@@ -388,7 +413,6 @@ namespace Vow.Core
             // Capture direction before the direct hit can destroy or deactivate the target.
             Vector3 direction = target.TargetTransform != null
                 ? target.TargetTransform.position - transform.position : Vector3.zero;
-            direction.y = 0f;
             float damage = _tuning.AttackDamage * (_attackDamageMultiplier != null
                 ? _attackDamageMultiplier(transform.position) : 1f);
             bool empowered = _pactAttackTalent != PactTalent.None && _pactAttackWindow.Consume(_brain.Clock);
@@ -449,7 +473,7 @@ namespace Vow.Core
         public bool TryBeginCadenceDash(float worldDirX, float worldDirZ)
         {
             // 縛足期間不得滑步，而且**不消耗充能**（附加規則，不是位移防線本體——防線在 ApplyDisplacement）。
-            if (_quicksand != null && _quicksand.IsRooted) return false;
+            if (_locomotion.IsVentFlying || (_quicksand != null && _quicksand.IsRooted)) return false;
             return _mover.TryExecuteCadenceDash(new Vector3(worldDirX, 0f, worldDirZ));
         }
 

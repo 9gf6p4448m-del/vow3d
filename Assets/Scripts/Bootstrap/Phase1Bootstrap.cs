@@ -136,10 +136,20 @@ namespace Vow.Bootstrap
         // v0.9.0（V090_ENCIRCLE_PLAN.md §2.1-3、E27）：正式版一律 19 塊；7 塊只留在純邏輯回歸夾具。
         // v0.10.0（V0100_SANCTUARY_PLAN.md E1、§2.1-3）：正式版改用 V0100Sanctuary（幾何與 V090Nineteen 逐值相同，
         // 另開聖所／圍城／倒數／慢計分）；V090Nineteen 只留作純邏輯回歸夾具。
-        private readonly CaptureBoardSpec _captureSpec = CaptureBoardSpec.V0100Sanctuary;
+        private CaptureBoardSpec _captureSpec = CaptureBoardSpec.V0140Canyon;
+        [SerializeField] private Transform _canyonTerrain;
+        [SerializeField] private Transform _cliffBarriers;
+        [SerializeField] private Collider _flatGround;
+        private Renderer _flatGroundRenderer;
+        private bool _cliffsStamped;
+        private readonly CanyonTuning _canyonTuning = new CanyonTuning();
+        private GeothermalVentLogic _ventLogic;
+        private readonly RevealTracker _revealTracker = new RevealTracker(new CanyonTuning().RevealSeconds);
+        public GeothermalVentLogic VentLogic => _ventLogic;
+        public RevealTracker RevealTracker => _revealTracker;
         private CaptureMatchLogic _capture;
         private CaptureMatchView _captureView;
-        private readonly AbyssalVanguardTuning _vanguardTuning = new AbyssalVanguardTuning();
+        private AbyssalVanguardTuning _vanguardTuning;
         private AbyssalVanguardLogic _vanguardLogic;
         private CombatTargetBehaviour[] _navBlockers = new CombatTargetBehaviour[0]; // 復活傳送後逐一推出（R10）
         private DummyTarget[] _dummies = new DummyTarget[0];                        // 佔領模式停用、回單挑恢復（r1 M1）
@@ -242,6 +252,59 @@ namespace Vow.Bootstrap
         public int CaptureSanctuaryLabelRecomputeCount => _hud != null ? _hud.CaptureSanctuaryLabelRecomputeCount : 0;
 
 #if UNITY_EDITOR
+        public void UseFlatCaptureSpecForTest()
+        {
+            if (CaptureState != CaptureMatchState.Off) throw new InvalidOperationException("Must select flat fixture before entering capture");
+            _captureSpec = CaptureBoardSpec.V0100Sanctuary;
+            if (_capture == null) return;
+            _capture = new CaptureMatchLogic(_captureTuning, _captureSpec);
+            _captureView = new CaptureMatchView(_capture);
+            _hero.SetCaptureVisibilityMatch(_capture);
+            _opponent.ConfigureCapture(_captureView, _captureTuning, _captureSpec, _capture);
+            _input.SetCaptureFog(_capture, _hero);
+            _vanguardTuning = AbyssalVanguardTuning.ForSpec(_captureSpec);
+            _vanguardLogic = new AbyssalVanguardLogic(_vanguardTuning);
+            _vanguardTarget.Initialize(_hero, _opponent, _captureSpec, _navigator, _navTuning.BodyRadius, _navBlockers, _vanguardTuning);
+            _opponent.ConfigureVanguard(_vanguardLogic, _vanguardTarget);
+            _ventLogic = null;
+            InitializeCaptureBoard();
+            _duelInput.SetCaptureViewForFixture(_captureView);
+            _hud.ConfigureCapture(_captureView, HandleCaptureButton, _captureSpec.TalentsEnabled, ChooseBlueTalent);
+            _hud.ConfigureVanguard(_vanguardLogic, ReadVanguardHealth);
+            _hud.ConfigureVents(null);
+            _elementField.ConfigurePactDamage(_capture, _hero, _hero.transform, _opponent.transform);
+            SetCanyonMode(false);
+        }
+
+        public void HoldOpponentForTest(bool hold) { _opponent.HoldForTest(hold); }
+
+        public void SpawnRuneWallForTest(int side, float x, float z, float normalX, float normalZ)
+        {
+            RuneWall[] pool = side == 0 ? _runeWallPool.GetComponentsInChildren<RuneWall>(true) : _enemyWalls.Pool;
+            for (int i = 0; i < pool.Length; i++)
+                if (!pool[i].IsAlive)
+                {
+                    float y = _captureSpec.Terrain != null ? _captureSpec.Terrain.HeightAt(x, z, 0) : 0f;
+                    pool[i].Activate(new Vector3(x, y + _tuningAsset.Rune.WallHeight * 0.5f, z),
+                        Quaternion.LookRotation(new Vector3(normalX, 0f, normalZ)), side == 0 ? Faction.BlueTeam : Faction.RedTeam, null, i);
+                    return;
+                }
+            throw new InvalidOperationException("Rune wall pool exhausted");
+        }
+
+        public void SeedBehemothForTest(int side, float x, float z)
+        {
+            _vanguardLogic.ResetForMatch();
+            _vanguardLogic.Tick(0.25f, CaptureMatchState.Active, _vanguardTuning.SpawnSeconds, 100f, 100f, false, 100f, 100f, false);
+            _vanguardLogic.NotifyVanguardDefeated();
+            _vanguardLogic.Tick(_vanguardTuning.CoreChannelSeconds, CaptureMatchState.Active, _vanguardTuning.SpawnSeconds,
+                side == 0 ? _vanguardTuning.CoreX : 100f, side == 0 ? _vanguardTuning.CoreZ : 100f, side == 0,
+                side == 1 ? _vanguardTuning.CoreX : 100f, side == 1 ? _vanguardTuning.CoreZ : 100f, side == 1);
+            float y = _captureSpec.Terrain != null ? _captureSpec.Terrain.HeightAt(x, z, 0) : 0f;
+            _vanguardTarget.transform.position = new Vector3(x, y, z);
+            _vanguardTarget.ActivateBehemoth(side);
+        }
+
         // V9 場景劇本凍結於迷霧推出前：只在這兩組舊測試關閉迷霧，原斷言與路徑不變。
         public void DisableFogForLegacyCaptureTests()
         {
@@ -312,6 +375,7 @@ namespace Vow.Bootstrap
             Application.targetFrameRate = frameRate;
 
             ResolveMissingReferences();
+            if (_flatGround != null) _flatGroundRenderer = _flatGround.GetComponent<Renderer>();
         }
 
         // 放在 Start：此時所有物件的 Awake 都已跑完（HeroController 的狀態機、各目標的 Collider 快取都已就緒）。
@@ -323,17 +387,22 @@ namespace Vow.Bootstrap
                 return;
             }
 
+            _vanguardTuning = AbyssalVanguardTuning.ForSpec(_captureSpec);
+            _ventLogic = _captureSpec.Terrain is CanyonTerrainSpec canyon ? new GeothermalVentLogic(canyon, _canyonTuning) : null;
+            _hero.SetRevealTracker(_revealTracker);
             CombatTargetBehaviour[] targets = FindObjectsOfType<CombatTargetBehaviour>();
             // 批 4 §4-5：元素 AOE 需要一份**可列舉且去重**的名冊（ColliderTargetRegistry 的鍵是 collider，
             // 一個目標多個 Collider 會重複結算）。兩者在這裡**成對**登記，分母歸一。
             _elementRoster = new CombatTargetRoster(_elementTuning.TargetRosterCapacity);
             for (int i = 0; i < targets.Length; i++)
             {
+                targets[i].SetRevealTracker(_revealTracker);
                 _targets.Register(targets[i]);
                 RegisterElementTarget(targets[i]);
             }
 
             BuildNavGrid(targets);
+            _heroLocomotion.OnVentLanded += HandleHeroVentLanded;
             _heroSpawn = _hero.transform.position;
             if (_opponent != null)
             {
@@ -346,6 +415,7 @@ namespace Vow.Bootstrap
                 _captureView = new CaptureMatchView(_capture);
                 _hero.SetCaptureVisibilityMatch(_capture);
                 _opponent.ConfigureCapture(_captureView, _captureTuning, _captureSpec, _capture);
+                _opponent.SetRevealTrackerForVisibility(_revealTracker);
                 _opponent.SetAttackDamageMultiplier(RedAttackDamageMultiplier);
                 InitializeCaptureBoard();
             }
@@ -357,12 +427,14 @@ namespace Vow.Bootstrap
                 _vanguardLogic = new AbyssalVanguardLogic(_vanguardTuning);
                 _vanguardTarget.Initialize(_hero, _opponent, _captureSpec, _navigator, _navTuning.BodyRadius,
                                             targets, _vanguardTuning);
+                _vanguardTarget.SetTerrainRoot(_canyonTerrain);
                 _vanguardTarget.OnDied += HandleVanguardDied;
                 _opponent.ConfigureVanguard(_vanguardLogic, _vanguardTarget);
             }
 
             _input.Initialize(_targets, _camera);
             _input.SetCaptureFog(_capture, _hero);
+            _input.SetRevealTracker(_revealTracker);
             // 批 3：「哪些石牆算自家牆」由本地陣營決定（點自家牆＝點到牆後的地板，§4-1）。
             _input.SetLocalFaction(_hero.HeroFaction);
 
@@ -379,6 +451,7 @@ namespace Vow.Bootstrap
             if (_duelRound != null)
             {
                 _duelInput = new DuelInputRouter(heroInput, heroRuneInput, _opponent, _duelRound, _captureView);
+                _duelInput.SetMovementLockQuery(IsHeroVentFlying);
                 _duelInput.OnStartRequested += StartDuel;
                 _duelInput.OnCaptureStartRequested += StartCapture;
                 heroInput = _duelInput;
@@ -445,12 +518,14 @@ namespace Vow.Bootstrap
                     _hud.ConfigureCapture(_captureView, HandleCaptureButton, _captureSpec.TalentsEnabled,
                                           _captureSpec.TalentsEnabled ? (Action<PactTalent>)ChooseBlueTalent : null);
                 if (_vanguardLogic != null) _hud.ConfigureVanguard(_vanguardLogic, ReadVanguardHealth);
+                _hud.ConfigureVents(_ventLogic);
             }
             if (_aimPreview != null) _aimPreview.Initialize(_hero, _input, _telegraph, _camera);
         }
 
         private void OnDestroy()
         {
+            if (_heroLocomotion != null) _heroLocomotion.OnVentLanded -= HandleHeroVentLanded;
             if (_hero != null && _feedback != null) _hero.StateMachine.OnStateChanged -= HandleHeroStateChanged;
             if (_hero != null) _hero.OnRootedStarted -= HandleHeroRooted;
             if (_hero != null) _hero.OnKnockedOut -= HandleHeroKnockedOut;
@@ -469,7 +544,9 @@ namespace Vow.Bootstrap
         private void Update()
         {
             // v0.8.0（R15）：佔領 Tick 必須排在單挑的提早 return 之前，否則永遠跑不到。
+            _revealTracker.Tick(Time.deltaTime);
             TickCapture(Time.deltaTime);
+            TickVents(Time.deltaTime);
             // v0.10.0 E5：聖所受傷百分比每幀寫入，放在 TickCapture 之外——它在 Off 會提早 return，Off 也要寫 100（R2）。
             ApplySanctuary();
             if (_duelRound == null || !_duelRound.Tick(Time.deltaTime)) return;
@@ -491,7 +568,7 @@ namespace Vow.Bootstrap
             {
                 Vector3 position = _opponent.transform.position;
                 _opponent.SetFogVisible(!fogActive || CaptureVisibilityLogic.CanSee(
-                    _capture, CaptureMatchLogic.BlueFactionId, heroPosition.x, heroPosition.z,
+                    _capture, _revealTracker, RevealUnit.RedOpponent, CaptureMatchLogic.BlueFactionId, heroPosition.x, heroPosition.z,
                     heroKnockedOut, position.x, position.z));
             }
             if (_vanguardTarget != null && _vanguardTarget.Phase == AbyssalVanguardTarget.ObjectivePhase.Behemoth)
@@ -499,7 +576,7 @@ namespace Vow.Bootstrap
                 Vector3 position = _vanguardTarget.transform.position;
                 _vanguardTarget.SetFogVisible(!fogActive ||
                     _vanguardTarget.IsGloballyVisibleTo(Faction.BlueTeam) ||
-                    CaptureVisibilityLogic.CanSee(_capture, CaptureMatchLogic.BlueFactionId,
+                    CaptureVisibilityLogic.CanSee(_capture, _revealTracker, RevealUnit.RedBehemoth, CaptureMatchLogic.BlueFactionId,
                         heroPosition.x, heroPosition.z, heroKnockedOut, position.x, position.z));
             }
             RuneWall[] walls = _enemyWalls != null ? _enemyWalls.Pool : null;
@@ -510,7 +587,7 @@ namespace Vow.Bootstrap
                 if (wall == null) continue;
                 Vector3 position = wall.transform.position;
                 wall.SetFogVisible(!fogActive || CaptureVisibilityLogic.CanSee(
-                    _capture, CaptureMatchLogic.BlueFactionId, heroPosition.x, heroPosition.z,
+                    _capture, null, RevealUnit.RedOpponent, CaptureMatchLogic.BlueFactionId, heroPosition.x, heroPosition.z,
                     heroKnockedOut, position.x, position.z));
             }
         }
@@ -561,6 +638,7 @@ namespace Vow.Bootstrap
                 return;
             }
             _rageAuras.Initialize(_captureView, _hero.transform, _opponent.transform, _capture);
+            _rageAuras.SetRevealTracker(_revealTracker);
         }
 
         // 全場會擋路的牆（符印牆池、敵方牆池、兩面測試牆）。只在 Start 收一次，復活傳送後逐一推出。
@@ -716,6 +794,8 @@ namespace Vow.Bootstrap
         private void StartCapture()
         {
             if (_capture == null || !_capture.TryStart()) return;
+            _revealTracker.Reset();
+            _ventLogic?.Reset();
             _vanguardLogic?.ResetForMatch();
             _vanguardTarget?.Deactivate();
             // v0.13.0 試玩捷徑：網址帶 ?devvanguard 時開局直接跳到第 590 秒，10 秒後先鋒甦醒（倒數同步剩 5:10）。
@@ -777,6 +857,7 @@ namespace Vow.Bootstrap
         // 受傷打斷引導（E11）：英雄的事件在扣護盾之前發（護盾全額吸收也算）；對手走既有的 OnDamaged。
         private void HandleHeroDamaged()
         {
+            _ventLogic?.NotifyDamaged();
             if (CaptureState == CaptureMatchState.Active) _capture.NotifyDamaged(CaptureMatchLogic.BlueFactionId);
             if (CaptureState == CaptureMatchState.Active) _vanguardLogic?.NotifyHeroDamaged(CaptureMatchLogic.BlueFactionId);
         }
@@ -834,16 +915,76 @@ namespace Vow.Bootstrap
         // 回佔領待機（E17／E22）：雙方回 v0.7.0 出生點並補滿血，收牆走正常 CollapseWall；歸屬、比分、結果保留顯示。
         private void ReturnToCaptureLobby()
         {
+            _revealTracker.Reset();
+            _ventLogic?.Reset();
             _latency?.CancelPendingForRound();
             _input?.CancelActiveGesturesForRound();
             _hero.ResetForDuel(_heroSpawn);
             _hero.SetBodyHidden(false);
             _opponent.ReturnToCaptureLobby();
+            PlaceCanyonLobby();
             _runeCaster?.ResetForRound();
             _elementCooldowns?.ResetForRound();
         }
 
         // CAPTURE 鈕（E27）：只在「單挑待機」與「佔領待機」之間切換；其餘狀態按了無效（觸控照樣被攔下）。
+        private void HandleHeroVentLanded() { EjectFromLiveWalls(_heroLocomotion); }
+
+        private bool IsHeroVentFlying() => _heroLocomotion != null && _heroLocomotion.IsVentFlying;
+
+        private void TickVents(float dt)
+        {
+            if (_ventLogic == null || _heroLocomotion == null) return;
+            int count = _ventLogic.LaunchCount;
+            Vector3 p = _hero.transform.position;
+            _ventLogic.Tick(dt, p.x, p.z, CaptureState == CaptureMatchState.Active && _hero.IsAlive && !_heroLocomotion.IsMovementLocked);
+            if (_ventLogic.LaunchCount != count)
+            {
+                _hero.CancelCombatForDuel();
+                _heroLocomotion.WarpTo(new Vector3(((CanyonTerrainSpec)_captureSpec.Terrain).VentPadX(_ventLogic.LastLaunchPad), -1f,
+                    ((CanyonTerrainSpec)_captureSpec.Terrain).VentPadZ(_ventLogic.LastLaunchPad)));
+                _heroLocomotion.BeginVentFlight(_ventLogic.LastLandingX, _ventLogic.LastLandingZ);
+            }
+        }
+
+        private void SetCanyonMode(bool enabled)
+        {
+            ITerrainQuery terrain = enabled ? _captureSpec.Terrain : null;
+            bool canyon = terrain != null;
+            if (_canyonTerrain != null) _canyonTerrain.gameObject.SetActive(canyon);
+            if (_cliffBarriers != null) _cliffBarriers.gameObject.SetActive(canyon);
+            if (_flatGround != null) _flatGround.enabled = !canyon;
+            if (_flatGroundRenderer != null) _flatGroundRenderer.enabled = !canyon;
+            if (canyon != _cliffsStamped && _captureSpec.Terrain is CanyonTerrainSpec spec)
+            {
+                spec.StampCliffs(_navGrid, _navTuning.BodyRadius, canyon ? 1 : -1);
+                _cliffsStamped = canyon;
+            }
+            _heroLocomotion?.SetTerrain(terrain);
+            _opponentLocomotion?.SetTerrain(terrain);
+            _elementField?.SetTerrain(terrain);
+            _runeCaster?.SetTerrain(terrain);
+            _runeGhost?.SetTerrain(terrain);
+            _enemyWalls?.SetTerrain(terrain);
+            _feedback?.SetTerrain(terrain);
+            _sectorTelegraph?.SetTerrain(terrain);
+            _captureBoard?.SetTerrain(terrain);
+            if (!enabled)
+            {
+                _revealTracker.Reset(); _ventLogic?.Reset();
+                Vector3 p = _hero.transform.position; p.y = 0f; _heroLocomotion.WarpTo(p);
+                p = _opponent.transform.position; p.y = 0f; _opponentLocomotion.WarpTo(p);
+            }
+        }
+
+        private void PlaceCanyonLobby()
+        {
+            if (_captureSpec.Terrain == null) return;
+            _hero.ResetForDuel(new Vector3(_captureSpec.MotherRespawnX(0, 0), 0f, _captureSpec.MotherRespawnZ(0, 0)));
+            _opponent.RespawnAt(new Vector3(_canyonTuning.CanyonLobbyOpponentSpawnX, 0f, _canyonTuning.CanyonLobbyOpponentSpawnZ));
+            _opponent.StopRound();
+        }
+
         private void HandleCaptureButton()
         {
             if (_capture == null) return;
@@ -851,6 +992,8 @@ namespace Vow.Bootstrap
             if (action == CaptureButtonAction.EnterCaptureMode)
             {
                 if (!_capture.TryEnterCaptureMode()) return;
+                SetCanyonMode(true);
+                PlaceCanyonLobby();
                 // r2 N1（使用者裁定 2026-09-25）：進佔領模式時清掉英雄的鎖定，免得在 Lobby 對著停用的木樁繼續揮刀。只改這個入口。
                 _hero.CancelCombatForDuel();
                 _opponent.SetCaptureMode(true);
@@ -861,6 +1004,7 @@ namespace Vow.Bootstrap
             else if (action == CaptureButtonAction.ExitCaptureMode)
             {
                 if (!_capture.TryExitCaptureMode()) return;
+                SetCanyonMode(false);
                 _opponent.SetCaptureMode(false);
                 if (_captureBoard != null) _captureBoard.SetShown(false);
                 SetDummiesSuppressed(false);
@@ -1076,7 +1220,7 @@ namespace Vow.Bootstrap
             forward.Normalize();
 
             Vector3 point = origin + forward * _elementTuning.CastDistanceMeters;
-            point.y = origin.y;
+            point.y = _heroLocomotion.TerrainQuery != null ? _heroLocomotion.TerrainQuery.HeightAt(point.x, point.z, 0) : origin.y;
             return point;
         }
 
@@ -1086,8 +1230,9 @@ namespace Vow.Bootstrap
         {
             if (ElementsLocked) return;
             if (!_elementCooldowns.TryBeginCast(ElementCast.Water, Time.time, BlueElementCooldownSeconds)) return;
-            float radius = _elementTuning.WaterRadius + (BlueHasTalent(2, PactTalent.TidalPull) ? 2f : 0f);
-            _elementField.CastWater(ElementCastPoint(), ElementCastFactionId, radius);
+            Vector3 point = ElementCastPoint();
+            float radius = CanyonRules.WaterRadius(_elementTuning.WaterRadius, BlueHasTalent(2, PactTalent.TidalPull) ? 2f : 0f, point.x, point.z, _heroLocomotion.TerrainQuery);
+            _elementField.CastWater(point, ElementCastFactionId, radius);
         }
 
         private void CastElementFire()

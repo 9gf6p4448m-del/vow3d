@@ -43,9 +43,10 @@ namespace Vow.EditorTools
             CreateLight();
             GameObject ground = CreateGround(materials.Ground);
 
-            // NavMesh 在「只有地板」的時候烘焙：石牆、木樁、英雄都還不存在，所以烘出來的是一整片無洞的靜態網格。
-            // 石牆之後被打碎也不需要重烘——它從頭到尾就不在 NavMesh 裡（紅線 5：零 carving、零執行期烘焙）。
-            BakeStaticNavMesh(ground);
+            // v0.14.0 沿用原平地靜態 NavMesh；地形高度與崖壁由 runtime 地形查詢／格點處理。
+            AttachStaticNavMesh(ground);
+            Transform canyonTerrain = CreateCanyonTerrain(materials);
+            Transform cliffBarriers = CreateCliffBarriers();
             GameObject arenaBoundary = CreateArenaBoundary(tuning.BodyRadius); // 必須在烘焙之後：邊界牆不得進入 NavMesh
 
             HeroController hero = CreateHero(tuning, materials.Hero, materials.Bar);
@@ -65,7 +66,8 @@ namespace Vow.EditorTools
 
             Camera camera = CreateCameraRig(out FollowCameraRig rig, out Transform shakePivot);
             CreateSystems(hero, opponent, camera, rig, shakePivot, materials, tuning, runeGhost, navGridDebug, arenaBoundary.transform,
-                          runeWallPool, enemyWallPool, turret, elementZonePool, captureBoard, rageAuras, vanguardTarget);
+                          runeWallPool, enemyWallPool, turret, elementZonePool, captureBoard, rageAuras, vanguardTarget,
+                          canyonTerrain, cliffBarriers, ground.GetComponent<Collider>());
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -200,18 +202,181 @@ namespace Vow.EditorTools
             return root;
         }
 
-        private static void BakeStaticNavMesh(GameObject ground)
+        private static void AttachStaticNavMesh(GameObject ground)
         {
+            NavMeshData data = AssetDatabase.LoadAssetAtPath<NavMeshData>(NavMeshDataPath);
+            if (data == null)
+                throw new System.InvalidOperationException("[VOW] 缺少既有平地 NavMesh 資產：" + NavMeshDataPath);
             NavMeshSurface surface = ground.AddComponent<NavMeshSurface>();
-            surface.collectObjects = CollectObjects.All; // 此刻場景裡有 Collider 的只有地板
+            surface.collectObjects = CollectObjects.All;
             surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
-            surface.BuildNavMesh();
+            surface.navMeshData = data;
+            surface.AddData();
+        }
 
-            if (surface.navMeshData == null)
-                throw new System.InvalidOperationException("[VOW] NavMesh 烘焙失敗：navMeshData 為 null");
+        private static Transform CreateCanyonTerrain(Materials materials)
+        {
+            CanyonTerrainSpec terrain = CanyonTerrainSpec.V0140;
+            CaptureBoardSpec board = terrain.Board;
+            Transform root = new GameObject("CanyonTerrain").transform;
+            Mesh surfaceMesh = EnsureCanyonHexMesh(board);
+            const float bottom = -2f;
+            // 長邊 2h、短邊 R，90°／30°／150° 三矩形的聯集恰為平頂正六角。
+            for (int tile = 0; tile < board.TileCount; tile++)
+            {
+                float top = terrain.TileHeight(tile);
+                for (int part = 0; part < 3; part++)
+                {
+                    float yaw = part == 0 ? 90f : (part == 1 ? 30f : 150f);
+                    CreateTerrainBox(root, "Tile_" + tile + "_" + part,
+                        new Vector3(board.CenterX(tile), (top + bottom) * 0.5f, board.CenterZ(tile)),
+                        Quaternion.Euler(0f, yaw, 0f),
+                        new Vector3(board.InRadius * 2f, top - bottom, board.CircumRadius), materials.Ground, false);
+                }
+                // 完整六角表面只畫一次；所有 primitive 盒仍僅負責原凍結碰撞幾何。
+                GameObject surface = new GameObject("TileSurface_" + tile);
+                surface.transform.SetParent(root, false);
+                const float visualOffset = 0.005f;
+                surface.transform.localPosition = new Vector3(board.CenterX(tile), top + visualOffset, board.CenterZ(tile));
+                surface.transform.localScale = new Vector3(1f, top - bottom + visualOffset, 1f);
+                surface.AddComponent<MeshFilter>().sharedMesh = surfaceMesh;
+                surface.AddComponent<MeshRenderer>().sharedMaterial = materials.Ground;
+            }
+            for (int ramp = 0; ramp < terrain.RampCount; ramp++)
+            {
+                float low = terrain.TileHeight(terrain.RampLowTile(ramp));
+                float high = terrain.TileHeight(terrain.RampHighTile(ramp));
+                Vector3 forward = new Vector3(terrain.RampAxisX(ramp), (high - low) / terrain.RampLength,
+                    terrain.RampAxisZ(ramp)).normalized;
+                Quaternion rotation = Quaternion.LookRotation(forward, Vector3.up);
+                const float thickness = 0.2f;
+                Vector3 surfaceCenter = new Vector3(terrain.RampCenterX(ramp), (low + high) * 0.5f,
+                    terrain.RampCenterZ(ramp));
+                CreateTerrainBox(root, "Ramp_" + ramp, surfaceCenter - rotation * Vector3.up * (thickness * 0.5f),
+                    rotation, new Vector3(terrain.RampWidth, thickness,
+                        Mathf.Sqrt(terrain.RampLength * terrain.RampLength + (high - low) * (high - low))), materials.Ground);
+            }
+            // 四條外側平原從非中層頂點包圍盒延伸到場邊；只和中層地形重疊。
+            float minX = float.PositiveInfinity, maxX = float.NegativeInfinity;
+            float minZ = float.PositiveInfinity, maxZ = float.NegativeInfinity;
+            for (int tile = 0; tile < board.TileCount; tile++)
+            {
+                if (terrain.TileHeight(tile) == 0f) continue;
+                for (int vertex = 0; vertex < 6; vertex++)
+                {
+                    minX = Mathf.Min(minX, board.VertexX(tile, vertex));
+                    maxX = Mathf.Max(maxX, board.VertexX(tile, vertex));
+                    minZ = Mathf.Min(minZ, board.VertexZ(tile, vertex));
+                    maxZ = Mathf.Max(maxZ, board.VertexZ(tile, vertex));
+                }
+            }
+            float half = ArenaSize * 0.5f;
+            CreateTerrainBox(root, "Outside_West", new Vector3((-half + minX) * 0.5f, -1f, 0f), Quaternion.identity,
+                new Vector3(minX + half, 2f, ArenaSize), materials.Ground);
+            CreateTerrainBox(root, "Outside_East", new Vector3((half + maxX) * 0.5f, -1f, 0f), Quaternion.identity,
+                new Vector3(half - maxX, 2f, ArenaSize), materials.Ground);
+            CreateTerrainBox(root, "Outside_South", new Vector3((minX + maxX) * 0.5f, -1f, (-half + minZ) * 0.5f), Quaternion.identity,
+                new Vector3(maxX - minX, 2f, minZ + half), materials.Ground);
+            CreateTerrainBox(root, "Outside_North", new Vector3((minX + maxX) * 0.5f, -1f, (half + maxZ) * 0.5f), Quaternion.identity,
+                new Vector3(maxX - minX, 2f, half - maxZ), materials.Ground);
 
-            AssetDatabase.DeleteAsset(NavMeshDataPath);
-            AssetDatabase.CreateAsset(surface.navMeshData, NavMeshDataPath);
+            float diameter = new CanyonTuning().VentPadRadius * 2f;
+            for (int vent = 0; vent < CanyonTerrainSpec.VentCount; vent++)
+            {
+                GameObject pad = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                pad.name = "GeothermalPad_" + vent;
+                pad.transform.SetParent(root, false);
+                float x = terrain.VentPadX(vent), z = terrain.VentPadZ(vent);
+                pad.transform.localPosition = new Vector3(x, terrain.HeightAt(x, z, 0) + 0.025f, z);
+                pad.transform.localScale = new Vector3(diameter, 0.015f, diameter);
+                Object.DestroyImmediate(pad.GetComponent<Collider>());
+                pad.GetComponent<Renderer>().sharedMaterial = materials.VanguardCore;
+            }
+            root.gameObject.SetActive(false);
+            return root;
+        }
+
+        private static void CreateTerrainBox(Transform root, string name, Vector3 position, Quaternion rotation,
+            Vector3 size, Material material, bool visible = true)
+        {
+            GameObject box = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            box.name = name;
+            box.transform.SetParent(root, false);
+            box.transform.localPosition = position;
+            box.transform.localRotation = rotation;
+            box.transform.localScale = size;
+            if (visible) box.GetComponent<Renderer>().sharedMaterial = material;
+            else
+            {
+                Object.DestroyImmediate(box.GetComponent<MeshRenderer>());
+                Object.DestroyImmediate(box.GetComponent<MeshFilter>());
+            }
+        }
+
+        private static Mesh EnsureCanyonHexMesh(CaptureBoardSpec board)
+        {
+            const string path = "Assets/Settings/VOW_CanyonHex.asset";
+            Mesh mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            bool created = mesh == null;
+            if (created) mesh = new Mesh();
+            mesh.Clear();
+            mesh.name = "VOW_CanyonHex";
+            Vector3[] vertices = new Vector3[31];
+            Vector3[] normals = new Vector3[31];
+            Vector2[] uv = new Vector2[31];
+            int[] triangles = new int[54];
+            normals[0] = Vector3.up;
+            uv[0] = new Vector2(0.5f, 0.5f);
+            for (int v = 0; v < 6; v++)
+            {
+                Vector3 p = new Vector3(board.VertexX(0, v) - board.CenterX(0), 0f,
+                    board.VertexZ(0, v) - board.CenterZ(0));
+                vertices[v + 1] = p;
+                normals[v + 1] = Vector3.up;
+                uv[v + 1] = new Vector2(p.x / ArenaSize + 0.5f, p.z / ArenaSize + 0.5f);
+                triangles[v * 3] = 0;
+                triangles[v * 3 + 1] = (v + 1) % 6 + 1;
+                triangles[v * 3 + 2] = v + 1;
+            }
+            for (int v = 0; v < 6; v++)
+            {
+                Vector3 a = vertices[v + 1], b = vertices[(v + 1) % 6 + 1];
+                int start = 7 + v * 4;
+                vertices[start] = a; vertices[start + 1] = b;
+                vertices[start + 2] = a + Vector3.down; vertices[start + 3] = b + Vector3.down;
+                Vector3 normal = Vector3.Cross(b - a, Vector3.down).normalized;
+                for (int n = 0; n < 4; n++) normals[start + n] = normal;
+                uv[start] = Vector2.zero; uv[start + 1] = Vector2.right;
+                uv[start + 2] = Vector2.up; uv[start + 3] = Vector2.one;
+                int index = 18 + v * 6;
+                triangles[index] = start; triangles[index + 1] = start + 1; triangles[index + 2] = start + 2;
+                triangles[index + 3] = start + 1; triangles[index + 4] = start + 3; triangles[index + 5] = start + 2;
+            }
+            mesh.vertices = vertices; mesh.normals = normals; mesh.uv = uv; mesh.triangles = triangles;
+            mesh.RecalculateBounds();
+            if (created) AssetDatabase.CreateAsset(mesh, path);
+            else EditorUtility.SetDirty(mesh);
+            return mesh;
+        }
+
+        private static Transform CreateCliffBarriers()
+        {
+            CanyonTerrainSpec terrain = CanyonTerrainSpec.V0140;
+            Transform root = new GameObject("CliffBarriers").transform;
+            float thickness = new CanyonTuning().CliffBarrierThickness;
+            for (int i = 0; i < terrain.CliffSegmentCount; i++)
+            {
+                terrain.GetCliffSegment(i, out float x0, out float z0, out float x1, out float z1);
+                GameObject wall = new GameObject("CliffBarrier_" + i);
+                wall.transform.SetParent(root, false);
+                wall.layer = IgnoreRaycastLayer;
+                wall.transform.localPosition = new Vector3((x0 + x1) * 0.5f, 1f, (z0 + z1) * 0.5f);
+                Vector3 tangent = new Vector3(x1 - x0, 0f, z1 - z0);
+                wall.transform.localRotation = Quaternion.LookRotation(tangent, Vector3.up);
+                wall.AddComponent<BoxCollider>().size = new Vector3(thickness, 6f, tangent.magnitude);
+            }
+            root.gameObject.SetActive(false);
+            return root;
         }
 
         private static HeroController CreateHero(HeroTuningAsset tuning, Material placeholderMaterial, Material barMaterial)
@@ -780,7 +945,7 @@ namespace Vow.EditorTools
             Materials materials, HeroTuningAsset tuning, RuneGhostPreview runeGhost, NavGridDebugView navGridDebug,
             Transform arenaBoundary, Transform runeWallPool, Transform enemyWallPool, TestTurret turret,
             Transform elementZonePool, CaptureBoardView captureBoard, RageAuraView rageAuras,
-            AbyssalVanguardTarget vanguardTarget)
+            AbyssalVanguardTarget vanguardTarget, Transform canyonTerrain, Transform cliffBarriers, Collider flatGround)
         {
             GameObject systems = new GameObject("VOW_Systems");
 
@@ -847,6 +1012,9 @@ namespace Vow.EditorTools
             SetReference(bootstrap, "_captureBoard", captureBoard);
             SetReference(bootstrap, "_rageAuras", rageAuras);
             SetReference(bootstrap, "_vanguardTarget", vanguardTarget);
+            SetReference(bootstrap, "_canyonTerrain", canyonTerrain);
+            SetReference(bootstrap, "_cliffBarriers", cliffBarriers);
+            SetReference(bootstrap, "_flatGround", flatGround);
         }
 
         // ───────────────────────── 專案設定 ─────────────────────────

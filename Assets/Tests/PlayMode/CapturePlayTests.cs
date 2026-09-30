@@ -39,6 +39,7 @@ namespace Vow.Tests.PlayMode
             yield return null;
             yield return null;
             _bootstrap = Object.FindObjectOfType<Phase1Bootstrap>();
+            _bootstrap.UseFlatCaptureSpecForTest();
             _hero = Object.FindObjectOfType<HeroController>();
             _opponent = Object.FindObjectOfType<TrainingOpponent>();
             Assert.IsNotNull(_bootstrap);

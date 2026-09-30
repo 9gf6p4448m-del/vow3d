@@ -14,6 +14,8 @@ namespace Vow.Bootstrap
     // 上色走 MaterialPropertyBlock（建一次、重用；先例 DummyTarget.ApplyColor），不碰共用材質資產本身。
     public sealed class RuneGhostPreview : MonoBehaviour
     {
+        private ITerrainQuery _terrain;
+        public void SetTerrain(ITerrainQuery terrain) { _terrain = terrain; }
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         private static readonly int LegacyColorId = Shader.PropertyToID("_Color");
         private static readonly Color CancelColorRgb = new Color(0.95f, 0.15f, 0.15f);
@@ -117,7 +119,8 @@ namespace Vow.Bootstrap
             }
 
             // 虛影中心 y 要跟實牆（RuneCaster.SpawnWall）同一個公式，否則虛影半截埋在地板下。
-            float centerY = heroPosition.y + (_tuning != null ? _tuning.WallHeight * 0.5f : 0f);
+            float groundY = _terrain != null ? _terrain.HeightAt(placement.CenterX, placement.CenterZ, 0) : heroPosition.y;
+            float centerY = groundY + (_tuning != null ? _tuning.WallHeight * 0.5f : 0f);
             Vector3 center = new Vector3(placement.CenterX, centerY, placement.CenterZ);
             Quaternion rotation = Quaternion.LookRotation(new Vector3(placement.NormalX, 0f, placement.NormalZ), Vector3.up);
             transform.SetPositionAndRotation(center, rotation);
