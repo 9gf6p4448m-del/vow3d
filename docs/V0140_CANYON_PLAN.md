@@ -1,6 +1,6 @@
 # 計畫：v0.14.0 深淵峽谷——立體地貌 C 案第 1 批（三層高度＋6 處斜坡＋崖台規則＋2 個地熱點）
 
-> 狀態：**草案 r3（2026-09-30 起草；同日完成 r1〔`v0140-plan-review.md`〕、r2〔`-r2.md`〕、r3〔`-r3.md`〕修訂，見 §14；§13 無未裁定題；未凍結，待主對話判定是否送交使用者凍結——r3 已是 02 §6.1 附則的第 3 輪上限）**。起草 → 主對話審稿 → 使用者裁定 §13 留白題 → §12.1 前置作業 → 凍結。凍結後 §2～§6 的規則與數值、§9 全部 V14 條文、§10 突變定義只能走 §12 修改。
+> 狀態：**已凍結（2026-09-30）**。凍結依據：r1〔`vow-toolchain/v0140-plan-review.md`〕→ r2〔`-r2.md`〕→ r3〔`-r3.md`〕→ r3 定點覆審〔`-r3fix.md`：可凍結，BLOCKER／HIGH 0〕；使用者裁定見 §14。凍結後 §2～§6 的規則與數值、§9 全部 V14 條文、§10 突變定義只能走 §12 修改。
 > 已知良好狀態：`main 96730fd`（v0.13.1，`96730fdf34c1fbbb35982bc758a1ac0771f26aa3`），線上 `origin/gh-pages e82603c`（來源 `eb3c164`）。工作分支 `v0140-abyssal-canyon`（從 `96730fd` 開，起草時工作區乾淨）。
 > 裁定紀錄（權威、唯一需求來源）：`vow-toolchain/v0140-alignment.md`（2 輪、7 題全部照建議）；示意圖 `vow-toolchain/v0140-layout-C.png`。範本：`docs/V0100_SANCTUARY_PLAN.md`（章節結構、共同遵守、指令、變更規則沿用）。
 > 推導腳本：`vow-toolchain/v0140-reachability.py`（輸出 `v0140-reachability.out.txt`）。它是**重建模型**（從 `CaptureBoardSpec.cs` 解析 19 塊中心與 42 條邊，以 float64 逐行重建 `BlockGrid.StampBox`／`FlowField` 規則，以高度場近似鏡頭 Linecast），**不是被測物**，實作不得 import 或移植它的值當期望值；它的格點數字在 float32 邊界上可能差一格，凍結前由 §12.1-1 用 C# 實跑複核。
@@ -406,7 +406,7 @@ namespace Vow.Core.Logic
 
 ### B. Unity：地形幾何與接線
 
-**工作**：§7.3；新增 `Assets/Tests/PlayMode/CanyonPlayTests.cs`；§8 G1 的 8 個套件 `SetUp` 各新增一行 `UseFlatCaptureSpecForTest()`（只新增、斷言不動），放在同一提交，提交訊息逐檔列出（r1：草案的「§8 經同意的改寫」已作廢）。「開局」＝真實點 `CAPTURE` 再真實點對手；「幀」＝一次 `yield return null`；**「倒地保持」**（r2，審稿 N8）＝以 `TakeDuelDamage(1000)`（英雄）／`ReceiveDamage(1000)`（對手）擊倒，並在每次復活的當幀再次以同一呼叫擊倒，直到該案例結束（B04、B06、B07、C02 等凡寫「倒地／倒地保持／保持倒地」者皆照此）；captureDeltaTime＝1/60（另註者除外）。
+**工作**：§7.3；新增 `Assets/Tests/PlayMode/CanyonPlayTests.cs`；§8 G1 的 8 個套件 `SetUp` 各新增一行 `UseFlatCaptureSpecForTest()`（只新增、斷言不動），放在同一提交，提交訊息逐檔列出（r1：草案的「§8 經同意的改寫」已作廢）。「開局」＝真實點 `CAPTURE`、**等 30 幀（鏡頭跟上英雄傳送；同 v0.13 回 Lobby 先例，r3fix R3F-1）**、再真實點對手；「幀」＝一次 `yield return null`；**「倒地保持」**（r2，審稿 N8）＝以 `TakeDuelDamage(1000)`（英雄）／`ReceiveDamage(1000)`（對手）擊倒，並在每次復活的當幀再次以同一呼叫擊倒，直到該案例結束（B04、B06、B07、C02 等凡寫「倒地／倒地保持／保持倒地」者皆照此）；captureDeltaTime＝1/60（另註者除外）。
 
 - **V14-B01 場景單一來源**：建場景後：`CanyonTerrain` 根物件下**恰好** 19×3＋6＋4＝67 個 `BoxCollider`（19×3 個地形、6 個斜坡、4 個棋盤外長條），其他任何 `Collider` 0 個（r2，審稿 N7：地熱圓盤等顯示物件不得帶碰撞體，否則會混進 B13 的遮擋量測）；`CliffBarriers` 是**獨立根物件**（不在 `CanyonTerrain` 底下），其下恰 44 個 `BoxCollider`，第 i 個的兩端（中心 ± 半長×切線）與 `T.GetCliffSegment(i)` 相差 ≤ 1e-3、`bounds.min.y ≤ −2`、`bounds.max.y ≥ 4`、layer＝Ignore Raycast；全場沒有 `MeshCollider`、沒有 `NavMeshObstacle`。另以純幾何取樣驗證「3 個旋轉矩形＝正六角」：每塊 441 個取樣點，`TileAt` 判在塊內 ⇔ 落在 3 個盒子之一的 x/z 投影內（邊界 1e-4 內的點略過）。**紅燈實作**：手抄座標漏一段；崖壁放 Default 層（點谷底打到隱形牆）；六角只用 1 個盒子。
 - **V14-B02 模式啟停**：Off 模式：`CanyonTerrain`、`CliffBarriers` 停用、`Ground_40x40` 碰撞體啟用、`_navGrid.BlockedCount==316`（加上存活中的牆）。點 `CAPTURE` 後：地形啟用、平地碰撞體停用、`BlockedCount==1080`（316＋764）。回 Off → 恢復、`NegativeStampCount==0`。英雄回 Off 時 y＝0。**紅燈實作**：Off 模式也有峽谷；回 Off 沒撤格（Off 模式 `BlockedCount` 仍含崖壁，單挑被看不見的崖壁擋路）。
@@ -595,6 +595,8 @@ A 步另外要依 V0100 R10 的做法重新定位受本批改動影響的既有�
   - 順帶更正（非審稿編號）：§2.4 G0 落點到崖壁的距離 0.8457→1.2246（C# 重算）。
 - **裁定（2026-09-30，使用者）**：§13 Q1～Q11 全部照建議（Q1＝甲 6 處斜坡；使用者先問丁案利弊，主對話回答後仍選甲）；另加兩項工程調整：斜坡支援任意落差（§2.2）、`IsSameFloor` 改用 `CrossesCliff`（§5.2）。開火顯形納入本批（使用者「照建議」）：§4.7、V14-A20、B16、突變 C15～C16（r1 起＝K15～K16）。丁案（加 0→3、0→6 崖台↔谷底斜坡）經使用者詢問利弊、主對話回答後，使用者仍選甲。**§13 Q14（2026-09-30，使用者「按照建議」）**：保留 v0.13.1「核心圈不得與任何佔塔圈重疊」等 `AbyssalVanguardLogicTests` 舊條文、不刪（核心依規格取用，平地夾具仍守 v0.13.1）。
 - **草案（2026-09-30）**：依 `vow-toolchain/v0140-alignment.md` 起草。可達性、斜坡淨寬、高度連續與遮擋由 `vow-toolchain/v0140-reachability.py` 推導（重建模型）；斜坡寬度從 3.0m 改為 3.5m 的理由見 §2.2（3.0m 時崖台斜坡格點淨寬只剩 1.15m）；地熱點座標以腳本搜尋（原本畫在示意圖位置的初值 (2.59375,1.5)／落點 (3.96875,2.2890625) 在格點上被外擴蓋掉，改用搜尋結果）。
+
+- **凍結（2026-09-30）**：r3fix 覆審可凍結；凍結前補 R3F-1（開局定義加「點 CAPTURE 後等 30 幀」）。R3F-2（LOW）不修：N1 巨獸逐幀模擬只存在覆審者暫存副本、無法由 toolchain 重現，僅作為凍結前可行性依據；B11 本身在 Unity PlayMode 實跑驗收，不依賴該模擬數字。
 
 ## 附表：裁定 → 條文對照
 
