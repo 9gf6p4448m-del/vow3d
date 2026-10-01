@@ -66,6 +66,8 @@ namespace Vow.Input
         public event Action<int> OnUiRegionTapped;
 
         public InputRoutingManager Routing => _routing;
+        // 僅有效 UI tap 事件同步回呼時讀取；座標來自同一個手勢路由，未另取裝置輸入。
+        public Vector2 UiTapScreenPosition => new Vector2(Router.LastUiTapX, Router.LastUiTapY);
         public float FlickMinRadiusPixels => _minRadiusPx;
         public float FlickMaxRadiusPixels => _maxRadiusPx;
         public float PipZonePixels => _pipZonePx;

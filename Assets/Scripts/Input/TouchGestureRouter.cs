@@ -78,6 +78,8 @@ namespace Vow.Input
         public float PipOriginY => _pip.OriginY;
         public float PipDirX => _pip.DirX;
         public float PipDirY => _pip.DirY;
+        public float LastUiTapX { get; private set; }
+        public float LastUiTapY { get; private set; }
 
         public bool IsRuneHeld => _rune.Held;
         public bool IsRuneDragging => _rune.Held && _rune.Dragging;
@@ -253,7 +255,11 @@ namespace Vow.Input
                     if (_routing.Route(x, y, ScreenWidth, ScreenHeight, _activeMode, out int regionId) == TouchRoute.UiRegion
                         && regionId == _slotUiRegion[slot]
                         && _routing.UiRegionTouchVersion(regionId) == _slotUiRegionTouchVersion[slot])
+                    {
+                        LastUiTapX = x;
+                        LastUiTapY = y;
                         _sink.OnUiRegionTapped(regionId);
+                    }
                     break;
 
                 case TouchRoute.World:
