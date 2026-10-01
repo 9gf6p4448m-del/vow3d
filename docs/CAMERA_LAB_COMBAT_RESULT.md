@@ -37,9 +37,9 @@
   - 改動前是 333 過，本輪新增 16 個。
 - Unity EditMode：
   - 完整套件 350 個：342 過、0 敗、8 略。略過的 8 個與 `edbe752` 基線（334 個：326 過、8 略）同一組。
-  - 定向（新測試加上路由、大腦、狀態機、CadenceSim）70/70，於 `0802ceb` 跑；`4409793` 以完整套件覆蓋。
+  - 定向（新測試加上路由、大腦、狀態機、CadenceSim）在 `5b1c5ce` 上 70/70。
 - Unity PlayMode：
-  - 定向（新測試、ThirdPerson、CameraComparisonLab、RuneWall、ZeroAllocation）在最終 commit 重跑，數字見回報。
+  - 定向（新測試、ThirdPerson、CameraComparisonLab、RuneWall、ZeroAllocation、GreyboxSmoke）在 `5b1c5ce` 上 44/44。
   - 完整套件（`4409793`）273 個：255 過、18 敗。`edbe752` 同環境完整套件 264 個：246 過、18 敗。兩邊失敗名單與失敗訊息逐字相同（C03 JIT profile 1 條、Capture19RageScript 17 條，都是既有問題，本輪未處理）。
 - 鑑別力（反向驗證）：
   - 第 1 輪：把「自由滑步暫停步行」與「切回 TOP 清實牆覆寫」故意改壞，對應 2 條測試變紅：滑步位移變成 2.133m；牆心 x 從 -6 變成 10。
