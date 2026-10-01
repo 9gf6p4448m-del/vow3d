@@ -99,6 +99,28 @@ namespace Vow.Tests.PlayMode
             Assert.Less(dummy.Health, health, "1.0s 內必須真的命中");
         }
 
+        [UnityTest] // F3：木樁在背後 3m（錐外）→退回最近者，真的命中；背後 9m→不出手
+        public IEnumerator F3_AttackButton_ConeEmpty_FallsBackToNearestWithinEightMetres()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(dummy.transform.position + Vector3.forward * 9f);
+            Assert.AreEqual(0f, _lab.YawDegrees);
+            TapAttack();
+            Assert.AreEqual(1, _lab.AimAttackCount);
+            Assert.IsNull(_lab.LastAimTarget, "背後 9m 超出 8m：不出手");
+
+            yield return WarpAndSettle(dummy.transform.position + Vector3.forward * 3f);
+            float health = dummy.Health;
+            TapAttack();
+            Assert.AreEqual(2, _lab.AimAttackCount);
+            Assert.AreSame(dummy, _lab.LastAimTarget, "錐內無目標→退回背後 3m 的木樁");
+            Assert.AreSame(dummy, _hero.CurrentTarget, "按下當下就走原普攻鎖定");
+            float deadline = Time.time + 1f;
+            while (dummy.Health >= health && Time.time < deadline) yield return null;
+            Assert.Less(dummy.Health, health, "1.0s 內必須真的命中（含轉身）");
+        }
+
         [UnityTest] // D1／E：搖桿按住推動中同時按 ATK
         public IEnumerator D1_StickHeldWhileAttack_StillLocksDummy_AndKeepsStick()
         {

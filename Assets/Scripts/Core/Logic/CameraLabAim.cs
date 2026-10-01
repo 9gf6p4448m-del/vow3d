@@ -46,14 +46,17 @@ namespace Vow.Core.Logic
 
     // 準星錐挑目標：串流式（Begin 後逐一 Consider），值型別、零配置。
     // 規則：水平夾角 ≤ 半角、水平距離 ≤ 上限；取夾角最小，夾角相同（cos 差 < 1e-4）取較近。
+    // 錐內沒有候選時退回距離上限內最近者（不看角度；距離相同取先 Consider 者）＝ResolvedIndex。
     public struct AimTargetPicker
     {
         private const float CosTieEpsilon = 1e-4f;
 
         private float _originX, _originZ, _aimX, _aimZ, _cosLimit, _maxDistance;
-        private float _bestCos, _bestDistance;
+        private float _bestCos, _bestDistance, _nearestDistance;
 
         public int BestIndex { get; private set; }
+        public int NearestIndex { get; private set; }
+        public int ResolvedIndex => BestIndex >= 0 ? BestIndex : NearestIndex;
 
         public void Begin(float originX, float originZ, float aimX, float aimZ, float coneHalfAngleDegrees, float maxDistance)
         {
@@ -66,7 +69,9 @@ namespace Vow.Core.Logic
             _maxDistance = maxDistance;
             _bestCos = float.NegativeInfinity;
             _bestDistance = float.PositiveInfinity;
+            _nearestDistance = float.PositiveInfinity;
             BestIndex = -1;
+            NearestIndex = -1;
         }
 
         // 回傳這個候選是否落在準星錐內（不論是否成為最佳）。
@@ -77,10 +82,15 @@ namespace Vow.Core.Logic
             float dz = targetZ - _originZ;
             double distance = Math.Sqrt((double)dx * dx + (double)dz * dz);
             if (distance > _maxDistance) return false;
+            float d = (float)distance;
+            if (d < _nearestDistance)
+            {
+                _nearestDistance = d;
+                NearestIndex = index;
+            }
             float cos = distance < 1e-6 ? 1f : (float)((dx * _aimX + dz * _aimZ) / distance);
             if (cos < _cosLimit) return false;
 
-            float d = (float)distance;
             bool better = cos > _bestCos + CosTieEpsilon
                           || (cos >= _bestCos - CosTieEpsilon && d < _bestDistance);
             if (better)

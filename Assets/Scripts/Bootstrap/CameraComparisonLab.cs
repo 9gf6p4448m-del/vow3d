@@ -358,11 +358,13 @@ namespace Vow.Bootstrap
                 Vector3 p = candidate.TargetTransform.position;
                 picker.Consider(i, p.x, p.z);
             }
-            if (picker.BestIndex < 0) return;
-            LastAimTarget = roster.Get(picker.BestIndex);
+            // 錐內優先；錐內沒有就退回 8m 內最近者，8m 內都沒有才不出手。
+            int picked = picker.ResolvedIndex;
+            if (picked < 0) return;
+            LastAimTarget = roster.Get(picked);
             _input.SubmitCombatTarget(LastAimTarget);
 #if UNITY_WEBGL && !UNITY_EDITOR
-            Debug.Log("[CAMERA LAB] ATK target=" + roster.GetBehaviour(picker.BestIndex).name);
+            Debug.Log("[CAMERA LAB] ATK target=" + roster.GetBehaviour(picked).name + " cone=" + (picker.BestIndex >= 0));
 #endif
         }
 

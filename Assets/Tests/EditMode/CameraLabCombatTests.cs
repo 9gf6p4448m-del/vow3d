@@ -77,6 +77,34 @@ namespace Vow.Tests
             Assert.AreEqual(0, Pick(1f, 0f, side[0], side[1], 0f, 3f), "aim 改 +x 時改選 +x 方向目標");
         }
 
+        private static int Resolve(float aimX, float aimZ, params float[] xz)
+        {
+            AimTargetPicker picker = default;
+            picker.Begin(0f, 0f, aimX, aimZ, CameraLabAim.ConeHalfAngleDegrees, CameraLabAim.MaxAimDistance);
+            for (int i = 0; i < xz.Length / 2; i++) picker.Consider(i, xz[i * 2], xz[i * 2 + 1]);
+            return picker.ResolvedIndex;
+        }
+
+        [Test] // F1：錐內無目標時退回 8m 內最近者
+        public void A2F_AimFallback_NearestWithinEightMetres_WhenConeEmpty()
+        {
+            Assert.AreEqual(0, Resolve(0f, 1f, 0f, -3f), "正後方 3m：錐內無目標→退回選它");
+            Assert.AreEqual(0, Resolve(0f, 1f, Polar(31f, 4f)), "31° 錐外→退回選它");
+            Assert.AreEqual(0, Resolve(0f, 1f, 0f, -7.99f), "背後 7.99m 仍在範圍內");
+            Assert.AreEqual(-1, Resolve(0f, 1f, 0f, -8.01f), "背後 8.01m 超出範圍不選");
+            Assert.AreEqual(-1, Resolve(0f, 1f), "無候選");
+
+            float[] backFar = Polar(180f, 6f), sideNear = Polar(90f, 2f);
+            Assert.AreEqual(1, Resolve(0f, 1f, backFar[0], backFar[1], sideNear[0], sideNear[1]), "錐外取最近");
+            Assert.AreEqual(0, Resolve(0f, 1f, sideNear[0], sideNear[1], backFar[0], backFar[1]), "順序不影響");
+
+            float[] coneFar = Polar(10f, 7f), backNear = Polar(180f, 1f);
+            Assert.AreEqual(0, Resolve(0f, 1f, coneFar[0], coneFar[1], backNear[0], backNear[1]), "錐內有目標時錐內優先，即使錐外較近");
+
+            float[] l = Polar(90f, 3f), r = Polar(-90f, 3f);
+            Assert.AreEqual(0, Resolve(0f, 1f, l[0], l[1], r[0], r[1]), "距離相同取先 Consider 者");
+        }
+
         // ───────────────────────── B 主動滑步 ─────────────────────────
 
         [Test] // B1
