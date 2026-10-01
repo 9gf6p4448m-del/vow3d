@@ -72,3 +72,16 @@
 - GDD:88：拇指角度決定石牆朝向。第三人稱改為只取拉伸量，朝向固定為鏡頭前方。
 - GDD:100：全隊石牆上限 2 面。本輪沿用，沒有改成藍圖的「各自管理」。
 - GDD:56：滑動方向吸附 8 向。DASH 方向取搖桿的連續角度，不吸附。
+
+## 預覽送達（2026-10-01 21:10 +08:00，使用者本回合明確同意）
+
+上方「本輪沒有部署／沒有更新 `vow-camera-preview`」描述的是試作當時；其後已把本分支最新版推到獨立預覽庫。正式 VOW（vow3d 的 gh-pages）完全沒動。
+
+- 網址：https://9gf6p4448m-del.github.io/vow-camera-preview/?v=d745513 。手機橫放，按左上 THIRD。
+- 預覽庫 `9gf6p4448m-del/vow-camera-preview` main 提交 `045bce81c812003424cf93d61a42d3c1b40fe9fc`（`2026-10-01T21:10:22+08:00`），只含生成的 WebGL 檔案；變更 4 個檔：`Build/WebGL.data.unityweb`、`Build/WebGL.framework.js.unityweb`、`Build/WebGL.wasm.unityweb`、`index.html`；`sw.js`（自我解除版）與 `WebGL.loader.js` 未變。
+- Pages 建置：`gh api .../pages/builds/latest` 讀到 `status=built`、commit 同上、`updated_at=2026-10-01T13:11:11Z`、`error=null`。
+- 版本列（線上讀回）：`build 2026-10-01 13:09 UTC · d745513`。建置來源 HEAD `d745513`，執行碼與 `4409793` 相同。先前 `4409793` 產物與此次乾淨重建的 wasm／data／framework／loader SHA256 逐檔相同，只有 index.html 的版本列不同。
+- 線上 loader／framework／wasm／data／index.html／sw.js HTTP 200，SHA256 與本機產物 6/6 逐檔相同。
+- 本機與線上都跑 `toolchain/combat/browser_check.py`（Chromium 844×390 DPR2 hasTouch，CDP 觸控）：THIRD 進入、ATK／DASH／符印鈕座標出現，DASH `FreeDash` moved=1.400，ATK `Dummy_Target`，牆心 (0.00,9.40) 誤差 0，pageerror 0；WebKit 載入並輸出版面紀錄，pageerror 0。線上 console 有 6 則 AudioContext 需使用者手勢的警告，不宣稱無警告。
+- 看到舊版：關閉分頁重開或清網站資料，再核對版本列；sw.js 會解除舊 service worker。
+- 未驗證：真機手感、真機效能與長時間遊玩。
