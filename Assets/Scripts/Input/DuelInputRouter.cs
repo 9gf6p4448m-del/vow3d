@@ -62,6 +62,7 @@ namespace Vow.Input
         // Off：只有單挑 KO 停頓封鎖（v0.7.0 原樣）；佔領：英雄倒地與結算停頓也封鎖（R2）。
         private Func<bool> _movementInputLocked;
         public void SetMovementLockQuery(Func<bool> locked) { _movementInputLocked = locked; }
+        public bool IsContinuousInputBlocked => IsPaused;
         private bool IsPaused => Gate.HeroInputBlocked || (_movementInputLocked != null && _movementInputLocked());
 
         private void HandleMove(Vector3 point)

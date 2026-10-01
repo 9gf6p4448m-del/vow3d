@@ -20,6 +20,20 @@ namespace Vow.Core
         private PlayerStateMachine _stateMachine;
         private HeroCombatBrain<ICombatTarget> _brain;
 
+        private Func<Vector3> _continuousMove;
+        private bool _continuousStarted, _continuousRequested;
+        private Func<int> _continuousIntent;
+        private int _lastContinuousIntent;
+        public void SetContinuousMoveSource(Func<Vector3> source, Func<int> intent = null)
+        {
+            _continuousMove = source;
+            _continuousIntent = intent;
+            _lastContinuousIntent = intent != null ? intent() : 0;
+            _continuousRequested = false;
+            if (_continuousStarted && _locomotion != null) _locomotion.Stop();
+            _continuousStarted = false;
+        }
+
         private IPlayerInputService _input;
         private ICombatFeedbackService _feedback;
         private IHapticService _haptics;
@@ -270,7 +284,27 @@ namespace Vow.Core
             }
             float dt = Time.deltaTime;
             TickQuicksand(dt);
-            _locomotion.Step(dt);
+            Vector3 continuous = _continuousMove != null ? _continuousMove() : Vector3.zero;
+            bool pushing = continuous.sqrMagnitude > 0.0001f && !_locomotion.IsMovementLocked;
+            int intent = _continuousIntent != null ? _continuousIntent() : 0;
+            if (intent != _lastContinuousIntent) { _continuousRequested = pushing; _lastContinuousIntent = intent; }
+            if (!pushing) _continuousRequested = false;
+            if (pushing && _continuousRequested && _stateMachine.CanMove)
+            {
+                Vector3 p = transform.position;
+                _brain.CommandMove(new GroundPoint(p.x, p.y, p.z));
+                _locomotion.Stop();
+                _continuousStarted = true;
+                _continuousRequested = false;
+            }
+            if (!pushing && _continuousStarted)
+            {
+                _locomotion.Stop();
+                _continuousStarted = false;
+            }
+            if (pushing && _continuousStarted && (_brain.State == PlayerState.Idle || _brain.State == PlayerState.Moving))
+                _locomotion.StepContinuous(continuous, dt);
+            else _locomotion.Step(dt);
             _mover.Step(dt);
             _brain.Tick(dt);
         }
@@ -332,6 +366,8 @@ namespace Vow.Core
         {
             if (_locomotion.IsVentFlying) return;
             if (!CanEngage(target)) return;   // 批 4：收斂成單一判準（陣營＋蒸氣遮蔽）
+            // 目標tap接手導航；仍按著但沒新操作的搖桿不搶走追擊。
+            _continuousStarted = _continuousRequested = false;
             _brain.CommandAttack(target);
         }
 

@@ -4,6 +4,7 @@ using UnityEngine.SceneManagement;
 using Vow.Core;
 using Vow.Core.Logic;
 using Vow.Input;
+using Vow.UI;
 
 namespace Vow.Bootstrap
 {
@@ -28,7 +29,18 @@ namespace Vow.Bootstrap
         private bool _originalRigEnabled;
         private Vector3 _originalPosition;
         private Quaternion _originalRotation;
-        private float _originalFov, _yaw;
+        private float _originalFov, _yaw, _pitch = ThirdPersonPitch;
+        private DebugHud _hud;
+        public float PitchDegrees => _pitch;
+        private bool InputPermitted => _hero != null && _hero.IsAlive
+            && !_hero.GetComponent<HeroLocomotion>().IsVentFlying
+            && !_bootstrap.HeroInputBlockedForLab;
+        private Vector3 ReadContinuousMove()
+        {
+            if (!IsThirdPerson || !InputPermitted) { _input.ContinuousRouter.CancelContinuousTouches(); return Vector3.zero; }
+            TouchGestureRouter r = _input.ContinuousRouter;
+            return Quaternion.Euler(0f, _yaw, 0f) * new Vector3(r.MoveX, 0f, r.MoveY);
+        }
         private int _width, _height;
         private CaptureMatchState _captureState;
         private bool _talentVisible;
@@ -85,6 +97,7 @@ namespace Vow.Bootstrap
             if (_hero == null) { enabled = false; return; }
             _region = _input.Routing.RegisterUiRegion(default);
             if (_region < 0) { Debug.LogWarning("[CAMERA LAB] No UI region available.", this); enabled = false; return; }
+            _hud = Object.FindObjectOfType<DebugHud>();
             _ready = true;
             Subscribe();
             RefreshLayout();
@@ -126,15 +139,23 @@ namespace Vow.Bootstrap
                 _originalPosition = _rig.transform.position;
                 _originalRotation = _rig.transform.rotation;
                 _originalFov = _camera.fieldOfView;
+                _pitch = ThirdPersonPitch;
                 _yaw = 0f;
                 _rig.enabled = false;
                 IsThirdPerson = true;
                 _camera.fieldOfView = ThirdPersonFieldOfView;
+                _input.ContinuousRouter.SetThirdPersonEnabled(true);
+                _hero.SetContinuousMoveSource(ReadContinuousMove, () => _input.ContinuousRouter.MoveIntentVersion);
+                if (_hud != null) _hud.SetCameraLabThirdPerson(true);
+                RefreshLayout();
                 PositionThirdPerson();
             }
             else
             {
                 IsThirdPerson = false;
+                _input.ContinuousRouter.SetThirdPersonEnabled(false);
+                _hero.SetContinuousMoveSource(null);
+                if (_hud != null) _hud.SetCameraLabThirdPerson(false);
                 if (_rig != null)
                 {
                     _rig.transform.SetPositionAndRotation(_originalPosition, _originalRotation);
@@ -142,6 +163,7 @@ namespace Vow.Bootstrap
                     if (_originalRigEnabled) _rig.SnapToTarget();
                 }
                 if (_camera != null) _camera.fieldOfView = _originalFov;
+                RefreshLayout();
             }
         }
 
@@ -156,6 +178,7 @@ namespace Vow.Bootstrap
         {
             if (!IsThirdPerson) return;
             _yaw = 0f;
+            _pitch = ThirdPersonPitch;
             PositionThirdPerson();
         }
 
@@ -166,11 +189,21 @@ namespace Vow.Bootstrap
                 RefreshLayout();
         }
 
-        private void LateUpdate() { if (_ready && IsThirdPerson) PositionThirdPerson(); }
+        private void LateUpdate()
+        {
+            if (!_ready || !IsThirdPerson) return;
+            TouchGestureRouter router = _input.ContinuousRouter;
+            if (!InputPermitted) router.CancelContinuousTouches();
+            float sensitivity = 2.5f / Mathf.Clamp(_input.PixelsPerMillimeter, 3f, 25f);
+            _yaw = Mathf.Repeat(_yaw + router.LookDeltaX * sensitivity, 360f);
+            _pitch = Mathf.Clamp(_pitch - router.LookDeltaY * sensitivity, 10f, 50f);
+            router.ConsumeLook();
+            PositionThirdPerson();
+        }
 
         private void PositionThirdPerson()
         {
-            Quaternion rotation = Quaternion.Euler(ThirdPersonPitch, _yaw, 0f);
+            Quaternion rotation = Quaternion.Euler(_pitch, _yaw, 0f);
             Vector3 focus = _hero.transform.position + Vector3.up * FocusHeight;
             Vector3 direction = -(rotation * Vector3.forward);
             int count = Physics.SphereCastNonAlloc(focus, CollisionRadius, direction, _hits,
@@ -188,6 +221,7 @@ namespace Vow.Bootstrap
 
         private void RefreshLayout()
         {
+            if (IsThirdPerson) _input.ContinuousRouter.CancelActiveTouches();
             _width = Screen.width;
             _height = Screen.height;
             _captureState = _bootstrap.CaptureState;
@@ -208,7 +242,7 @@ namespace Vow.Bootstrap
             _layoutAvailable = width >= 156f && y + height < _height - 12f;
             if (_captureState == CaptureMatchState.Active && _height / scale <= 400f
                 && y + height > (hud.Water.YMin - 8f) * scale) _layoutAvailable = false;
-            if (!_layoutAvailable && IsThirdPerson) SetThirdPerson(false);
+            if (_width <= _height && IsThirdPerson) SetThirdPerson(false);
             _panel = new Rect(x, y, width, height);
             if (!_layoutAvailable) _panel = new Rect(_width / 2f - 100f, _height - 38f, 200f, 24f);
             _title = new Rect(x + 4f, y + 2f, width - 8f, 22f);
@@ -218,6 +252,17 @@ namespace Vow.Bootstrap
             for (int i = 0; i < 4; i++)
                 _buttons[i] = new Rect(x + 5f + (i % columns) * (buttonWidth + 4f),
                     y + 26f + (i / columns) * 46f, buttonWidth, 42f);
+            if (IsThirdPerson)
+            {
+                float unit = Mathf.Min(_width / 844f, _height / 390f);
+                _layoutAvailable = _width > _height;
+                _panel = new Rect(8f * unit, 8f * unit, 310f * unit, 70f * unit);
+                _title = new Rect(_panel.x + 4f, _panel.y, _panel.width - 8f, 20f * unit);
+                _help = new Rect(_panel.x + 4f, _panel.y + 50f * unit, _panel.width - 8f, 20f * unit);
+                for (int i = 0; i < 4; i++) _buttons[i] = new Rect(_panel.x + (4f + i * 76f) * unit, _panel.y + 22f * unit, 72f * unit, 28f * unit);
+                _input.ContinuousRouter.MoveZone = new ScreenRegion(0f, 0f, _width * 0.42f, _height * 0.55f);
+                _input.ContinuousRouter.JoystickRadiusPixels = 55f * unit;
+            }
             _input.Routing.InvalidateUiRegionTouches(_region);
             _input.Routing.UpdateUiRegion(_region, new ScreenRegion(_panel.xMin, _height - _panel.yMax, _panel.xMax, _height - _panel.yMin));
             _input.Routing.SetUiRegionActive(_region, enabled);
@@ -261,7 +306,16 @@ namespace Vow.Bootstrap
             GUI.Box(_buttons[1], "LEFT", _buttonStyle);
             GUI.Box(_buttons[2], "RIGHT", _buttonStyle);
             GUI.Box(_buttons[3], "RESET", _buttonStyle);
-            GUI.Label(_help, _panel.width >= 300f ? "Tap ground: move | enemy: attack" : "Tap ground / enemy", _labelStyle);
+            if (IsThirdPerson)
+            {
+                TouchGestureRouter r = _input.ContinuousRouter;
+                float unit = Mathf.Min(_width / 844f, _height / 390f);
+                Vector2 origin = r.MoveHeld ? new Vector2(r.MoveOriginX, _height - r.MoveOriginY) : new Vector2(92f * unit, _height - 90f * unit);
+                float radius = r.JoystickRadiusPixels;
+                GUI.Box(new Rect(origin.x - radius, origin.y - radius, radius * 2f, radius * 2f), "MOVE", _labelStyle);
+                GUI.Box(new Rect(origin.x + r.MoveX * radius - 14f, origin.y - r.MoveY * radius - 14f, 28f, 28f), GUIContent.none);
+            }
+            GUI.Label(_help, IsThirdPerson ? "Left: move | Right: look / tap enemy" : _panel.width >= 300f ? "Tap ground: move | enemy: attack" : "Tap ground / enemy", _labelStyle);
         }
     }
 }

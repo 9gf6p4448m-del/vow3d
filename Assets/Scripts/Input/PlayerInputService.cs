@@ -65,6 +65,7 @@ namespace Vow.Input
         // 已登記的 UI 區域被點擊（HUD 按鈕走這裡，不另接 EventSystem——全專案只有一條輸入路徑）。
         public event Action<int> OnUiRegionTapped;
 
+        public TouchGestureRouter ContinuousRouter => Router;
         public InputRoutingManager Routing => _routing;
         // 僅有效 UI tap 事件同步回呼時讀取；座標來自同一個手勢路由，未另取裝置輸入。
         public Vector2 UiTapScreenPosition => new Vector2(Router.LastUiTapX, Router.LastUiTapY);
@@ -183,6 +184,15 @@ namespace Vow.Input
                                 Time.unscaledTimeAsDouble, _simulatedHoldStartTime[slot]);
         }
 
+        public void CancelSimulatedHold(int slot)
+        {
+            if (slot < 0 || slot >= SimulatedHoldSlots) throw new ArgumentOutOfRangeException(nameof(slot));
+            if (!_simulatedHoldActive[slot]) return;
+            _simulatedHoldActive[slot] = false;
+            Router.ProcessTouch(_simulatedHoldTouchId[slot], TouchPhaseKind.Canceled,
+                _simulatedHoldX[slot], _simulatedHoldY[slot], Time.unscaledTimeAsDouble, _simulatedHoldStartTime[slot]);
+        }
+
         public void EndSimulatedHold() => EndSimulatedHold(0);
 
         public void EndSimulatedHold(int slot)
@@ -220,8 +230,13 @@ namespace Vow.Input
 
         private void OnDisable()
         {
+            Router.CancelActiveTouches();
+            _mouseHeld = false;
             EnhancedTouchSupport.Disable();
         }
+
+        private void OnApplicationFocus(bool focused) { if (!focused) Router.CancelActiveTouches(); }
+        private void OnApplicationPause(bool paused) { if (paused) Router.CancelActiveTouches(); }
 
         private void Update()
         {
@@ -306,6 +321,7 @@ namespace Vow.Input
 
         private void RefreshScreenMetrics()
         {
+            if (_lastScreenWidth != 0) Router.CancelActiveTouches();
             _lastScreenWidth = Screen.width;
             _lastScreenHeight = Screen.height;
 
@@ -328,7 +344,7 @@ namespace Vow.Input
         // 於是「先推好方向、命中幀自動滑出」不需要任何特例。桌機測試以 WASD／方向鍵代替左手拇指。
         private void EmitHeldPipVector(TouchGestureRouter router)
         {
-            if (router.ActiveMode != ControlMode.ModeB_DualZonePip) return;
+            if (router.ThirdPersonEnabled || router.ActiveMode != ControlMode.ModeB_DualZonePip) return;
 
             if (router.HasPipVector)
             {
@@ -411,7 +427,7 @@ namespace Vow.Input
             int picked = _tapHits[pick].colliderInstanceID;
             if (_targetResolver != null && _targetResolver.TryResolve(picked, out ICombatTarget target) && target.IsAlive)
                 OnCombatTargetSelected?.Invoke(target);
-            else
+            else if (!Router.ThirdPersonEnabled)
                 OnMoveDestinationSelected?.Invoke(_tapHits[pick].point);
         }
 

@@ -296,6 +296,17 @@ namespace Vow.Core
         }
 
         // 由 HeroController.Update 統一驅動，確保「移動 → 滑步 → 大腦」的執行順序固定。
+        public void StepContinuous(Vector3 direction, float dt)
+        {
+            EnsureInitialized();
+            if (IsMovementLocked || !TryPlaceOnNavMesh()) return;
+            direction.y = 0f;
+            direction = Vector3.ClampMagnitude(direction, 1f);
+            ApplyDisplacement(direction * (_baseMoveSpeed * _speedMultiplier * dt));
+            if (direction.sqrMagnitude > 0.0001f)
+                _self.rotation = Quaternion.RotateTowards(_self.rotation, Quaternion.LookRotation(direction), _turnSpeed * dt);
+        }
+
         public void Step(float dt)
         {
             if (_ventFlying)

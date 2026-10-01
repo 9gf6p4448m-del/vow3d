@@ -253,6 +253,21 @@ namespace Vow.UI
         private bool DebugToolsLocked => _duelRound != null && CurrentGate().DebugToolsLocked;
         // 峽谷局收起除錯區域，讓世界點選通過；平地規則仍保留既有按鈕攔截與 MatchGate。
         private bool CaptureDebugControlsLocked => _vents != null && InCaptureMode && DebugToolsLocked;
+        private bool _cameraLabThirdPerson;
+        public void SetCameraLabThirdPerson(bool thirdPerson)
+        {
+            if (_cameraLabThirdPerson == thirdPerson) return;
+            _cameraLabThirdPerson = thirdPerson;
+            _debugRegionsInitialized = false;
+            if (_input != null)
+            {
+                int[] hidden = { _modeRegion, _hitboxRegion, _latencyRegion, _gridRegion, _enemyWallRegion, _turretRegion, _elemRegion };
+                foreach (int id in hidden) _input.Routing.InvalidateUiRegionTouches(id);
+                _input.Routing.SetUiRegionActive(_modeRegion, !thirdPerson);
+            }
+            RecalculateLayout();
+            RefreshDebugRegions();
+        }
         private bool _debugRegionsInitialized;
         private bool _debugRegionsLocked;
 
@@ -754,6 +769,17 @@ namespace Vow.UI
             _fireRect = ToRect(layout.Fire);
             _windRect = ToRect(layout.Wind);
             _elemRect = ToRect(layout.Elem);
+            if (_cameraLabThirdPerson)
+            {
+                float right = Screen.width / _scale - 110f;
+                float bottom = Screen.height / _scale - 48f;
+                _waterRect = new Rect(right - 204f, bottom, 64f, 40f);
+                _fireRect = new Rect(right - 136f, bottom, 64f, 40f);
+                _windRect = new Rect(right - 68f, bottom, 64f, 40f);
+                _input.Routing.InvalidateUiRegionTouches(_waterRegion);
+                _input.Routing.InvalidateUiRegionTouches(_fireRegion);
+                _input.Routing.InvalidateUiRegionTouches(_windRegion);
+            }
             _panelHeight = layout.PanelHeight;
             // v0.8.0：右上面板與 CAPTURE 鈕同樣向 DebugHudLayout 要（§2.4／R14）。Off 時面板高 72，佔領模式另取 116 那一份。
             _matchPanelRect = ToRect(layout.MatchPanel);
@@ -795,7 +821,7 @@ namespace Vow.UI
         private void RefreshDebugRegions()
         {
             if (_input == null || _modeRegion < 0) return;
-            bool locked = CaptureDebugControlsLocked;
+            bool locked = CaptureDebugControlsLocked || _cameraLabThirdPerson;
             if (_debugRegionsInitialized && locked == _debugRegionsLocked) return;
             _debugRegionsInitialized = true;
             _debugRegionsLocked = locked;
@@ -840,6 +866,17 @@ namespace Vow.UI
             if (Event.current.type != EventType.Repaint) return;
             EnsureStyles();
 
+            if (_cameraLabThirdPerson)
+            {
+                Matrix4x4 saved = GUI.matrix;
+                GUI.matrix = Matrix4x4.Scale(new Vector3(_scale, _scale, 1f));
+                DrawDuelPanel(); DrawCaptureTopRows(); DrawTalentPanel();
+                if (_castWater != null) { Fill(_waterRect, ButtonColor); GUI.Label(_waterRect, _waterLabel, _buttonLabel); }
+                if (_castFire != null) { Fill(_fireRect, ButtonColor); GUI.Label(_fireRect, _fireLabel, _buttonLabel); }
+                if (_castWind != null) { Fill(_windRect, ButtonColor); GUI.Label(_windRect, _windLabel, _buttonLabel); }
+                GUI.matrix = saved;
+                return;
+            }
             Matrix4x4 previous = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(_scale, _scale, 1f));
 

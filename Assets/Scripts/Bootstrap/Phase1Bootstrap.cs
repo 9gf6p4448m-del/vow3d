@@ -93,6 +93,7 @@ namespace Vow.Bootstrap
 
         // 批 3：PlayMode 測試 asmdef 只看得到 Vow.Core／Vow.Combat／Vow.Bootstrap（V6 不得加引用），
         // 所以輸入服務與除錯 HUD 一律以 Vow.Core 的介面型別從這裡交出去。
+        public bool HeroInputBlockedForLab => _duelInput != null && _duelInput.IsContinuousInputBlocked;
         public IPlayerInputService InputService => _input;
         public IWorldTapInput WorldTapInput => _input;
         public IDebugHudPanel HudPanel => _hud;

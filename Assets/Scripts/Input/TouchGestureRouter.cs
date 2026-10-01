@@ -56,6 +56,42 @@ namespace Vow.Input
         private RuneGestureTracker _rune;
         private ControlMode _activeMode;
 
+        public bool ThirdPersonEnabled { get; private set; }
+        public ScreenRegion MoveZone;
+        public float JoystickRadiusPixels = 60f;
+        public float MoveX { get; private set; }
+        public float MoveY { get; private set; }
+        public float LookDeltaX { get; private set; }
+        public float LookDeltaY { get; private set; }
+        public float MoveOriginX { get; private set; }
+        public float MoveOriginY { get; private set; }
+        public int MoveIntentVersion { get; private set; }
+        public bool MoveHeld => _moveSlot >= 0;
+        private int _moveSlot = -1, _lookSlot = -1;
+        private readonly float[] _originX = new float[MaxTouches], _originY = new float[MaxTouches];
+        private readonly float[] _lastX = new float[MaxTouches], _lastY = new float[MaxTouches];
+        private readonly double[] _startTime = new double[MaxTouches];
+        private readonly bool[] _lookDragged = new bool[MaxTouches];
+        public void SetThirdPersonEnabled(bool enabled)
+        {
+            if (ThirdPersonEnabled == enabled) return;
+            CancelActiveTouches();
+            ThirdPersonEnabled = enabled;
+        }
+        public void ConsumeLook() { LookDeltaX = LookDeltaY = 0f; }
+        public void CancelContinuousTouches()
+        {
+            for (int i = 0; i < MaxTouches; i++)
+                if (_slotUsed[i] && (_slotRoute[i] == TouchRoute.ContinuousMove || _slotRoute[i] == TouchRoute.CameraLook))
+                    _slotRoute[i] = TouchRoute.Rejected;
+            ClearContinuous();
+        }
+        private void ClearContinuous()
+        {
+            _moveSlot = _lookSlot = -1;
+            MoveX = MoveY = LookDeltaX = LookDeltaY = 0f;
+        }
+
         public float ScreenWidth;
         public float ScreenHeight;
         public float MinRadiusPixels;
@@ -88,6 +124,7 @@ namespace Vow.Input
         // 回合切換時將仍按著的手指作廢直到放開，避免舊拖曳在下一局生成符印。
         public void CancelActiveTouches()
         {
+            ClearContinuous();
             _pip.End();
             EmitRune(_rune.Cancel());
             for (int i = 0; i < MaxTouches; i++)
@@ -104,6 +141,7 @@ namespace Vow.Input
             set
             {
                 if (_activeMode == value) return;
+                ClearContinuous();
                 _activeMode = value;
                 _pip.End();
                 EmitRune(_rune.Cancel());
@@ -187,13 +225,27 @@ namespace Vow.Input
             int slot = AllocateSlot(touchId);
             if (slot < 0) return -1;
 
-            TouchRoute route = _routing.Route(x, y, ScreenWidth, ScreenHeight, _activeMode, out int regionId);
+            TouchRoute route = _routing.Route(x, y, ScreenWidth, ScreenHeight,
+                ThirdPersonEnabled ? ControlMode.ModeA_FullScreenFlick : _activeMode, out int regionId);
+            if (ThirdPersonEnabled && route == TouchRoute.World)
+            {
+                route = MoveZone.Contains(x, y) ? TouchRoute.ContinuousMove : x >= ScreenWidth * 0.5f ? TouchRoute.CameraLook : TouchRoute.Rejected;
+                if (route == TouchRoute.ContinuousMove && _moveSlot >= 0
+                    || route == TouchRoute.CameraLook && _lookSlot >= 0) route = TouchRoute.Rejected;
+            }
+            _originX[slot] = _lastX[slot] = x;
+            _originY[slot] = _lastY[slot] = y;
+            _startTime[slot] = now;
+            _lookDragged[slot] = false;
             _slotRoute[slot] = route;
             _slotUiRegion[slot] = regionId;
             _slotUiRegionTouchVersion[slot] = _routing.UiRegionTouchVersion(regionId);
 
             switch (route)
             {
+                case TouchRoute.ContinuousMove:
+                    _moveSlot = slot; MoveOriginX = x; MoveOriginY = y; break;
+                case TouchRoute.CameraLook: _lookSlot = slot; break;
                 case TouchRoute.Pip:
                     if (_pip.Held) _slotRoute[slot] = TouchRoute.Rejected; // 微輪盤一次只認一根手指
                     else _pip.Begin(touchId, x, y);
@@ -223,6 +275,22 @@ namespace Vow.Input
         {
             switch (_slotRoute[slot])
             {
+                case TouchRoute.ContinuousMove:
+                    float mx = (x - _originX[slot]) / System.Math.Max(1f, JoystickRadiusPixels);
+                    float my = (y - _originY[slot]) / System.Math.Max(1f, JoystickRadiusPixels);
+                    float length = (float)System.Math.Sqrt(mx * mx + my * my);
+                    float nextX = length > 1f ? mx / length : mx;
+                    float nextY = length > 1f ? my / length : my;
+                    if (System.Math.Abs(nextX - MoveX) > 0.0001f || System.Math.Abs(nextY - MoveY) > 0.0001f)
+                        unchecked { MoveIntentVersion++; }
+                    MoveX = nextX; MoveY = nextY;
+                    break;
+                case TouchRoute.CameraLook:
+                    float dx = x - _originX[slot], dy = y - _originY[slot];
+                    if (dx * dx + dy * dy > MinRadiusPixels * MinRadiusPixels) _lookDragged[slot] = true;
+                    if (_lookDragged[slot]) { LookDeltaX += x - _lastX[slot]; LookDeltaY += y - _lastY[slot]; }
+                    _lastX[slot] = x; _lastY[slot] = y;
+                    break;
                 case TouchRoute.Pip:
                     _pip.Move(x, y, MinRadiusPixels);
                     break;
@@ -240,8 +308,15 @@ namespace Vow.Input
 
         private void EndTouch(int slot, float x, float y, double now)
         {
+            if (_slotRoute[slot] == TouchRoute.CameraLook) MoveTouch(slot, x, y, now);
             switch (_slotRoute[slot])
             {
+                case TouchRoute.ContinuousMove:
+                    _moveSlot = -1; MoveX = MoveY = 0f; break;
+                case TouchRoute.CameraLook:
+                    _lookSlot = -1;
+                    if (!_lookDragged[slot] && now - _startTime[slot] <= MaxFlickSeconds) _sink.OnWorldTap(x, y);
+                    break;
                 case TouchRoute.Rune:
                     EmitRune(_rune.End(x, y, now, MinRadiusPixels, RuneSaturationPixels, RuneTapSlopPixels, RuneTapMaxSeconds));
                     break;
@@ -273,6 +348,8 @@ namespace Vow.Input
 
         private void CancelTouch(int slot)
         {
+            if (slot == _moveSlot) { _moveSlot = -1; MoveX = MoveY = 0f; }
+            if (slot == _lookSlot) { _lookSlot = -1; ConsumeLook(); }
             if (_slotRoute[slot] == TouchRoute.Pip) _pip.End();
             if (_slotRoute[slot] == TouchRoute.Rune) EmitRune(_rune.Cancel());
             _trackers[slot].Cancel();
