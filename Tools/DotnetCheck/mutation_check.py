@@ -773,13 +773,13 @@ MUTATIONS = [
      "                if (BestIndex >= 0 && false)\n",
      "A2F_AimFallback_NearestWithinEightMetres_WhenConeEmpty"),
     ("CL4H", "退回最近者取較遠者", LOGIC + "CameraLabAim.cs",
-     "            if (d < _nearestDistance)\n", "            if (_nearestDistance == float.PositiveInfinity || d > _nearestDistance)\n",
+     "            if (fallbackEligible && d < _nearestDistance)\n", "            if (fallbackEligible && (_nearestDistance == float.PositiveInfinity || d > _nearestDistance))\n",
      "A2F_AimFallback_NearestWithinEightMetres_WhenConeEmpty"),
     ("CL4I", "退回最近者忽略 8m 上限（錐內仍守 8m）", LOGIC + "CameraLabAim.cs",
      "            if (distance > _maxDistance) return false;\n            float d = (float)distance;\n"
-     "            if (d < _nearestDistance)\n            {\n                _nearestDistance = d;\n                NearestIndex = index;\n            }\n",
+     "            if (fallbackEligible && d < _nearestDistance)\n            {\n                _nearestDistance = d;\n                NearestIndex = index;\n            }\n",
      "            float d = (float)distance;\n"
-     "            if (d < _nearestDistance)\n            {\n                _nearestDistance = d;\n                NearestIndex = index;\n            }\n"
+     "            if (fallbackEligible && d < _nearestDistance)\n            {\n                _nearestDistance = d;\n                NearestIndex = index;\n            }\n"
      "            if (distance > _maxDistance) return false;\n",
      "A2F_AimFallback_NearestWithinEightMetres_WhenConeEmpty"),
     ("CL4J", "黏性邊際 15°→0°（永不黏）", LOGIC + "CameraLabAim.cs",
@@ -799,6 +799,9 @@ MUTATIONS = [
      "                    return BestIndex;\n                }\n                return PreferredIndex >= 0",
      "                    return PreferredIndex >= 0 ? PreferredIndex : BestIndex;\n                }\n                return PreferredIndex >= 0",
      "G2_Sticky_PreferredOutsideCone_ConeCandidateWins"),
+    ("CL4O", "錐外退回忽略視線旗標（牆後敵人也挑）", LOGIC + "CameraLabAim.cs",
+     "            if (fallbackEligible && d < _nearestDistance)\n", "            if (d < _nearestDistance)\n",
+     "H1_FallbackSkipsBlockedCandidates_ConeAndPreferredIgnoreSight"),
     ("CL5","TOP 塑牆也被準星覆寫", LOGIC + "CameraLabAim.cs",
      "            if (!thirdPerson)\n", "            if (thirdPerson)\n",
      "C2_TopDown_WallDirectionIsBitIdentical_AndPlacementUnchanged"),

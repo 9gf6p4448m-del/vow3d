@@ -149,6 +149,29 @@ namespace Vow.Tests
             Assert.AreEqual(-1, ResolveSticky(0f, 1f, -1));
         }
 
+        private static int ResolveSight(int preferred, bool[] clear, params float[] xz)
+        {
+            AimTargetPicker picker = default;
+            picker.Begin(0f, 0f, 0f, 1f, CameraLabAim.ConeHalfAngleDegrees, CameraLabAim.MaxAimDistance);
+            for (int i = 0; i < xz.Length / 2; i++) picker.Consider(i, xz[i * 2], xz[i * 2 + 1], i == preferred, clear[i]);
+            return picker.ResolvedIndex;
+        }
+
+        [Test] // H1：視線被擋只影響錐外退回
+        public void H1_FallbackSkipsBlockedCandidates_ConeAndPreferredIgnoreSight()
+        {
+            float[] blockedNear = Polar(180f, 2f), clearFar = Polar(120f, 5f), ahead = Polar(0f, 4f);
+            Assert.AreEqual(1, ResolveSight(-1, new[] { false, true }, blockedNear[0], blockedNear[1], clearFar[0], clearFar[1]),
+                "錐外：被擋的較近者跳過，改選沒被擋的");
+            Assert.AreEqual(-1, ResolveSight(-1, new[] { false }, blockedNear[0], blockedNear[1]), "錐外只剩被擋的→不出手");
+            Assert.AreEqual(0, ResolveSight(-1, new[] { false, true }, ahead[0], ahead[1], clearFar[0], clearFar[1]),
+                "錐內不看視線");
+            Assert.AreEqual(0, ResolveSight(0, new[] { false, true }, blockedNear[0], blockedNear[1], clearFar[0], clearFar[1]),
+                "錐內無人時正在打的目標即使被擋也留著");
+            Assert.AreEqual(0, ResolveSight(-1, new[] { true, true }, blockedNear[0], blockedNear[1], clearFar[0], clearFar[1]),
+                "都沒被擋→照舊取最近");
+        }
+
         // ───────────────────────── B 主動滑步 ─────────────────────────
 
         [Test] // B1

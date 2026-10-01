@@ -186,6 +186,89 @@ namespace Vow.Tests.PlayMode
             Assert.IsFalse(_lab.PreviewInCone, "錐外退回→標記改淡黃");
         }
 
+        // 英雄與木樁之間的擋板（不屬於任何戰鬥目標的場景物件）。寬 2m、高 3m、厚 0.3m，面向 z。
+        private static GameObject SpawnBlocker(Vector3 center)
+        {
+            GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            cube.name = "SightBlocker";
+            cube.transform.position = new Vector3(center.x, center.y + 1.5f, center.z);
+            cube.transform.localScale = new Vector3(2f, 3f, 0.3f);
+            Physics.SyncTransforms();
+            return cube;
+        }
+
+        [UnityTest] // H2(a)：錐外，被擋的木樁較近、沒被擋的較遠→打沒被擋的
+        public IEnumerator H2a_ConeEmpty_SkipsDummyBehindBlocker_PicksClearOne()
+        {
+            yield return Load();
+            DummyTarget a = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(a.transform.position + Vector3.forward * 3f);   // A 在背後 3m
+            SpawnBlocker(a.transform.position + Vector3.forward * 1.5f);
+            DummyTarget b = SpawnDummyAt(a, 120f, 5f);
+            yield return null; yield return null;
+            Assert.AreSame(b, _lab.PreviewTarget, "預覽：跳過牆後的 A、改標 B");
+            Assert.IsFalse(_lab.PreviewInCone);
+            TapAttack();
+            Assert.AreSame(b, _lab.LastAimTarget, "按下打 B");
+        }
+
+        [UnityTest] // H2(b)：錐外只剩被擋的→不出手
+        public IEnumerator H2b_ConeEmpty_OnlyBlockedDummy_NoAttack()
+        {
+            yield return Load();
+            DummyTarget a = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(a.transform.position + Vector3.forward * 3f);
+            SpawnBlocker(a.transform.position + Vector3.forward * 1.5f);
+            yield return null; yield return null;
+            Assert.IsNull(_lab.PreviewTarget, "被擋→沒有預覽標記");
+            TapAttack();
+            Assert.AreEqual(1, _lab.AimAttackCount);
+            Assert.IsNull(_lab.LastAimTarget, "被擋→不出手");
+        }
+
+        [UnityTest] // H2(c)：錐內被擋仍打（瞄準優先）
+        public IEnumerator H2c_InCone_BlockedDummy_StillPicked()
+        {
+            yield return Load();
+            DummyTarget a = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(a.transform.position + Vector3.back * 3f);    // A 在正前方 3m
+            SpawnBlocker(a.transform.position + Vector3.back * 1.5f);
+            yield return null; yield return null;
+            Assert.AreSame(a, _lab.PreviewTarget);
+            Assert.IsTrue(_lab.PreviewInCone);
+            TapAttack();
+            Assert.AreSame(a, _lab.LastAimTarget, "錐內不看視線");
+        }
+
+        // H2(d) 加嚴：測試石牆長 4m，牆心一定比牆後木樁近——牆若是候選，「不選木樁」沒有視線檢查也成立（零鑑別力）。
+        // 所以把它設成己方牆：不當目標（與點擊同規則）、但仍是石牆會擋視線 → 唯一候選是牆後木樁，應不出手。
+        [UnityTest] // H2(d)：場景既有測試石牆（設為己方）擋在中間（錐外）→不選牆後木樁
+        public IEnumerator H2d_RealTestWall_BlocksFallbackToDummyBehindIt()
+        {
+            yield return Load();
+            TestWallTarget wall = null;
+            foreach (TestWallTarget w in Object.FindObjectsOfType<TestWallTarget>())
+                if (w.IsAlive && !w.IsCaptureSuppressed) { wall = w; break; }
+            Assert.IsNotNull(wall, "場景要有可用的測試石牆");
+            typeof(CombatTargetBehaviour).GetField("_ownerFaction", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                .SetValue(wall, _hero.HeroFaction);
+            BoxCollider box = wall.GetComponent<BoxCollider>();
+            Vector3 size = Vector3.Scale(box.size, wall.transform.lossyScale);
+            Vector3 n = Mathf.Abs(size.x) < Mathf.Abs(size.z) ? wall.transform.right : wall.transform.forward;   // 牆的薄軸
+            n.y = 0f; n.Normalize();
+            Vector3 c = wall.transform.TransformPoint(box.center);
+            DummyTarget a = Object.FindObjectOfType<DummyTarget>();
+            float thin = Mathf.Min(Mathf.Abs(size.x), Mathf.Abs(size.z));
+            yield return WarpAndSettle(new Vector3(c.x, _hero.transform.position.y, c.z) + n * (thin * 0.5f + 1.2f));
+            a.transform.position = new Vector3(c.x, a.transform.position.y, c.z) - n * (thin * 0.5f + 1.2f);
+            Physics.SyncTransforms();
+            _lab.RotateThirdPerson(Mathf.Atan2(n.x, n.z) * Mathf.Rad2Deg);   // 準星背對牆：木樁與牆都在錐外
+            yield return null; yield return null;
+            Assert.IsNull(_lab.PreviewTarget, "牆後木樁不得被預覽、己方牆不是目標");
+            TapAttack();
+            Assert.IsNull(_lab.LastAimTarget, "牆後木樁不得被選");
+        }
+
         [UnityTest] // D1／E：搖桿按住推動中同時按 ATK
         public IEnumerator D1_StickHeldWhileAttack_StillLocksDummy_AndKeepsStick()
         {

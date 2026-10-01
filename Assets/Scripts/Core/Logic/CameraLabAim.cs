@@ -49,6 +49,7 @@ namespace Vow.Core.Logic
     // 錐內沒有候選時退回距離上限內最近者（不看角度；距離相同取先 Consider 者）＝ResolvedIndex。
     // 黏性：呼叫端把「正在打的目標」標成 preferred。它在錐內時，他人夾角要小超過 StickyMarginDegrees 才換；
     // 它在距離內但錐外時，錐內有人就換（瞄準覆寫黏性）、錐內沒人就留著（不因另一個較近的敵人中途改打）。
+    // fallbackEligible=false（呼叫端判定視線被牆擋）的候選不參加「錐外退回最近者」；錐內挑選與 preferred 不受影響。
     public struct AimTargetPicker
     {
         public const float StickyMarginDegrees = 15f;   // 灰盒暫定
@@ -101,7 +102,7 @@ namespace Vow.Core.Logic
         }
 
         // 回傳這個候選是否落在準星錐內（不論是否成為最佳）。
-        public bool Consider(int index, float targetX, float targetZ, bool isPreferred = false)
+        public bool Consider(int index, float targetX, float targetZ, bool isPreferred = false, bool fallbackEligible = true)
         {
             if (_aimX == 0f && _aimZ == 0f) return false;
             float dx = targetX - _originX;
@@ -109,7 +110,7 @@ namespace Vow.Core.Logic
             double distance = Math.Sqrt((double)dx * dx + (double)dz * dz);
             if (distance > _maxDistance) return false;
             float d = (float)distance;
-            if (d < _nearestDistance)
+            if (fallbackEligible && d < _nearestDistance)
             {
                 _nearestDistance = d;
                 NearestIndex = index;

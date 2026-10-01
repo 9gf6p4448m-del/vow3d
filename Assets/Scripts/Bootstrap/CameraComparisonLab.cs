@@ -25,6 +25,8 @@ namespace Vow.Bootstrap
         private static readonly Color AttackColor = new Color(0.85f, 0.45f, 0.2f, 0.9f);
         private static readonly Color DashColor = new Color(0.3f, 0.7f, 0.45f, 0.9f);
         private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
+        private const float SightHeight = 1.0f;
+        private readonly RaycastHit[] _sightHits = new RaycastHit[16];
         private const float MarkerHeight = 3.0f;   // 頭頂血條在 2.4m，標記放在它上面
         private static readonly Color EmptyColor = new Color(0.15f, 0.18f, 0.22f, 0.85f);
         private RuneCaster _runeCaster;
@@ -363,10 +365,37 @@ namespace Vow.Bootstrap
                 if (candidate.TargetFaction == Faction.DestructibleWall && candidate.OwnerFaction == _hero.HeroFaction) continue;
                 if (!_hero.CanEngage(candidate)) continue;
                 Vector3 p = candidate.TargetTransform.position;
-                picker.Consider(i, p.x, p.z, ReferenceEquals(candidate, current));
+                float dx = p.x - origin.x, dz = p.z - origin.z;
+                bool inRange = dx * dx + dz * dz <= CameraLabAim.MaxAimDistance * CameraLabAim.MaxAimDistance;
+                // 視線只影響「錐外退回最近者」：沒瞄、系統自己挑時，不挑牆後面的敵人（英雄會突然跑去繞牆）。
+                picker.Consider(i, p.x, p.z, ReferenceEquals(candidate, current), inRange && HasClearSight(candidate));
             }
             // 錐內優先；錐內沒有就退回 8m 內最近者，8m 內都沒有才不出手。
             return picker.ResolvedIndex;
+        }
+
+        // 英雄身高 1m → 目標身高 1m 的直線上，有石牆（不分陣營）或場景物件就算被擋；其他敵人／木樁不擋。
+        // 走 RaycastNonAlloc＋TryGetComponent，零配置（Editor 下 GetComponent 找不到會配置假 null 物件）。
+        private bool HasClearSight(CombatTargetBehaviour target)
+        {
+            Vector3 from = _hero.transform.position + Vector3.up * SightHeight;
+            Vector3 to = target.transform.position + Vector3.up * SightHeight;
+            Vector3 delta = to - from;
+            float distance = delta.magnitude;
+            if (distance < 1e-4f) return true;
+            int count = Physics.RaycastNonAlloc(from, delta / distance, _sightHits, distance,
+                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            if (count == _sightHits.Length) return false;   // 緩衝滿時不猜：保守當被擋
+            for (int i = 0; i < count; i++)
+            {
+                Transform t = _sightHits[i].collider.transform;
+                if (t.IsChildOf(_hero.transform) || t.IsChildOf(target.transform)) continue;
+                CombatTargetBehaviour owner = null;
+                while (t != null && !t.TryGetComponent(out owner)) t = t.parent;
+                if (owner != null && owner.TargetFaction != Faction.DestructibleWall) continue;
+                return false;
+            }
+            return true;
         }
 
         private void AimAttack()
