@@ -788,6 +788,10 @@ MUTATIONS = [
      "            float gap = GapMillimeters * pixelsPerMillimeter;",
      "            float gap = -GapMillimeters * pixelsPerMillimeter;",
      "E4_LayoutInvariants_AcrossScreens"),
+    ("CL12", "ATK 鈕下邊距縮成一半（低於符印鈕同一標準）", INPUT + "LabActionButtonLayout.cs",
+     "            layout.Attack = new ScreenRegion(rune.XMin - gap - diameter, rune.YMin, rune.XMin - gap, rune.YMax);",
+     "            layout.Attack = new ScreenRegion(rune.XMin - gap - diameter, rune.YMin * 0.5f, rune.XMin - gap, rune.YMax - rune.YMin * 0.5f);",
+     "E4_LayoutInvariants_AcrossScreens"),
 ]
 
 

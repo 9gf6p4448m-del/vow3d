@@ -149,6 +149,34 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(before - 1, _hero.Mover.CurrentCharges);
         }
 
+        [UnityTest] // D2：搖桿推著時按 DASH——方向跟搖桿，滑步期間不疊步行
+        public IEnumerator D2_DashWhileStickPushed_FollowsStick_AndDoesNotStackWalking()
+        {
+            yield return Load();
+            yield return WarpAndSettle(new Vector3(-2f, 0f, -4f));
+            Vector2 stick = new Vector2(Screen.width * .15f, Screen.height * .2f);
+            _input.BeginSimulatedHold(0, stick.x, stick.y);
+            _input.MoveSimulatedHold(0, stick.x + _input.ContinuousRouter.JoystickRadiusPixels, stick.y);
+            for (int i = 0; i < 4; i++) yield return null;
+            Vector3 walkStart = Flat(_hero.transform.position);
+            yield return null;
+            Assert.Greater((Flat(_hero.transform.position) - walkStart).x, .01f, "前置：搖桿確實在推（往 +x 步行）");
+
+            Vector3 start = Flat(_hero.transform.position);
+            TapDash();
+            Assert.AreEqual(ActiveDashOutcome.FreeDash, _lab.LastDashOutcome);
+            Assert.IsTrue(_hero.Mover.IsDashing);
+            int frames = 0;
+            while (_hero.Mover.IsDashing && frames++ < 60) yield return null;
+            Vector3 delta = Flat(_hero.transform.position) - start;
+            Debug.Log("[CAMERA LAB TEST] D2 stick delta=" + delta.ToString("F4") + " frames=" + frames);
+            Assert.That(delta.x, Is.EqualTo(1.4f).Within(.05f), "滑步期間只有滑步位移，不疊步行");
+            Assert.Less(Mathf.Abs(delta.z), .05f);
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.Greater(Flat(_hero.transform.position).x, start.x + 1.4f + .01f, "滑步結束後搖桿步行恢復");
+            _input.EndSimulatedHold(0);
+        }
+
         [UnityTest] // E（真場景）：轉頭按住拖曳中同時按 DASH
         public IEnumerator E_LookHeldWhileDash_BothWork()
         {
@@ -219,19 +247,44 @@ namespace Vow.Tests.PlayMode
             yield return Load(false);
             Assert.IsFalse(_lab.IsThirdPerson);
             Assert.IsFalse(_lab.ActionButtonsActive);
-            int moves = 0, ui = 0;
+            int moves = 0, ui = 0, buttons = 0;
             _input.OnMoveDestinationSelected += _ => moves++;
             _input.OnUiRegionTapped += _ => ui++;
+            _input.OnLabActionButton += _ => buttons++;
             Vector2 atk = Center(_lab.ActionButtonLayout.Attack);
-            TouchRoute route = _input.Routing.Route(atk.x, atk.y, Screen.width, Screen.height, _input.ActiveMode, out _);
-            Debug.Log("[CAMERA LAB TEST] D5 route at ATK=" + route);
+            Vector2 dash = Center(_lab.ActionButtonLayout.Dash);
+            TouchRoute atkRoute = _input.Routing.Route(atk.x, atk.y, Screen.width, Screen.height, _input.ActiveMode, out _);
+            TouchRoute dashRoute = _input.Routing.Route(dash.x, dash.y, Screen.width, Screen.height, _input.ActiveMode, out _);
+            Debug.Log("[CAMERA LAB TEST] D5 route at ATK=" + atkRoute + " DASH=" + dashRoute);
             _input.SendScreenTap(atk.x, atk.y);
+            Assert.AreEqual(1, moves, "俯視點 ATK 位置＝原點地移動");
+            _input.SendScreenTap(dash.x, dash.y);
+            Assert.AreEqual(2, moves, "俯視點 DASH 位置＝原點地移動");
+            Assert.AreEqual(TouchRoute.World, atkRoute, "俯視下 ATK 位置是世界路由");
+            Assert.AreEqual(TouchRoute.World, dashRoute, "俯視下 DASH 位置是世界路由");
+            Assert.AreEqual(0, buttons, "俯視路由層不得送出按鈕事件");
             Assert.AreEqual(0, _lab.AimAttackCount);
             Assert.AreEqual(0, _lab.ActiveDashCount);
-            Assert.AreEqual(TouchRoute.World, route, "俯視下該位置是世界路由");
-            Assert.AreEqual(1, moves, "俯視點該位置＝原點地移動");
             Assert.AreEqual(0, ui);
 
+            yield return AssertTopRuneUsesScreenDirection();
+        }
+
+        [UnityTest] // D5：THIRD → TOP 之後覆寫必須清掉
+        public IEnumerator D5_ThirdThenTop_RuneBackToScreenDirection_AndButtonsOff()
+        {
+            yield return Load();
+            Assert.IsTrue(_lab.ActionButtonsActive);
+            _lab.RotateThirdPerson(90f);
+            _lab.SetThirdPerson(false);
+            yield return null;
+            Assert.IsFalse(_lab.ActionButtonsActive);
+            Assert.IsFalse(_input.ContinuousRouter.ActionButtonsEnabled);
+            yield return AssertTopRuneUsesScreenDirection();
+        }
+
+        private IEnumerator AssertTopRuneUsesScreenDirection()
+        {
             yield return WarpAndSettle(new Vector3(2f, 0f, -4f));
             RuneButtonLayout layout = RuneButtonLayout.Compute(Screen.width, Screen.height, _input.PixelsPerMillimeter);
             Vector2 rune = Center(layout.Button);

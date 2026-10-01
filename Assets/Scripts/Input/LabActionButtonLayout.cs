@@ -1,5 +1,3 @@
-using Vow.Core.Logic;
-
 namespace Vow.Input
 {
     public enum LabActionButton
@@ -17,7 +15,8 @@ namespace Vow.Input
     }
 
     // ATK／DASH 兩顆圓鈕的螢幕幾何（Unity 螢幕座標：原點左下、像素）。不依賴 UnityEngine，畫面與路由共用這一份。
-    // 直徑與離邊標準沿用 RuneButtonLayout：ATK 在符印鈕左側、DASH 在符印鈕正上方；DASH 放不下時退到 ATK 左側。
+    // 直徑與離邊標準沿用 RuneButtonLayout：ATK 在符印鈕左側、DASH 在符印鈕正上方。
+    // 需要畫面高度約 ≥ 符印鈕邊距＋2×直徑＋間距（15+16+3+16mm）＋8px；更矮的畫面不支援（原退位分支會壓到搖桿區，已移除）。
     public struct LabActionButtonLayout
     {
         public const float GapMillimeters = 3f;
@@ -34,8 +33,6 @@ namespace Vow.Input
             LabActionButtonLayout layout;
             layout.Attack = new ScreenRegion(rune.XMin - gap - diameter, rune.YMin, rune.XMin - gap, rune.YMax);
             layout.Dash = new ScreenRegion(rune.XMin, rune.YMax + gap, rune.XMax, rune.YMax + gap + diameter);
-            if (layout.Dash.YMax > screenHeight - GestureMath.EdgeDeadzonePixels)
-                layout.Dash = new ScreenRegion(layout.Attack.XMin - gap - diameter, rune.YMin, layout.Attack.XMin - gap, rune.YMax);
             return layout;
         }
 

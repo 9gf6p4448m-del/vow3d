@@ -195,6 +195,7 @@ namespace Vow.Tests
             FinishDash(h);
             h.Step();
             Assert.AreNotEqual(PlayerState.CadenceDashing, h.State);
+            Assert.AreEqual(PlayerState.Idle, h.State, "滑步結束後等攻擊週期＝Idle（窗口外）");
             Assert.AreEqual(ActiveDashOutcome.FreeDash, Dash(h), "窗口外自由滑步");
             Assert.AreEqual(1, h.Body.Sim.Charges);
             Assert.AreEqual(0.9f, h.Body.DashDistances[1], 1e-4f, "與命中連動共用連段");
@@ -279,7 +280,8 @@ namespace Vow.Tests
         private static RuneWallPlacement ThirdPlacement(float yaw, float sx, float sz, float distance01)
         {
             RuneCastLogic logic = new RuneCastLogic(new RuneTuning());
-            CameraLabAim.WallDragDirection(true, yaw, sx, sz, out float x, out float z);
+            CameraLabAim.GroundForward(yaw, out float ax, out float az);
+            CameraLabAim.WallDragDirection(true, ax, az, sx, sz, out float x, out float z);
             Assert.IsTrue(logic.TryDragPlacement(2f, -1f, x, z, distance01, out RuneWallPlacement p));
             return p;
         }
@@ -315,7 +317,8 @@ namespace Vow.Tests
             {
                 for (int i = 0; i < dirs.Length; i += 2)
                 {
-                    CameraLabAim.WallDragDirection(false, yaw, dirs[i], dirs[i + 1], out float x, out float z);
+                    CameraLabAim.GroundForward(yaw, out float ax, out float az);
+                    CameraLabAim.WallDragDirection(false, ax, az, dirs[i], dirs[i + 1], out float x, out float z);
                     Assert.AreEqual(BitConverter.SingleToInt32Bits(dirs[i]), BitConverter.SingleToInt32Bits(x));
                     Assert.AreEqual(BitConverter.SingleToInt32Bits(dirs[i + 1]), BitConverter.SingleToInt32Bits(z));
                     foreach (float d in new[] { 0f, 0.2f, 0.5f, 1f })

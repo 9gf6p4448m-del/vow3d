@@ -28,8 +28,9 @@ namespace Vow.Core.Logic
             z = (float)Math.Cos(yaw);
         }
 
-        // 塑牆拖曳方向：THIRD 只看拉伸量、方向固定為鏡頭水平前方；TOP 原樣交回螢幕換算出的方向（位元相同）。
-        public static void WallDragDirection(bool thirdPerson, float yawDegrees, float screenWorldX, float screenWorldZ,
+        // 塑牆拖曳方向（RuneCaster／RuneGhostPreview 的生產路徑都經過這裡）：
+        // THIRD 只看拉伸量、方向固定為準星水平前方 (aimX, aimZ)；TOP 原樣交回螢幕換算出的方向（位元相同）。
+        public static void WallDragDirection(bool thirdPerson, float aimX, float aimZ, float screenWorldX, float screenWorldZ,
             out float x, out float z)
         {
             if (!thirdPerson)
@@ -38,7 +39,8 @@ namespace Vow.Core.Logic
                 z = screenWorldZ;
                 return;
             }
-            GroundForward(yawDegrees, out x, out z);
+            x = aimX;
+            z = aimZ;
         }
     }
 
