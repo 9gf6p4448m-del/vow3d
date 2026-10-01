@@ -177,6 +177,32 @@ namespace Vow.Tests.PlayMode
             _input.EndSimulatedHold(0);
         }
 
+        [UnityTest] // D2：追擊導航中按 DASH——滑步期間不疊導航步進
+        public IEnumerator D2_DashWhileChasing_DoesNotStackNavigation()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 7.5f);
+            Assert.Greater(7.5f, _hero.AttackRange, "前置：木樁在射程外");
+            TapAttack();
+            Assert.AreSame(dummy, _hero.CurrentTarget);
+            for (int i = 0; i < 4; i++) yield return null;
+            Assert.AreEqual(PlayerState.Moving, _hero.StateMachine.CurrentState, "前置：正在導航追擊");
+            Vector3 walk = Flat(_hero.transform.position);
+            yield return null;
+            Assert.Greater(Flat(_hero.transform.position).z - walk.z, .01f, "前置：導航確實在走");
+
+            Vector3 start = Flat(_hero.transform.position);
+            TapDash();
+            Assert.AreEqual(ActiveDashOutcome.FreeDash, _lab.LastDashOutcome);
+            int frames = 0;
+            while (_hero.Mover.IsDashing && frames++ < 60) yield return null;
+            Vector3 delta = Flat(_hero.transform.position) - start;
+            Debug.Log("[CAMERA LAB TEST] D2 chase delta=" + delta.ToString("F4") + " frames=" + frames);
+            Assert.That(delta.z, Is.EqualTo(1.4f).Within(.05f), "滑步期間只有滑步位移，不疊導航");
+            Assert.Less(Mathf.Abs(delta.x), .05f);
+        }
+
         [UnityTest] // E（真場景）：轉頭按住拖曳中同時按 DASH
         public IEnumerator E_LookHeldWhileDash_BothWork()
         {
@@ -291,9 +317,11 @@ namespace Vow.Tests.PlayMode
             _input.BeginSimulatedHold(0, rune.x, rune.y);
             _input.MoveSimulatedHold(0, rune.x - _input.RuneSaturationPixels * 1.2f, rune.y);
             yield return null;
+            Vector3 ghostPosition = Object.FindObjectOfType<RuneGhostPreview>().transform.position;
             _input.EndSimulatedHold(0);
             RuneWall wall = AliveWall(Object.FindObjectOfType<RuneCaster>());
             Assert.IsNotNull(wall);
+            Assert.Less(Vector3.Distance(Flat(ghostPosition), Flat(wall.transform.position)), .05f, "TOP 虛影與實牆同一換算");
             Vector3 dir = RuneCaster.ScreenToWorldGroundDirection(new Vector2(-1f, 0f), Camera.main.transform);
             RuneCastLogic logic = new RuneCastLogic(new RuneTuning());
             Vector3 hero = _hero.transform.position;
