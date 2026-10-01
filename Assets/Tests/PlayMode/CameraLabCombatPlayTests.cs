@@ -186,15 +186,23 @@ namespace Vow.Tests.PlayMode
             Assert.IsFalse(_lab.PreviewInCone, "錐外退回→標記改淡黃");
         }
 
-        // 英雄與木樁之間的擋板（不屬於任何戰鬥目標的場景物件）。寬 2m、高 3m、厚 0.3m，面向 z。
-        private static GameObject SpawnBlocker(Vector3 center)
+        private static void SetOwner(CombatTargetBehaviour target, Faction owner)
         {
-            GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            cube.name = "SightBlocker";
-            cube.transform.position = new Vector3(center.x, center.y + 1.5f, center.z);
-            cube.transform.localScale = new Vector3(2f, 3f, 0.3f);
+            typeof(CombatTargetBehaviour).GetField("_ownerFaction", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                .SetValue(target, owner);
+        }
+
+        // 把場景的一面測試石牆（4×2.5×0.6m，長軸沿 x）搬到 center，設成己方：不當目標、但仍是石牆會擋視線（H 修訂）。
+        private TestWallTarget PlaceOwnTestWall(Vector3 center)
+        {
+            TestWallTarget wall = null;
+            foreach (TestWallTarget w in Object.FindObjectsOfType<TestWallTarget>())
+                if (w.IsAlive && !w.IsCaptureSuppressed) { wall = w; break; }
+            Assert.IsNotNull(wall, "場景要有可用的測試石牆");
+            SetOwner(wall, _hero.HeroFaction);
+            wall.transform.SetPositionAndRotation(new Vector3(center.x, center.y + 1.25f, center.z), Quaternion.identity);
             Physics.SyncTransforms();
-            return cube;
+            return wall;
         }
 
         [UnityTest] // H2(a)：錐外，被擋的木樁較近、沒被擋的較遠→打沒被擋的
@@ -203,8 +211,8 @@ namespace Vow.Tests.PlayMode
             yield return Load();
             DummyTarget a = Object.FindObjectOfType<DummyTarget>();
             yield return WarpAndSettle(a.transform.position + Vector3.forward * 3f);   // A 在背後 3m
-            SpawnBlocker(a.transform.position + Vector3.forward * 1.5f);
-            DummyTarget b = SpawnDummyAt(a, 120f, 5f);
+            PlaceOwnTestWall(a.transform.position + Vector3.forward * 1.5f);
+            DummyTarget b = SpawnDummyAt(a, 110f, 5f);   // 110°：視線在牆端外 1m 以上
             yield return null; yield return null;
             Assert.AreSame(b, _lab.PreviewTarget, "預覽：跳過牆後的 A、改標 B");
             Assert.IsFalse(_lab.PreviewInCone);
@@ -218,7 +226,7 @@ namespace Vow.Tests.PlayMode
             yield return Load();
             DummyTarget a = Object.FindObjectOfType<DummyTarget>();
             yield return WarpAndSettle(a.transform.position + Vector3.forward * 3f);
-            SpawnBlocker(a.transform.position + Vector3.forward * 1.5f);
+            PlaceOwnTestWall(a.transform.position + Vector3.forward * 1.5f);
             yield return null; yield return null;
             Assert.IsNull(_lab.PreviewTarget, "被擋→沒有預覽標記");
             TapAttack();
@@ -232,7 +240,7 @@ namespace Vow.Tests.PlayMode
             yield return Load();
             DummyTarget a = Object.FindObjectOfType<DummyTarget>();
             yield return WarpAndSettle(a.transform.position + Vector3.back * 3f);    // A 在正前方 3m
-            SpawnBlocker(a.transform.position + Vector3.back * 1.5f);
+            PlaceOwnTestWall(a.transform.position + Vector3.back * 1.5f);
             yield return null; yield return null;
             Assert.AreSame(a, _lab.PreviewTarget);
             Assert.IsTrue(_lab.PreviewInCone);
@@ -250,8 +258,7 @@ namespace Vow.Tests.PlayMode
             foreach (TestWallTarget w in Object.FindObjectsOfType<TestWallTarget>())
                 if (w.IsAlive && !w.IsCaptureSuppressed) { wall = w; break; }
             Assert.IsNotNull(wall, "場景要有可用的測試石牆");
-            typeof(CombatTargetBehaviour).GetField("_ownerFaction", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-                .SetValue(wall, _hero.HeroFaction);
+            SetOwner(wall, _hero.HeroFaction);
             BoxCollider box = wall.GetComponent<BoxCollider>();
             Vector3 size = Vector3.Scale(box.size, wall.transform.lossyScale);
             Vector3 n = Mathf.Abs(size.x) < Mathf.Abs(size.z) ? wall.transform.right : wall.transform.forward;   // 牆的薄軸
@@ -312,6 +319,48 @@ namespace Vow.Tests.PlayMode
                     Assert.IsFalse(p is TestWallTarget, "位置 " + s + " 方向 " + k * 30 + "：預覽挑到停用的測試牆");
                 }
             }
+        }
+
+        // H2(e)（H 修訂）：峽谷崖台→谷底，錐外退回不被崖壁擋（地形視野交給 CanEngage）。
+        [UnityTest]
+        public IEnumerator H2e_Canyon_PlateauToValley_FallbackNotBlockedByCliff()
+        {
+            yield return Load(false);
+            Assert.IsTrue(_bootstrap.TryGetCaptureButtonScreenPoint(out float sx, out float sy));
+            _bootstrap.WorldTapInput.SendScreenTap(sx, sy);
+            for (int i = 0; i < 30; i++) yield return null;
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState);
+            TrainingOpponent red = Object.FindObjectOfType<TrainingOpponent>();
+            // 大廳裡鎖定紅色＝點紅開局（英雄會被送回出生點），所以先在俯視下點紅開局，對局中再擺位置。
+            Vector3 redScreen = Camera.main.WorldToScreenPoint(red.transform.position + Vector3.up);
+            _bootstrap.WorldTapInput.SendScreenTap(redScreen.x, redScreen.y);
+            yield return null;
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState, "點紅開局");
+            _bootstrap.HoldOpponentForTest(true);
+            _lab.SetThirdPerson(true);
+            yield return null; yield return null;
+
+            CanyonTerrainSpec t = CanyonTerrainSpec.V0140;
+            HeroLocomotion move = _hero.GetComponent<HeroLocomotion>();
+            move.WarpTo(new Vector3(t.Board.CenterX(5), t.TileHeight(5), t.Board.CenterZ(5)));   // 崖台 +1
+            red.RespawnAt(new Vector3(t.Board.CenterX(4), t.TileHeight(4), t.Board.CenterZ(4)));  // 谷底 −1
+            for (int i = 0; i < 4; i++) yield return null;
+            Vector3 h = _hero.transform.position, r = red.transform.position;
+            Assert.AreEqual(1f, h.y, 0.05f, "英雄在崖台");
+            Assert.AreEqual(-1f, r.y, 0.05f, "對手在谷底");
+            Assert.IsTrue(_hero.CanEngage(red), "前提：遊戲視野規則允許崖台打谷底");
+            _lab.RotateThirdPerson(Mathf.Atan2(r.x - h.x, r.z - h.z) * Mathf.Rad2Deg + 180f - _lab.YawDegrees);   // 背對：錐外
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.AreSame(red, _lab.PreviewTarget, "崖台往谷底的錐外退回不得被崖壁擋");
+            Assert.IsFalse(_lab.PreviewInCone);
+            float health = red.HealthNormalized;
+            TapAttack();
+            Assert.AreSame(red, _lab.LastAimTarget);
+            for (int i = 0; i < 120; i++) yield return null;
+            Vector3 after = _hero.transform.position;
+            Debug.Log("[CAMERA LAB TEST] H2e after 2s: redHealth " + health.ToString("F3") + "->" + red.HealthNormalized.ToString("F3")
+                + " heroMoved=" + Vector3.Distance(h, after).ToString("F2") + " heroY=" + after.y.ToString("F2")
+                + " target=" + (_hero.CurrentTarget == null ? "none" : ((Component)_hero.CurrentTarget).name));
         }
 
         [UnityTest] // D1／E：搖桿按住推動中同時按 ATK

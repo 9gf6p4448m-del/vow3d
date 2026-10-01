@@ -383,7 +383,8 @@ namespace Vow.Bootstrap
             return false;
         }
 
-        // 英雄身高 1m → 目標身高 1m 的直線上，有石牆（不分陣營）或場景物件就算被擋；其他敵人／木樁不擋。
+        // 英雄身高 1m → 目標身高 1m 的直線上，有石牆（不分陣營）就算被擋；地形、其他場景物件與其他敵人／木樁不擋。
+        // 地形視野（谷底看不到崖台等）由 CanEngage 負責；崖壁若也擋，崖台往谷底會因掠過崖緣幾公分而時靈時不靈（H 修訂）。
         // 走 RaycastNonAlloc＋TryGetComponent，零配置（Editor 下 GetComponent 找不到會配置假 null 物件）。
         private bool HasClearSight(CombatTargetBehaviour target)
         {
@@ -401,8 +402,7 @@ namespace Vow.Bootstrap
                 if (t.IsChildOf(_hero.transform) || t.IsChildOf(target.transform)) continue;
                 CombatTargetBehaviour owner = null;
                 while (t != null && !t.TryGetComponent(out owner)) t = t.parent;
-                if (owner != null && owner.TargetFaction != Faction.DestructibleWall) continue;
-                return false;
+                if (owner != null && owner.TargetFaction == Faction.DestructibleWall) return false;
             }
             return true;
         }
