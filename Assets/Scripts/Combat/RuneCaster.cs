@@ -134,7 +134,7 @@ namespace Vow.Combat
             _roster?.Remove(slot);
         }
 
-        // camera-lab 第三人稱（docs/CAMERA_LAB_COMBAT_PLAN.md §1.3）：拖曳只取拉伸量，方向由覆寫來源（鏡頭前方）提供。
+        // camera-lab 第三人稱（GDD §參.1 雙態施法操作，v0.15.0 修訂的石牆朝向）：拖曳只取拉伸量，方向由覆寫來源（鏡頭前方）提供。
         // null＝俯視原路徑：仍是改動前同一個 ScreenToWorldGroundDirection 的結果，經 CameraLabAim.WallDragDirection 原值交回。
         private Func<Vector3> _dragDirectionOverride;
         public void SetDragDirectionOverride(Func<Vector3> source) { _dragDirectionOverride = source; }

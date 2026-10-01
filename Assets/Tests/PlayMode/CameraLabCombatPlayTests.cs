@@ -39,7 +39,7 @@ namespace Vow.Tests.PlayMode
         }
     }
 
-    // docs/CAMERA_LAB_COMBAT_PLAN.md §3 凍結驗收 D（與 E 的真場景多指部分）。全部走真路由（SendScreenTap／SimulatedHold）。
+    // 第三人稱戰鬥操作（GDD §貳.4 模式 C）試作凍結驗收 D（與 E 的真場景多指部分）（原試作計畫 docs/CAMERA_LAB_COMBAT_PLAN.md 只在 camera-lab-20261001 分支）。全部走真路由（SendScreenTap／SimulatedHold）。
     public sealed class CameraLabCombatPlayTests
     {
         private CameraComparisonLab _lab;

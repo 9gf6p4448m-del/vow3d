@@ -6,7 +6,7 @@ using Vow.Input;
 
 namespace Vow.Tests
 {
-    // docs/CAMERA_LAB_COMBAT_PLAN.md §3 凍結驗收 A／B／C／E 的純邏輯部分。dotnet 與 Unity EditMode 共用。
+    // 第三人稱戰鬥操作（GDD §貳.2、§貳.4 模式 C、§參.1）試作凍結驗收 A／B／C／E 的純邏輯部分（原試作計畫 docs/CAMERA_LAB_COMBAT_PLAN.md 只在 camera-lab-20261001 分支）。dotnet 與 Unity EditMode 共用。
     public sealed class CameraLabCombatTests
     {
         private const float Tick = BrainTestHarness.TickSeconds;

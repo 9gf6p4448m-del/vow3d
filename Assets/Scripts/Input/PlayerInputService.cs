@@ -377,7 +377,7 @@ namespace Vow.Input
             OnUiRegionTapped?.Invoke(regionId);
         }
 
-        // camera-lab 第三人稱 ATK／DASH 鈕（docs/CAMERA_LAB_COMBAT_PLAN.md §1.4）：同一條觸控採樣路徑，按下當下送出。
+        // camera-lab 第三人稱 ATK／DASH 鈕（GDD §貳.4 模式 C）：同一條觸控採樣路徑，按下當下送出。
         public event Action<LabActionButton> OnLabActionButton;
 
         void IActionButtonSink.OnActionButtonPressed(LabActionButton button)

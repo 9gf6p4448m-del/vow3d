@@ -10,7 +10,7 @@ namespace Vow.Core.Logic
         FreeDash       // 窗口外的自由滑步：大腦狀態不變（前搖會先被打斷）
     }
 
-    // camera-lab 主動滑步鈕（docs/CAMERA_LAB_COMBAT_PLAN.md §1.2）。不依賴 UnityEngine。
+    // camera-lab 主動滑步鈕（GDD §貳.2 普攻後搖綁定，v0.15.0 修訂條）。不依賴 UnityEngine。
     // 充能、回充與 1.0s 連段衰減全部沿用身體端同一個 CadenceSim 狀態——這裡只決定「走哪條既有路徑」，不另開一套。
     public static class ActiveDashLogic
     {

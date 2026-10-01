@@ -573,7 +573,7 @@ namespace Vow.Core
             return _mover.TryExecuteCadenceDash(new Vector3(worldDirX, 0f, worldDirZ));
         }
 
-        // camera-lab 主動滑步鈕（docs/CAMERA_LAB_COMBAT_PLAN.md §1.2）：分流全在 ActiveDashLogic，充能與衰減與命中連動共用 _mover。
+        // camera-lab 主動滑步鈕（GDD §貳.2 普攻後搖綁定，v0.15.0 修訂條）：分流全在 ActiveDashLogic，充能與衰減與命中連動共用 _mover。
         // 縛足／噴口飛行／已在滑步中一律不動任何狀態（含不打斷前搖）。
         public ActiveDashOutcome TryActiveDash(Vector3 worldDirection)
         {

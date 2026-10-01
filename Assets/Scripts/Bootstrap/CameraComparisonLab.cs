@@ -20,7 +20,7 @@ namespace Vow.Bootstrap
         private const float CollisionRadius = 0.25f;
         private readonly RaycastHit[] _hits = new RaycastHit[128];
         private readonly Rect[] _buttons = new Rect[4];
-        // ── 第三人稱戰鬥操作（docs/CAMERA_LAB_COMBAT_PLAN.md）──
+        // ── 第三人稱戰鬥操作（GDD §貳.4 模式 C）──
         private static readonly string[] DashLabels = { "DASH 0", "DASH 1", "DASH 2", "DASH 3", "DASH 4" };
         private static readonly Color AttackColor = new Color(0.85f, 0.45f, 0.2f, 0.9f);
         private static readonly Color DashColor = new Color(0.3f, 0.7f, 0.45f, 0.9f);

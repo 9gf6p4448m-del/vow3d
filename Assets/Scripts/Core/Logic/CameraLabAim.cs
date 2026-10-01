@@ -2,7 +2,7 @@ using System;
 
 namespace Vow.Core.Logic
 {
-    // camera-lab 第三人稱的準星數學（docs/CAMERA_LAB_COMBAT_PLAN.md §1.1／§1.3）。不依賴 UnityEngine。
+    // camera-lab 第三人稱的準星數學（GDD §貳.4 模式 C 的 ATK 輔助瞄準／§參.1 石牆朝向）。不依賴 UnityEngine。
     // 鏡頭旋轉為 Euler(pitch, yaw, 0)：視線＝(sin yaw·cos pitch, −sin pitch, cos yaw·cos pitch)，水平前方＝(sin yaw, cos yaw)。
     public static class CameraLabAim
     {
