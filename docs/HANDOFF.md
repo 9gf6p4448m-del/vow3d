@@ -1,10 +1,10 @@
 ---
-description: "接手 VOW：v0.14.0 已部署（gh-pages 4443510，來源 290ee2b）；D04–D06 截圖待主對話逐項勾選、camera-lab 線上頁被覆蓋待裁定。先讀本檔與驗收指南 §25。"
+description: "接手 VOW：v0.14.0 已部署（gh-pages 4443510，來源 290ee2b）；D04–D06 使用者已於 2026-10-01 目視三張截圖逐項勾選通過、camera-lab 線上頁被覆蓋使用者裁定不復原（選 B）。先讀本檔與驗收指南 §25。"
 ---
 
 # VOW 誓約 — Codex 接手紀錄（2026-10-01 更新）
 
-## 目前工作：v0.14.0 已建置部署（D04–D06 待主對話勾選）
+## 目前工作：v0.14.0 已建置部署（D04–D06 使用者已勾選通過）
 
 ### ★ D 建置部署（2026-10-01 17:20 +08:00；取代下方「D 狀態」的待建置敘述）★
 
@@ -12,7 +12,7 @@ description: "接手 VOW：v0.14.0 已部署（gh-pages 4443510，來源 290ee2b
 - **三套測試**：引用 D 來源 290ee2b 證據（`vow-toolchain/v0140-D-source-evidence-20261001-8bf8580da61d4f9b909a4cf4849fa1bc/`）：verify 326 過／1 略／0 敗 `RESULT: ALL PASS`；EditMode 319 過／8 既有略／0 敗；PlayMode 248／248＋cold C03 1／1。本輪未重跑。
 - **部署**：`SKIP_BUILD=1 bash Tools/deploy-webgl.sh`（部署樹）exit 0 → `origin/gh-pages` `4443510a60ca7200212277784d301dc485211e86`（2026-10-01 17:17:57 +0800，`deploy: VOW v0.14.0 from 290ee2b`）；線上版本列 `VOW v0.14.0 / build 2026-10-01 09:15 UTC · 290ee2b`；線上 6 檔 SHA256 與本機產物相同。
 - **線上實看**：Chromium 844×390／DPR2／觸控 exit 0、pageerror 0、console.error 0；WebKit runner 0／0、真點 CAPTURE 進峽谷 Lobby；WebKit `iPhone 13 landscape` 載入 6.803 s、0／0。D01／D02／D03／D07 過；D04／D05／D06 子代理逐張初判過，依計畫須主對話逐項勾選才算 D 驗收完成。明細與截圖路徑見 `docs/PHASE1_ACCEPTANCE_GUIDE.md` §25。
-- **待裁定**：部署前 gh-pages 是 `971386c`（另一工作流 15:54 部署的 `camera-lab/` 子目錄）；`deploy-webgl.sh` 整份覆蓋後線上 `camera-lab/` 已不存在，是否復原待使用者決定（復原會讓 `origin/gh-pages -1` 不再是本次部署）。
+- **已裁定（2026-10-01 使用者選 B 不復原）**：部署前 gh-pages 是 `971386c`（另一工作流 15:54 部署的 `camera-lab/` 子目錄）；`deploy-webgl.sh` 整份覆蓋後線上 `camera-lab/` 已不存在，是否復原待使用者決定（復原會讓 `origin/gh-pages -1` 不再是本次部署）。
 - **未驗證**：見 §25 六項（原生手感／崖台觸控精準度、線上 AI 走坡、線上遮擋、WebGL 實際幀率、PWA 舊版更新、斜坡上半段點地與光圈交界）。回退點 v0.13.1 `e82603c`（來源 `eb3c164`）。
 - 進度落檔：`vow-toolchain/v0140-D-deploy-progress-20261001.md`。主樹的 GDD.md、docs/PLAYER_EXPERIENCE_BLUEPRINT.md、Tools/DotnetCheck/__pycache__/ 未動、未提交。
 
