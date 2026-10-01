@@ -620,3 +620,12 @@ A 步另外要依 V0100 R10 的做法重新定位受本批改動影響的既有�
 | Q4 選塔走路距離 | §6 | A21、C01 |
 | 斜坡任意落差（使用者 2026-09-30 工程裁定） | §2.2 | A22 |
 | `IsSameFloor` 用 `CrossesCliff`（使用者 2026-09-30 工程裁定） | §5.2 | A16、A22、B05(c) |
+
+## D 來源證據綁定（2026-10-01）
+
+1. **依據**：使用者於 2026-10-01 對話中同意：允許僅改兩版本欄位並重建 D 證據、經 fresh 覆核後綁定。本段是該裁定的落實記錄；覆核結論為 APPROVE WITH CONDITIONS（`vow-toolchain/v0140-D-review-aff699d168ea4821b0664f37ab5c5109/review.md`），覆核不等於使用者批准，也不等於 D 完成。
+2. **綁定對象**（細節與完整 SHA256 見 `vow-toolchain/v0140-D-raw-freeze-final.md`）：D 來源 commit `290ee2b17660555a40772d4cd9832bd40775f3be`；綁定 554 檔 hash＝longwait manifest `vow-toolchain/v0140-D-C03-capture-manifest-longwait-21320799.json`（SHA256 `4E05EBF5397E0638440EC4B14052077EAA5EB547FABA3338591DDFE07AA0E8B4`）；綁定 raw＝LW1 `vow-toolchain/v0140-C03-callstack-c49e8b769d6846deaaa604444680eb7e/capture.raw`（SHA256 `2E0E8528A8786703B351BD5B7FBE6AEE2DFB30D1E78FC26D73EEE9A95AE51BD3`）；analyzer SHA256 `D6783ADF660DED56F6E0C2A87EBBE499AF4046E5B4B81DFD001380ECE575CD80`；tail-integrity SHA256 `BC642B054EFE132EF9F941B9F0FC00EC961EACD5F835E6D46B5E5C46B59704AC`。舊 `D-raw-freeze.txt`（479 個 window 的 raw 02422B6B…）作廢。
+3. **「僅兩欄」的範圍**：僅兩欄是對 cdf58bc 而言（`VowVersion.cs`、`ProjectSettings.asset` 各 1 行）；對本計畫先前凍結的 554 檔清單，實際有 4 檔不同：上述兩個版本檔，加 `ElementGeometryTests.cs`、`CanyonMatchPlayTests.cs`——後兩檔是 C 驗收已列的例外（`v0140-C-durable-validation-repair2.ps1:146-157`）。
+4. **儀器演變**：原診斷 capture 原樣重跑 window 數波動（479／480，CF2 為 475），原因是 binary log 停錄時尾端未寫入檔案的資料會丟失；經 capfix（多等一幀）、fence（FN1／FN2 紅燈，不計入，路線作廢）後，改為量測結束後固定多等 120 幀再停錄並加事後客觀完整性檢核（tail-integrity I1–I4），LW1–LW8 共 8 次全部 480 且全綠。全部 run（含無效與紅燈）列於 `vow-toolchain/v0140-D-source-evidence-final-report-20261001.md`。
+5. **覆核結論與條件對應**：C1（指定綁定 raw 與作廢舊 freeze）＝`v0140-D-raw-freeze-final.md` 與本條 2；C2（更正「gcCount2 數到等待幀」的錯誤陳述）＝整合報告「更正」段：reader 只匯出 Begin..End 之間樣本，window 外與等待幀的配置沒有證據，凍結條件本來也只管 window 內；C3（建置前重算 554 檔 hash，至少 ProjectSettings.asset 為 7CFDC570…，Assets／Packages／ProjectSettings 的 git status 為空，不同就停）＝**尚未執行，屬建置步驟**；C4（整合報告列全部 run）＝整合報告。
+6. **未放寬**：原 §14 的 480 個 window、2 筆各 48B、其餘為 0、直接父 Mono.JIT、來源變更即停等條文，一字未放寬；本段不改既有任何文字。

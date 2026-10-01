@@ -1,6 +1,40 @@
-# VOW 誓約 — Codex 接手紀錄（2026-09-30 更新）
+---
+description: "接手 VOW：v0.14.0 已部署（gh-pages 4443510，來源 290ee2b）；D04–D06 使用者已於 2026-10-01 目視三張截圖逐項勾選通過、camera-lab 線上頁被覆蓋使用者裁定不復原（選 B）。先讀本檔與驗收指南 §25。"
+---
 
-## 目前工作：v0.14.0 步驟 C 進行中（未驗收）
+# VOW 誓約 — Codex 接手紀錄（2026-10-01 更新）
+
+## 目前工作：v0.14.0 已建置部署（D04–D06 使用者已勾選通過）
+
+### ★ D 建置部署（2026-10-01 17:20 +08:00；取代下方「D 狀態」的待建置敘述）★
+
+- **來源與建置**：D 來源 `290ee2b17660555a40772d4cd9832bd40775f3be`，在乾淨 worktree `scratch/v0140-D-deploy/vow-deploy`（detached）建置，主樹不建置。覆核條件 C3 依使用者 2026-10-01 裁定 A（僅本次建置）：554 檔 git blob／去 CR bytes 與 longwait manifest 相符、git status 空、`ProjectSettings.asset`＝7CFDC570…4DC7、Apply 前後 bytes 不變，建置前後皆 PASS。**建置 bytes 與證據擷取 bytes 差在換行（CRLF vs LF），內容相同；66 支 .cs 無跨行 verbatim 字串（靜態檢查，非建置比對）**。Unity batchmode `VOWWebGLBuilder.Build` ExitCode 0、333.7 s、10.6 MB、版本 0.14.0（log `vow-toolchain/v0140-D-webgl-build-20261001.log`）。
+- **三套測試**：引用 D 來源 290ee2b 證據（`vow-toolchain/v0140-D-source-evidence-20261001-8bf8580da61d4f9b909a4cf4849fa1bc/`）：verify 326 過／1 略／0 敗 `RESULT: ALL PASS`；EditMode 319 過／8 既有略／0 敗；PlayMode 248／248＋cold C03 1／1。本輪未重跑。
+- **部署**：`SKIP_BUILD=1 bash Tools/deploy-webgl.sh`（部署樹）exit 0 → `origin/gh-pages` `4443510a60ca7200212277784d301dc485211e86`（2026-10-01 17:17:57 +0800，`deploy: VOW v0.14.0 from 290ee2b`）；線上版本列 `VOW v0.14.0 / build 2026-10-01 09:15 UTC · 290ee2b`；線上 6 檔 SHA256 與本機產物相同。
+- **線上實看**：Chromium 844×390／DPR2／觸控 exit 0、pageerror 0、console.error 0；WebKit runner 0／0、真點 CAPTURE 進峽谷 Lobby；WebKit `iPhone 13 landscape` 載入 6.803 s、0／0。D01／D02／D03／D07 過；D04／D05／D06 子代理逐張初判過，依計畫須主對話逐項勾選才算 D 驗收完成。明細與截圖路徑見 `docs/PHASE1_ACCEPTANCE_GUIDE.md` §25。
+- **已裁定（2026-10-01 使用者選 B 不復原）**：部署前 gh-pages 是 `971386c`（另一工作流 15:54 部署的 `camera-lab/` 子目錄）；`deploy-webgl.sh` 整份覆蓋後線上 `camera-lab/` 已不存在，是否復原待使用者決定（復原會讓 `origin/gh-pages -1` 不再是本次部署）。
+- **未驗證**：見 §25 六項（原生手感／崖台觸控精準度、線上 AI 走坡、線上遮擋、WebGL 實際幀率、PWA 舊版更新、斜坡上半段點地與光圈交界）。回退點 v0.13.1 `e82603c`（來源 `eb3c164`）。
+- 進度落檔：`vow-toolchain/v0140-D-deploy-progress-20261001.md`。主樹的 GDD.md、docs/PLAYER_EXPERIENCE_BLUEPRINT.md、Tools/DotnetCheck/__pycache__/ 未動、未提交。
+
+### 前一狀態：C 已驗收；D 已裁定、來源證據通過覆核、待建置部署
+
+- **最終驗收（2026-10-01）**：fresh Astra APPROVE／0 findings，僅批准來源 `12fbaa2a11d9cda927300892c4b031dafdbdda59` 的 C01–C05、效能記錄及 A18。完整報告在同層 `vow-toolchain/v0140-C-final-acceptance-review-20261001.md`；本次只更新交接文件，不改已驗收來源。
+- **實跑證據**：`UNITY_REFS_DIR=C:/Users/shung/.gemini/antigravity/scratch/vow-toolchain/refs bash Tools/DotnetCheck/verify.sh` → `RESULT: ALL PASS`（326過／1既有略／0敗，編譯0錯）；原始日誌 `v0140-C-final-verify-20261001.log` 及 receipt exit0。repair2 主run `v0140-C-durable-repair2-20261001T020454Z-26699243065146e7bed3eee239b88250`：EditMode319過／8既有略／0敗；PlayMode248過／0略／0敗，加獨立cold C03的1項，完整方法聯集249無漏無重；190突變全部caught/restored、SKIP0/MISSED0；7組Unity故障皆健康綠／指定行為斷言紅／還原綠。A18受保護diff空、test與BlockGrid刪行0。C03依批准的frame1/210各48B例外通過，原零配置未通過，原紅燈不改寫。
+- **下一步 D（尚未部署）**：升版只改 `VowVersion.cs:7` 與 `ProjectSettings.asset:144` 的0.13.1→0.14.0；但兩檔在§14固定554來源內，已請使用者裁定是否允許這兩欄變更並重建相同480幀／兩筆48B／其餘0／Mono.JIT父marker的cold、raw與來源證據，不得未回覆就沿用舊例外。具體diff／命令：`vow-toolchain/v0140-D-source-evidence-boundary-review.md`。D瀏覽器工具、離線11/11與fresh覆審已備妥，見 `v0140-D-browser-tools-preparation-20261001.md`；文件草稿 `v0140-D-document-draft.md`。D應從最終D來源提交建立乾淨部署樹，保留主樹使用者的GDD與PLAYER_EXPERIENCE_BLUEPRINT變更。線上仍未更新為0.14.0。
+
+### ★ D 狀態（2026-10-01 更新；取代下方「下一步 D」與原 blocker 敘述）★
+
+已裁定：使用者於 2026-10-01 對話中同意允許僅改兩版本欄位並重建 D 證據、經 fresh 覆核後綁定。D 來源 commit 290ee2b；證據已重建（LW1–8 全 480），fresh 覆核結論 APPROVE WITH CONDITIONS（`vow-toolchain/v0140-D-review-aff699d168ea4821b0664f37ab5c5109/review.md`，不等於使用者批准）。綁定資料：`vow-toolchain/v0140-D-raw-freeze-final.md`（LW1 raw 2E0E8528…、longwait manifest 4E05EBF5…）；整合報告 `vow-toolchain/v0140-D-source-evidence-final-report-20261001.md`；計畫 §14 末「D 來源證據綁定（2026-10-01）」。待辦：覆核條件 C3（建置前，ApplyPlayerSettings／SaveAssets 之後、BuildPlayer 之前重算 554 檔 hash，ProjectSettings.asset 須為 7CFDC570…，Assets／Packages／ProjectSettings 的 git status 為空，有任何不同就停）→ 建置與部署 → 實看 Chromium／WebKit 畫面並填入 D 文件。D 尚未建置、未部署、未完成。
+
+收工時長測均已退出，沒有要續接的 Unity／mutation 程序。原失敗 runs、raw、備份、隔離樹與外部工具全保留，不清理。先前非本次變更的 GDD.md、docs/PLAYER_EXPERIENCE_BLUEPRINT.md 及 Tools/DotnetCheck/__pycache__/ 保持原狀；不要納入本次提交。來源／raw／瀏覽器證據在本機同層 vow-toolchain，未隨 Git 推送，接手須用這部主機的路徑。
+
+### 下列為歷史進度（以以上最終驗收為準）
+- **最新測試結果（2026-10-01 11:34）**：repair2 coordinator 正常退出，status=execution-evidence-ready-for-independent-review。EditMode327：319過／8既有略過／0敗；PlayMode248：248過／0略／0敗（cold C03獨立另1）；190突變已fresh Astra APPROVE／0 findings，原4組及補充3組Unity故障皆green→behavior-red→restore-green。補充run為 v0140-C-missing-faults/vow-toolchain/run-20261001T032723Z-cf0052e99ced449d94ef58abcddee994，final PASS／faultsCaught3／592檔hashInventoryClean與sourceClean=true。A18-before/after均PASS；正做最終fresh Astra C驗收。D未開始／未部署；D版本兩欄也在C03的554固定來源內，已按§14向使用者提出僅兩欄升版並重建同標準cold/raw證據的最窄裁定，尚待回覆，不自動豁免。
+- **續跑進度（2026-10-01 10:32）**：repair2 兩批27/27與18/18均caught/restored、exit0；coordinator `C05-final-union.stdout.log` 實際輸出 `FINAL UNION PASS: inherited=145 new=45 total=190; SKIP=0 MISSED=0; behavior assertions and restores verified`。Astra另做最終C05原始證據覆核中。Unity原4組故障已自動啟動，隔離證據 `v0140-C-approved-faults/vow-toolchain/run-d66421bfc3ec4100a91aa73d8176fb67`；C-U05 baseline Passed/exit0，接著fault。完整Edit/Play與新增3組故障仍待跑，整個C未驗收，未部署。
+- **最新啟動（2026-10-01 10:04，Astra repair2）**：parser/resume receipt 與 parent guard 已經 fresh Astra 覆核 APPROVE；coordinator repair2 SHA256 `007E4AF683BDDC673AD55CC6108353753B545B98FEF1EE6AB7D8C8F2427CB8F3`，prepare exit0（no tests launched/no evidence written），guard 離線23/23 PASS。正式續跑由 Hidden CIM 啟動 PID22100，run `v0140-C-durable-repair2-20261001T020454Z-26699243065146e7bed3eee239b88250`，launch receipt `v0140-C-durable-repair2-launch-0adcbfff124b4bd8a4612b2515fc6557.json`。原145筆僅在1345份雜湊證據核對後繼承；重新執行剩餘45筆，final union190通過後才依序跑原4組Unity故障、完整EditMode、PlayMode248（cold C03另1）、新增3組故障。新missing runner用已認證parent PID；舊followon不用。啟動時實查status=preflight，尚無新測試結果；C未驗收、D未開始、未部署。以下舊段落保留歷史。
+- **最新續作（2026-10-01 09:42，Astra 處理卡點）**：repair1 長測已停止，coordinator `v0140-C-durable-repair1-20261001T002601Z-26240192c9e343ffad22a495f6395379/status.json` 於09:27記 exit1。C1 64/64；C2成功36筆後停E27；C3成功45筆後停K1，共145筆caught且restored。兩失敗均為runner辨識`Innermost source frame is not NUnit assertion`：E27原TRX primary為容量守衛Assert.Fail、副stack為try原呼叫；K1為單行for內Assert.AreEqual。兩筆restore exit0，原journal/失敗TRX永久保留，不能改標成功。使用者明確指定Astra處理；`v0140-C05-pure-runner-repair2.py`目前仍待離線正負驗證、獨立覆審與續跑，預計補100–126及172–189共45筆並獨立核對145筆繼承證據。來源分支已push並以ls-remote核對`12fbaa2a11d9cda927300892c4b031dafdbdda59`。後續Unity四組故障、完整Edit/Play尚未啟動；另需C02及兩registry方法三組隔離故障（`v0140-C-missing-fault-runner.ps1`，已prepare/review但未Execute）。舊followon兩次啟動皆未啟測試：PowerShell5模組環境、PowerShell7狀態檔Replace空路徑；修補已有helper實測但尚待修後覆審，且舊coordinator失敗不可通過其gate。C未驗收、D未開始、未部署。
+- **C05續跑準備更新（2026-10-01）**：原長跑C1為64/64；C2停在E27越界例外而非行為assert、C3停在S13單行if assert解析，原失敗證據保留。新runner窄修訂fresh覆審APPROVE（SHA f0f9e85d…c021）；E27改為原呼叫及原斷言整段新增try/catch，source `12fbaa2a11d9cda927300892c4b031dafdbdda59`，相對96730fd零刪行，A18原保護diff空／所有test刪行0／BlockGrid43新增0刪除；verify326過1既有略0敗、ALL PASS。三棵repair1隔離樹566檔manifest已按自身checkout bytes重建（主樹CRLF差異不得混用），prepare三批均PASS。新coordinator加A18前後gate、固定source及兩個測試overlay雜湊，fresh review PENDING；fresh覆審APPROVE／0 findings（3371bdc8…1808c2）；新長測已由Hidden CIM啟動PID64052，receipt `v0140-C-durable-repair1-launch-receipt.json`，run `v0140-C-durable-repair1-20261001T002601Z-26240192c9e343ffad22a495f6395379`，目前preflight。完整PlayMode／C05未驗收、D未開始、未部署。外部記錄 `vow-toolchain/v0140-C05-additive-guard-evidence.md`。
+- **2026-10-01 續作**：C01/C02/C04定向3過／0敗／0略，C03批准例外獨立冷跑1過／0敗／0略；verify326過／1既有略／0敗、ALL PASS。來源提交 `47bbedb1f0707a3de87727ebeae0439c66b48a5d` 已推並實查遠端同SHA。完整PlayMode首輪於模型切換中止，僅13次RAGE結果、無XML，永久記未完成（`v0140-C-fullplay-interrupted/interruption.txt`）。190突變已在三C05隔離樹啟動，各566檔固定manifest、prepare均PASS；不得與Unity並跑。四組Unity故障runner兩項finding已修，fresh第2輪APPROVE、hash84C256…93D3；尚待突變退出後實跑。C05／整版未驗收、D未開始、未部署。
 - **已批准並實跑 C03 例外（2026-09-30）**：使用者逐項批准本版兩筆 JIT 各48B 與 C01 僅 Ended→Lobby 重置幀驗指定終點／高度。測試與計畫§14已窄修訂；獨立冷 Unity `v0140-C-approved-cold-C03.xml` 為1過／0敗／0略、Exit0，480幀、首／210幀各48、其餘0、Late0，全部活性通過；原零配置仍未通過。554來源路徑、553未改檔hash及raw核對一致，批准test另固定hash。fresh Astra限定覆審APPROVE、0 findings，報告 `vow-toolchain/v0140-C-approved-criteria-review.md`。C01/C02/C04及C05仍在驗證，整版未驗收、未部署。
 
 - **修後冷捕獲已落地**：`vow-toolchain/v0140-C03-resume-cold-analysis.json`實測480完整probe區間、2筆各48B、直接父Mono.JIT、總96，與同run原C03失敗96完全對帳。readback-r2 exit0；JIT方法metadata仍空。使用者已明確批准：C03限本版兩筆JIT各48B之96B例外；C01僅Ended→Lobby重置幀改驗指定終點與高度。正在落實窄範圍修訂及實跑，不能稱原零標準通過。

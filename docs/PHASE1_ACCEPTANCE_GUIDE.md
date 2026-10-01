@@ -704,3 +704,58 @@ v0.3.4（2026-09-19；使用者試玩回饋「想把牆放得很靠近自己，�
 
 **規格留白已裁定（v0.13.1，2026-09-30，計畫修-1）**：①核心圈改到 0／2／3 號塊交會頂點 (4.375, 0)、半徑 1.8m。原本的 (3, 0) 半徑 2.5m 其實和 0 號塊佔塔圈重疊（心距 3m < 5m），上面「避免與佔塔同圈」的說法不成立；19 塊棋盤上任何位置放 2.5m 圈都會和佔塔圈重疊，所以縮小半徑。先鋒本體與核心同點（`AbyssalVanguardTarget` 以核心座標定位，沒有獨立的先鋒座標），所以先鋒也改在這個位置出現。②巨獸在敵方聖所內照樣吃聖所減傷（12→10.2），維持原行為。
 - v0.13.1 證據：verify 305／1 `RESULT: ALL PASS`；EditMode 306 項 299 過／7 略過／0 失敗（`vow-toolchain/v0131-edit.xml`，新增 `CoreCircle_OverlapsNoCaptureCircle_OnNineteenBoard`，放回舊值時紅在「第 0 塊 9 < 25」）；PlayMode 211／211（`v0131-play.xml`）。本機 `?devvanguard` 實測 `errors=[]`：紅方打先鋒 840→580→取得 `RED BEAST 1500 / 80s`→巨獸推到藍母板塊打英雄 100→70（`browser-screenshots/v0131-local`）。核心圈新尺寸在鏡頭外，畫面上**未目視**。部署 `origin/gh-pages e82603c`（2026-09-30 01:15:49 +08:00），線上讀回 `v0.13.1 · build 2026-09-29 17:12 UTC · 227f0fd`。
+
+## 25. v0.14.0：深淵峽谷（2026-10-01 已部署；D04–D06 使用者已勾選通過）
+
+凍結規格與逐項驗收見 `docs/V0140_CANYON_PLAN.md`，使用者裁定見該計畫 §14 與檔尾「D 來源證據綁定」。
+
+**規則摘要**：正式 19 塊佔領局分三層高度：0／1／4 號是 −1m 谷底，2／3／5／6 號是 +1m 崖台，其餘及棋盤外為 0m 平原。只有六處斜坡連接不同高度（9↔2、11↔3、15↔5、17↔6、7↔1、13↔4）；崖壁不能直接跨越，也不能從崖台直接走下谷底。Off／單挑保留平地。站在崖台的攻擊者射程 +10%、局部視野 6m→8m（斜坡不算崖台）；谷底的局部視野看不到崖台敵人，己方板塊真視野或命中後顯形可揭露。命中時攻擊者對受害方顯形 1.5 秒。水域圓心在谷底時半徑 +1m。谷心兩個地熱點把英雄從谷底單向彈上崖台：G0 踏點 (2.09375, −1, 2.0625) 落在東北 2 號 (4.59375, +1, 2.0703125)，G1 為其 180° 旋轉、落在西南 5 號；踏點半徑 0.375m、連續引導 0.6 秒、受傷中斷、每點冷卻 8 秒、飛行 0.5 秒，發射時清除原移動目的地。紅方 AI 只走斜坡、不用地熱點。先鋒與核心在谷心 (0, −1, 0)，核心圈半徑 2.5m，與 0 號佔塔圈同心同半徑。符印牆下緣貼施放中心的地形高度（谷底下緣 −1、中心 0）。
+
+**試玩步驟**：
+1. 打開 [線上試玩](https://9gf6p4448m-del.github.io/vow3d/)，確認底部版本列為 `VOW v0.14.0` / `build 2026-10-01 09:15 UTC · 290ee2b`。看到舊版就關閉分頁重開或強制重新整理；仍是舊版就清除此網站資料（站上有 `sw.js` kill switch，不快取遊戲檔）。
+2. 按 `CAPTURE`、點紅色對手開局。觀察 13 號出生塊前方的格紋斜坡往北通到較低的 4 號谷底、兩側崖壁面；HUD 可讀、未被地形遮住。
+3. 點南段谷底 (x,z)=(0,−8.3671875) 的畫面位置後不輸入，6 秒內英雄應走下斜坡進入谷底、不卡在坡上。
+4. 接著點 G0 踏點，5 秒不輸入；英雄應被彈到東北 2 號崖台（HUD 出現 `VENT NE 8s` 冷卻）。
+5. 自由試走其他斜坡、谷底貼崖壁、崖台點地，記錄手機觸控精準度、坡面光圈與遮擋觀察（另記裝置；不因 D05／D06 自動視為通過）。
+
+**工程與送達證據**（外部證據都在同層 `vow-toolchain/`，以下 T＝該目錄）：
+
+| 證據 | 實際內容 |
+|---|---|
+| 建置來源 | D 來源 `290ee2b17660555a40772d4cd9832bd40775f3be`（分支 `v0140-abyssal-canyon`，僅兩個版本欄位 0.13.1→0.14.0）。在乾淨 worktree `scratch/v0140-D-deploy/vow-deploy`（detached 290ee2b）建置，主樹不建置 |
+| 版本 | `Assets/Scripts/Core/VowVersion.cs:7` `"0.14.0"`；`ProjectSettings/ProjectSettings.asset:144` `bundleVersion: 0.14.0`；首頁版本列由同一來源產生 |
+| 覆核條件 C3（建置前來源比對） | 使用者 2026-10-01 裁定 A（僅本次建置）：554 檔 git blob 與 290ee2b 相符 0 不符、去 CR 後 bytes 與 longwait manifest 來源 0 不符、Assets/Packages/ProjectSettings git status 0 行、`ProjectSettings.asset`＝`7CFDC570…4DC7`、ApplyPlayerSettings 前後 bytes 不變。**建置 bytes 與證據擷取 bytes 差在換行（CRLF vs LF），內容相同**：222 檔主樹工作副本是舊 CRLF（index 與 `.gitattributes` 為 LF），manifest 記的是主樹 bytes；66 支 .cs 無跨行 verbatim 字串（靜態檢查，非建置比對）。檢查器 `T/v0140-D-c3-blobcheck.py`，負向探針（改一行 VowVersion.cs）變紅（`T/v0140-D-c3-blobcheck-negative-probe.json` pass=false）、還原回綠（`-pre-build-r3.json`）；結果 `T/v0140-D-c3-blobcheck-pre-build-r3.json`、`-post-build.json` PASS |
+| 三套測試（D 來源 290ee2b，引用不重跑） | `T/v0140-D-source-evidence-20261001-8bf8580da61d4f9b909a4cf4849fa1bc/`：`verify.log` 純邏輯 通過 326／略過 1／失敗 0、編譯 0 錯、`RESULT: ALL PASS`；EditMode XML 327 項 319 過／8 既有略過／0 失敗；PlayMode（除 C03）248／248；cold C03 1／1（§14 批准 profile） |
+| ForTest 宣告（D01） | 計畫原文 grep 排除 Core/Logic 得 10 個：`Phase1Bootstrap.cs:255,279,281,295,316,323,329,336`（:254 `#if UNITY_EDITOR`）、`AbyssalVanguardTarget.cs:26`（:25）、`TrainingOpponent.cs:64`（:63），10／10 在 `UNITY_EDITOR` 內 |
+| WebGL 建置 | `Unity.exe -batchmode -quit -projectPath <deploy> -buildTarget WebGL -executeMethod Vow.EditorTools.VOWWebGLBuilder.Build`（`T/v0140-D-webgl-build.ps1`）→ ExitCode 0，333.7 s；log `T/v0140-D-webgl-build-20261001.log`：`[VOW] WebGL 建置完成：Builds/WebGL，10.6 MB，耗時 318s，版本 0.14.0`、`error CS` 0。產物 SHA256 `T/v0140-D-artifact-sha256-20261001.txt` |
+| 本機實看 | `python -m http.server 8741`＋`T/v0140-online-check.py --execute --url http://127.0.0.1:8741/ … --label D-local` → exit 0、pageerror 0、console.error 0；`T/browser-screenshots/v0140-D-local-chromium-20261001T091549.386615Z-68576/` |
+| 部署 | `SKIP_BUILD=1 bash Tools/deploy-webgl.sh`（部署樹）→ exit 0，輸出 `[deploy] 已推上 gh-pages：4443510`、`[deploy] 線上已更新：https://9gf6p4448m-del.github.io/vow3d/  →  v0.14.0 · build 2026-10-01 09:15 UTC · 290ee2b`（log `T/v0140-D-deploy-20261001.log`）。`origin/gh-pages` = `4443510a60ca7200212277784d301dc485211e86`，2026-10-01 17:17:57 +0800，`deploy: VOW v0.14.0 from 290ee2b`。線上 6 個檔（index.html、sw.js、loader、wasm、data、framework）逐檔 SHA256 與本機產物相同 |
+| Chromium 線上 | 844×390、DPR 2、觸控：`T/v0140-online-check.py --execute --url https://9gf6p4448m-del.github.io/vow3d/ --source-sha 290ee2b… --expected-stamp 'build 2026-10-01 09:15 UTC · 290ee2b' --label D-real` → exit 0、pageerror 0、console.error 0；版本列 `VOW v0.14.0 / build 2026-10-01 09:15 UTC · 290ee2b`；`T/browser-screenshots/v0140-D-real-chromium-20261001T091953.987054Z-62336/` |
+| WebKit 線上 | 準備好的 runner（844×390、DPR 2、觸控）→ exit 0、0／0，載入後真點 CAPTURE 進入峽谷 Lobby：`T/browser-screenshots/v0140-D-real-webkit-20261001T092125.602940Z-72036/`。補量 `iPhone 13 landscape`（`T/v0140-D-webkit-iphone-load.py`）：載入 6.803 s、pageerror 0、console.error 0、可點 `CAPTURE`：`T/browser-screenshots/v0140-D-real-webkit-iphone13-20261001T092222Z/` |
+
+**逐 D 條文結果**：
+
+| 條文 | 結果 | 證據 |
+|---|---|---|
+| V14-D01 | 過 | 版本兩欄 0.14.0；三套測試引用 D 來源 290ee2b 證據（上表）；建置 ExitCode 0；ForTest 10／10 Editor-only |
+| V14-D02 | 過 | 部署 exit 0；`origin/gh-pages` 4443510 為本次部署；Chromium 讀到正確版本列 |
+| V14-D03 | 過 | WebKit 載入、版本列正確、可點 CAPTURE（兩組設定皆 0 錯誤，見上表） |
+| V14-D04 | 子代理初判過；使用者 2026-10-01 目視勾選通過 | `d04-02-start-requested.png`：13 號格紋斜坡往北接較低的 4 號谷底、兩側可見崖壁面、上方兩角較高的崖台壁、光圈可見、HUD 未被地形遮住 |
+| V14-D05 | 子代理初判過；使用者 2026-10-01 目視勾選通過 | 點 CSS (422, 56.53)，模型離邊 56.53px ≥ 16；實測等待 6.005 s；`d05-6-seconds.png`：英雄在 4 號谷底塊內、斜坡在身後、未停在坡上 |
+| V14-D06 | 子代理初判過；使用者 2026-10-01 目視勾選通過 | 點 CSS (469.89, 7.00)；實測等待 5.019 s；`d06-5-seconds.png`：HUD `VENT NE 8s`（地熱點已觸發）、英雄在峽谷東側較高的塊上，西側崖壁往下接谷底 |
+| V14-D07 | 過 | 本機與線上 Chromium、兩組 WebKit：pageerror 0、console.error 0（各 result.json） |
+| V14-D08 | 本節＋HANDOFF＋ARCHITECTURE「參、7」 | gh-pages SHA 與 `git log origin/gh-pages -1` 一致（4443510） |
+
+D04–D06 的鏡頭投影是模型（未匯出即時鏡頭座標），點位與等待時間照凍結條文，未加重試。本機與線上兩次 run 的畫面一致。
+
+**尚未驗證**：
+1. 原生 Android／iOS 的手感、延遲、震動及觸控點崖台的精準度；瀏覽器觸控模擬不能代替真人手機操作。
+2. 線上紅方 AI 走斜坡、上崖下谷的整局行為：只有 PlayMode 證據；D05／D06 是英雄路線。
+3. 線上谷底貼崖壁的遮擋：只有 V14-B13 PlayMode 與腳本模型。
+4. WebGL 實際幀率：headless swiftshader 的 HUD FPS 為 2–7、WebKit 18–31，都不是真機數字，不設及格線。
+5. PWA 舊版快取更新：處理方式是關閉分頁重開或強制重新整理，仍是舊版就清除網站資料，再核對底部 `290ee2b`；已安裝 PWA 從舊版更新的路徑未實測。
+6. 斜坡上半段的點地落點誤差，以及光圈／坡面交界顯示（§5.2 灰盒限制，模型界限：高度誤差 ≤0.5m、水平 ≤0.39m）；D04 看到光圈不等於交界顯示已驗收。
+
+**批准例外的表述限制**：C01 只有 Ended→Lobby 指定重置幀改驗 (4,0,−12.5) 與高度；C03 原 `UpdateBytes==0` 未通過，只接受 §14 綁定的冷啟動第 1／210 幀各 48B profile，原零配置紅燈永久保留。
+
+**附帶事項**：這次部署前的 `gh-pages` 是 `971386c`（2026-10-01 15:54，另一工作流的 `camera-lab/` 子目錄），`deploy-webgl.sh` 整份覆蓋後，線上 `camera-lab/` 已不存在。是否復原待使用者裁定。回退點仍是 v0.13.1 `e82603c`（來源 `eb3c164`）。
