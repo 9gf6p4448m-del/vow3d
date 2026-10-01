@@ -302,7 +302,7 @@ namespace Vow.Bootstrap
             }
             GUI.Box(_panel, GUIContent.none);
             GUI.Label(_title, IsThirdPerson ? "CAMERA LAB | 3RD" : "CAMERA LAB | TOP", _labelStyle);
-            GUI.Box(_buttons[0], IsThirdPerson ? "TOP DOWN" : "THIRD", _buttonStyle);
+            GUI.Box(_buttons[0], IsThirdPerson ? "TOP" : "THIRD", _buttonStyle);
             GUI.Box(_buttons[1], "LEFT", _buttonStyle);
             GUI.Box(_buttons[2], "RIGHT", _buttonStyle);
             GUI.Box(_buttons[3], "RESET", _buttonStyle);
@@ -312,7 +312,7 @@ namespace Vow.Bootstrap
                 float unit = Mathf.Min(_width / 844f, _height / 390f);
                 Vector2 origin = r.MoveHeld ? new Vector2(r.MoveOriginX, _height - r.MoveOriginY) : new Vector2(92f * unit, _height - 90f * unit);
                 float radius = r.JoystickRadiusPixels;
-                GUI.Box(new Rect(origin.x - radius, origin.y - radius, radius * 2f, radius * 2f), "MOVE", _labelStyle);
+                GUI.Box(new Rect(origin.x - radius, origin.y - radius, radius * 2f, radius * 2f), GUIContent.none, _buttonStyle);
                 GUI.Box(new Rect(origin.x + r.MoveX * radius - 14f, origin.y - r.MoveY * radius - 14f, 28f, 28f), GUIContent.none);
             }
             GUI.Label(_help, IsThirdPerson ? "Left: move | Right: look / tap enemy" : _panel.width >= 300f ? "Tap ground: move | enemy: attack" : "Tap ground / enemy", _labelStyle);
