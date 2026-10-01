@@ -1,3 +1,7 @@
+---
+description: "接手 VOW，從 C 已驗收、D 待裁定繼續。2026-10-01 收工，先讀本檔與最終證據覆核。"
+---
+
 # VOW 誓約 — Codex 接手紀錄（2026-10-01 更新）
 
 ## 目前工作：v0.14.0 步驟 C 已驗收；D 待來源證據移轉裁定
@@ -5,6 +9,12 @@
 - **最終驗收（2026-10-01）**：fresh Astra APPROVE／0 findings，僅批准來源 `12fbaa2a11d9cda927300892c4b031dafdbdda59` 的 C01–C05、效能記錄及 A18。完整報告在同層 `vow-toolchain/v0140-C-final-acceptance-review-20261001.md`；本次只更新交接文件，不改已驗收來源。
 - **實跑證據**：`UNITY_REFS_DIR=C:/Users/shung/.gemini/antigravity/scratch/vow-toolchain/refs bash Tools/DotnetCheck/verify.sh` → `RESULT: ALL PASS`（326過／1既有略／0敗，編譯0錯）；原始日誌 `v0140-C-final-verify-20261001.log` 及 receipt exit0。repair2 主run `v0140-C-durable-repair2-20261001T020454Z-26699243065146e7bed3eee239b88250`：EditMode319過／8既有略／0敗；PlayMode248過／0略／0敗，加獨立cold C03的1項，完整方法聯集249無漏無重；190突變全部caught/restored、SKIP0/MISSED0；7組Unity故障皆健康綠／指定行為斷言紅／還原綠。A18受保護diff空、test與BlockGrid刪行0。C03依批准的frame1/210各48B例外通過，原零配置未通過，原紅燈不改寫。
 - **下一步 D（尚未部署）**：升版只改 `VowVersion.cs:7` 與 `ProjectSettings.asset:144` 的0.13.1→0.14.0；但兩檔在§14固定554來源內，已請使用者裁定是否允許這兩欄變更並重建相同480幀／兩筆48B／其餘0／Mono.JIT父marker的cold、raw與來源證據，不得未回覆就沿用舊例外。具體diff／命令：`vow-toolchain/v0140-D-source-evidence-boundary-review.md`。D瀏覽器工具、離線11/11與fresh覆審已備妥，見 `v0140-D-browser-tools-preparation-20261001.md`；文件草稿 `v0140-D-document-draft.md`。D應從最終D來源提交建立乾淨部署樹，保留主樹使用者的GDD與PLAYER_EXPERIENCE_BLUEPRINT變更。線上仍未更新為0.14.0。
+
+### ★ blocker ★
+
+使用者尚未批准 D 的兩個版本欄位升版後重建固定來源與 raw 證據；2026-10-01 最後指示為「/收工」，不能視為同意升版。下一次先取得此項裁定，再依 D-source-evidence-boundary-review 的步驟重建同標準證據、建置與部署，最後實看 Chromium／WebKit 畫面並填入 D 文件。C 的既有驗收不必重開；D 需要的新來源驗證不能省略。
+
+收工時長測均已退出，沒有要續接的 Unity／mutation 程序。原失敗 runs、raw、備份、隔離樹與外部工具全保留，不清理。先前非本次變更的 GDD.md、docs/PLAYER_EXPERIENCE_BLUEPRINT.md 及 Tools/DotnetCheck/__pycache__/ 保持原狀；不要納入本次提交。來源／raw／瀏覽器證據在本機同層 vow-toolchain，未隨 Git 推送，接手須用這部主機的路徑。
 
 ### 下列為歷史進度（以以上最終驗收為準）
 - **最新測試結果（2026-10-01 11:34）**：repair2 coordinator 正常退出，status=execution-evidence-ready-for-independent-review。EditMode327：319過／8既有略過／0敗；PlayMode248：248過／0略／0敗（cold C03獨立另1）；190突變已fresh Astra APPROVE／0 findings，原4組及補充3組Unity故障皆green→behavior-red→restore-green。補充run為 v0140-C-missing-faults/vow-toolchain/run-20261001T032723Z-cf0052e99ced449d94ef58abcddee994，final PASS／faultsCaught3／592檔hashInventoryClean與sourceClean=true。A18-before/after均PASS；正做最終fresh Astra C驗收。D未開始／未部署；D版本兩欄也在C03的554固定來源內，已按§14向使用者提出僅兩欄升版並重建同標準cold/raw證據的最窄裁定，尚待回覆，不自動豁免。
