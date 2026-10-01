@@ -302,9 +302,15 @@ namespace Vow.Core
                 _locomotion.Stop();
                 _continuousStarted = false;
             }
-            if (pushing && _continuousStarted && (_brain.State == PlayerState.Idle || _brain.State == PlayerState.Moving))
-                _locomotion.StepContinuous(continuous, dt);
-            else _locomotion.Step(dt);
+            // camera-lab 自由滑步（大腦不在 CadenceDashing 卻有滑步在走）期間只套滑步位移，不疊步行／導航。
+            // 命中連動滑步時大腦恆為 CadenceDashing，這個條件恆假，原路徑不變。
+            bool freeDashing = _mover.IsDashing && _brain.State != PlayerState.CadenceDashing && !_locomotion.IsVentFlying;
+            if (!freeDashing)
+            {
+                if (pushing && _continuousStarted && (_brain.State == PlayerState.Idle || _brain.State == PlayerState.Moving))
+                    _locomotion.StepContinuous(continuous, dt);
+                else _locomotion.Step(dt);
+            }
             _mover.Step(dt);
             _brain.Tick(dt);
         }
@@ -511,6 +517,17 @@ namespace Vow.Core
             // 縛足期間不得滑步，而且**不消耗充能**（附加規則，不是位移防線本體——防線在 ApplyDisplacement）。
             if (_locomotion.IsVentFlying || (_quicksand != null && _quicksand.IsRooted)) return false;
             return _mover.TryExecuteCadenceDash(new Vector3(worldDirX, 0f, worldDirZ));
+        }
+
+        // camera-lab 主動滑步鈕（docs/CAMERA_LAB_COMBAT_PLAN.md §1.2）：分流全在 ActiveDashLogic，充能與衰減與命中連動共用 _mover。
+        // 縛足／噴口飛行／已在滑步中一律不動任何狀態（含不打斷前搖）。
+        public ActiveDashOutcome TryActiveDash(Vector3 worldDirection)
+        {
+            if (!IsAlive || _locomotion.IsVentFlying || (_quicksand != null && _quicksand.IsRooted) || _mover.IsDashing)
+                return ActiveDashOutcome.Rejected;
+            Vector3 p = transform.position;
+            return ActiveDashLogic.Execute(_brain, this, _mover.CurrentCharges, worldDirection.x, worldDirection.z,
+                new GroundPoint(p.x, p.y, p.z));
         }
 
         // ───────────────────────── 大腦事件 ─────────────────────────

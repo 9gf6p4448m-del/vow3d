@@ -14,7 +14,8 @@ namespace Vow.Input
     // IPlayerInputService 的 New Input System 實作（EnhancedTouch 讀觸控；滑鼠左鍵被當成一根手指餵進同一個路由）。
     // 本類別只做轉接：EnhancedTouch → TouchGestureRouter（純邏輯、有測試）→ 射線判定 → 對外事件。
     // 手勢怎麼判、手指槽位怎麼管，全部在 TouchGestureRouter。
-    public sealed class PlayerInputService : MonoBehaviour, IPlayerInputService, IRuneCastInput, IWorldTapInput, ITouchGestureSink
+    public sealed class PlayerInputService : MonoBehaviour, IPlayerInputService, IRuneCastInput, IWorldTapInput, ITouchGestureSink,
+        IActionButtonSink
     {
         private const float FallbackDpi = 160f;
         private const float PipZoneMillimeters = 42f;
@@ -374,6 +375,20 @@ namespace Vow.Input
         void ITouchGestureSink.OnUiRegionTapped(int regionId)
         {
             OnUiRegionTapped?.Invoke(regionId);
+        }
+
+        // camera-lab 第三人稱 ATK／DASH 鈕（docs/CAMERA_LAB_COMBAT_PLAN.md §1.4）：同一條觸控採樣路徑，按下當下送出。
+        public event Action<LabActionButton> OnLabActionButton;
+
+        void IActionButtonSink.OnActionButtonPressed(LabActionButton button)
+        {
+            OnLabActionButton?.Invoke(button);
+        }
+
+        // 準星選出的目標走與「點中敵人」相同的出口（後續由 DuelInputRouter 做開局／對局過濾）。
+        public void SubmitCombatTarget(ICombatTarget target)
+        {
+            if (target != null && target.IsAlive) OnCombatTargetSelected?.Invoke(target);
         }
 
         void ITouchGestureSink.OnRuneDragUpdated(float screenDirX, float screenDirY, float distance01)

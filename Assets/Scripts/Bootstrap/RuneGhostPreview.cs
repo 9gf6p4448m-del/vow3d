@@ -106,11 +106,15 @@ namespace Vow.Bootstrap
             _releaseInput = null;
         }
 
+        // 與 RuneCaster 同一個覆寫來源（camera-lab 第三人稱）；null＝原路徑。
+        private Func<Vector3> _dragDirectionOverride;
+        public void SetDragDirectionOverride(Func<Vector3> source) { _dragDirectionOverride = source; }
+
         private void HandleDragUpdated(Vector2 screenDirection, float distance01)
         {
             if (_hero == null || _placement == null) { Hide(); return; }
 
-            Vector3 worldDir = RuneCaster.ScreenToWorldGroundDirection(screenDirection, _cameraTransform);
+            Vector3 worldDir = RuneCaster.ResolveDragWorldDirection(screenDirection, _cameraTransform, _dragDirectionOverride);
             Vector3 heroPosition = _hero.position;
             if (!_placement.TryDragPlacement(heroPosition.x, heroPosition.z, worldDir.x, worldDir.z, distance01, out RuneWallPlacement placement))
             {

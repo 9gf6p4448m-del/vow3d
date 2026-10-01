@@ -58,6 +58,9 @@ namespace Vow.Input
 
         public bool ThirdPersonEnabled { get; private set; }
         public ScreenRegion MoveZone;
+        // camera-lab 第三人稱 ATK／DASH 鈕：只在 ThirdPersonEnabled 且已設定版面時生效，Began 當下送出一次後整段觸控作廢。
+        public LabActionButtonLayout ActionButtons;
+        public bool ActionButtonsEnabled;
         public float JoystickRadiusPixels = 60f;
         public float MoveX { get; private set; }
         public float MoveY { get; private set; }
@@ -227,6 +230,12 @@ namespace Vow.Input
 
             TouchRoute route = _routing.Route(x, y, ScreenWidth, ScreenHeight,
                 ThirdPersonEnabled ? ControlMode.ModeA_FullScreenFlick : _activeMode, out int regionId);
+            LabActionButton action = LabActionButton.None;
+            if (ThirdPersonEnabled && route == TouchRoute.World && ActionButtonsEnabled)
+            {
+                action = ActionButtons.Hit(x, y);
+                if (action != LabActionButton.None) route = TouchRoute.Rejected;
+            }
             if (ThirdPersonEnabled && route == TouchRoute.World)
             {
                 route = MoveZone.Contains(x, y) ? TouchRoute.ContinuousMove : x >= ScreenWidth * 0.5f ? TouchRoute.CameraLook : TouchRoute.Rejected;
@@ -240,6 +249,7 @@ namespace Vow.Input
             _slotRoute[slot] = route;
             _slotUiRegion[slot] = regionId;
             _slotUiRegionTouchVersion[slot] = _routing.UiRegionTouchVersion(regionId);
+            if (action != LabActionButton.None && _sink is IActionButtonSink actionSink) actionSink.OnActionButtonPressed(action);
 
             switch (route)
             {

@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Vow.Combat;
 using Vow.Core;
 using Vow.Core.Logic;
 using Vow.Input;
@@ -19,6 +20,26 @@ namespace Vow.Bootstrap
         private const float CollisionRadius = 0.25f;
         private readonly RaycastHit[] _hits = new RaycastHit[128];
         private readonly Rect[] _buttons = new Rect[4];
+        // ── 第三人稱戰鬥操作（docs/CAMERA_LAB_COMBAT_PLAN.md）──
+        private static readonly string[] DashLabels = { "DASH 0", "DASH 1", "DASH 2", "DASH 3", "DASH 4" };
+        private static readonly Color AttackColor = new Color(0.85f, 0.45f, 0.2f, 0.9f);
+        private static readonly Color DashColor = new Color(0.3f, 0.7f, 0.45f, 0.9f);
+        private static readonly Color EmptyColor = new Color(0.15f, 0.18f, 0.22f, 0.85f);
+        private RuneCaster _runeCaster;
+        private RuneGhostPreview _runeGhost;
+        private System.Func<Vector3> _aimGround;
+        private LabActionButtonLayout _actionLayout;
+        private GUIStyle _actionLabel;
+        public int AimAttackCount { get; private set; }
+        public int ActiveDashCount { get; private set; }
+        public ActiveDashOutcome LastDashOutcome { get; private set; }
+        public ICombatTarget LastAimTarget { get; private set; }
+        public LabActionButtonLayout ActionButtonLayout => _actionLayout;
+        public bool ActionButtonsActive => _input != null && _input.ContinuousRouter.ActionButtonsEnabled;
+#if UNITY_WEBGL && !UNITY_EDITOR
+        private bool _logDash, _logWall;
+        private Vector3 _dashStart;
+#endif
         private FollowCameraRig _rig;
         private Camera _camera;
         private HeroController _hero;
@@ -98,6 +119,9 @@ namespace Vow.Bootstrap
             _region = _input.Routing.RegisterUiRegion(default);
             if (_region < 0) { Debug.LogWarning("[CAMERA LAB] No UI region available.", this); enabled = false; return; }
             _hud = Object.FindObjectOfType<DebugHud>();
+            _runeCaster = Object.FindObjectOfType<RuneCaster>();
+            _runeGhost = Object.FindObjectOfType<RuneGhostPreview>();
+            _aimGround = AimGround; // 委派只在這裡建一次，執行期零配置
             _ready = true;
             Subscribe();
             RefreshLayout();
@@ -114,6 +138,10 @@ namespace Vow.Bootstrap
         {
             if (_subscribed) return;
             _input.OnUiRegionTapped += OnUiTapped;
+            _input.OnLabActionButton += OnActionButton;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            _input.OnRuneCastReleased += OnRuneReleasedForLog;
+#endif
             _subscribed = true;
         }
 
@@ -125,7 +153,14 @@ namespace Vow.Bootstrap
             {
                 _input.Routing.InvalidateUiRegionTouches(_region);
                 _input.Routing.SetUiRegionActive(_region, false);
-                if (_subscribed) _input.OnUiRegionTapped -= OnUiTapped;
+                if (_subscribed)
+                {
+                    _input.OnUiRegionTapped -= OnUiTapped;
+                    _input.OnLabActionButton -= OnActionButton;
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    _input.OnRuneCastReleased -= OnRuneReleasedForLog;
+#endif
+                }
             }
             _subscribed = false;
         }
@@ -146,6 +181,8 @@ namespace Vow.Bootstrap
                 _camera.fieldOfView = ThirdPersonFieldOfView;
                 _input.ContinuousRouter.SetThirdPersonEnabled(true);
                 _hero.SetContinuousMoveSource(ReadContinuousMove, () => _input.ContinuousRouter.MoveIntentVersion);
+                if (_runeCaster != null) _runeCaster.SetDragDirectionOverride(_aimGround);
+                if (_runeGhost != null) _runeGhost.SetDragDirectionOverride(_aimGround);
                 if (_hud != null) _hud.SetCameraLabThirdPerson(true);
                 RefreshLayout();
                 PositionThirdPerson();
@@ -155,6 +192,9 @@ namespace Vow.Bootstrap
                 IsThirdPerson = false;
                 _input.ContinuousRouter.SetThirdPersonEnabled(false);
                 _hero.SetContinuousMoveSource(null);
+                _input.ContinuousRouter.ActionButtonsEnabled = false;
+                if (_runeCaster != null) _runeCaster.SetDragDirectionOverride(null);
+                if (_runeGhost != null) _runeGhost.SetDragDirectionOverride(null);
                 if (_hud != null) _hud.SetCameraLabThirdPerson(false);
                 if (_rig != null)
                 {
@@ -199,6 +239,9 @@ namespace Vow.Bootstrap
             _pitch = Mathf.Clamp(_pitch - router.LookDeltaY * sensitivity, 10f, 50f);
             router.ConsumeLook();
             PositionThirdPerson();
+#if UNITY_WEBGL && !UNITY_EDITOR
+            LogPendingResults();
+#endif
         }
 
         private void PositionThirdPerson()
@@ -263,10 +306,113 @@ namespace Vow.Bootstrap
                 _input.ContinuousRouter.MoveZone = new ScreenRegion(0f, 0f, _width * 0.42f, _height * 0.55f);
                 _input.ContinuousRouter.JoystickRadiusPixels = 55f * unit;
             }
+            _actionLayout = LabActionButtonLayout.Compute(_width, _height, _input.PixelsPerMillimeter);
+            _input.ContinuousRouter.ActionButtons = _actionLayout;
+            _input.ContinuousRouter.ActionButtonsEnabled = IsThirdPerson && _layoutAvailable && enabled;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // 驗證用（Playwright 換算觸控座標）：只在版面重算時輸出，Unity 螢幕座標（原點左下）。
+            RuneButtonLayout runeLog = RuneButtonLayout.Compute(_width, _height, _input.PixelsPerMillimeter);
+            Debug.Log("[CAMERA LAB] LAYOUT third=" + IsThirdPerson + " w=" + _width + " h=" + _height
+                + " toggle=" + Pt(_buttons[0].center.x, _height - _buttons[0].center.y)
+                + " atk=" + Pt((_actionLayout.Attack.XMin + _actionLayout.Attack.XMax) * .5f, (_actionLayout.Attack.YMin + _actionLayout.Attack.YMax) * .5f)
+                + " dash=" + Pt((_actionLayout.Dash.XMin + _actionLayout.Dash.XMax) * .5f, (_actionLayout.Dash.YMin + _actionLayout.Dash.YMax) * .5f)
+                + " rune=" + Pt((runeLog.Button.XMin + runeLog.Button.XMax) * .5f, (runeLog.Button.YMin + runeLog.Button.YMax) * .5f)
+                + " sat=" + _input.RuneSaturationPixels.ToString("F1") + " ppmm=" + _input.PixelsPerMillimeter.ToString("F2"));
+#endif
             _input.Routing.InvalidateUiRegionTouches(_region);
             _input.Routing.UpdateUiRegion(_region, new ScreenRegion(_panel.xMin, _height - _panel.yMax, _panel.xMax, _height - _panel.yMin));
             _input.Routing.SetUiRegionActive(_region, enabled);
         }
+
+        // 鏡頭水平前方（準星方向）。塑牆覆寫與 ATK／DASH 共用同一個來源。
+        private Vector3 AimGround()
+        {
+            CameraLabAim.GroundForward(_yaw, out float x, out float z);
+            return new Vector3(x, 0f, z);
+        }
+
+        private void OnActionButton(LabActionButton button)
+        {
+            if (!_ready || !IsThirdPerson || !InputPermitted) return;
+            if (button == LabActionButton.Attack) AimAttack();
+            else if (button == LabActionButton.Dash) ActiveDash();
+        }
+
+        private void AimAttack()
+        {
+            AimAttackCount++;
+            LastAimTarget = null;
+            CombatTargetRoster roster = _bootstrap.ElementRoster;
+            if (roster == null) return;
+            Vector3 origin = _hero.transform.position;
+            CameraLabAim.GroundForward(_yaw, out float ax, out float az);
+            AimTargetPicker picker = default;
+            picker.Begin(origin.x, origin.z, ax, az, CameraLabAim.ConeHalfAngleDegrees, CameraLabAim.MaxAimDistance);
+            for (int i = 0; i < roster.Count; i++)
+            {
+                CombatTargetBehaviour candidate = roster.GetBehaviour(i);
+                if (candidate == null || !candidate.IsAlive || candidate.TargetTransform == null) continue;
+                // 與點擊同規則：己方石牆不當目標（點擊會穿過去）；其餘交給英雄唯一的交戰判準。
+                if (candidate.TargetFaction == Faction.DestructibleWall && candidate.OwnerFaction == _hero.HeroFaction) continue;
+                if (!_hero.CanEngage(candidate)) continue;
+                Vector3 p = candidate.TargetTransform.position;
+                picker.Consider(i, p.x, p.z);
+            }
+            if (picker.BestIndex < 0) return;
+            LastAimTarget = roster.Get(picker.BestIndex);
+            _input.SubmitCombatTarget(LastAimTarget);
+#if UNITY_WEBGL && !UNITY_EDITOR
+            Debug.Log("[CAMERA LAB] ATK target=" + roster.GetBehaviour(picker.BestIndex).name);
+#endif
+        }
+
+        private void ActiveDash()
+        {
+            TouchGestureRouter r = _input.ContinuousRouter;
+            ActiveDashLogic.ResolveDirection(r.MoveX, r.MoveY, _yaw, out float x, out float z);
+#if UNITY_WEBGL && !UNITY_EDITOR
+            _dashStart = _hero.transform.position;
+#endif
+            LastDashOutcome = _hero.TryActiveDash(new Vector3(x, 0f, z));
+            if (LastDashOutcome == ActiveDashOutcome.FreeDash || LastDashOutcome == ActiveDashOutcome.CadenceFlick) ActiveDashCount++;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            Debug.Log("[CAMERA LAB] DASH outcome=" + LastDashOutcome + " charges=" + _hero.Mover.CurrentCharges);
+            _logDash = ActiveDashCount > 0 && (LastDashOutcome == ActiveDashOutcome.FreeDash || LastDashOutcome == ActiveDashOutcome.CadenceFlick);
+#endif
+        }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // WebGL 驗證用（Playwright 讀 console）：只在按鈕／放手時配置，不在每幀路徑上。
+        private void OnRuneReleasedForLog(Vector2 direction, float distance) { _logWall = IsThirdPerson; }
+
+        private static string Pt(float x, float y) { return "(" + x.ToString("F1") + "," + y.ToString("F1") + ")"; }
+
+        private void LogPendingResults()
+        {
+            if (_logDash && !_hero.Mover.IsDashing)
+            {
+                _logDash = false;
+                Vector3 d = _hero.transform.position - _dashStart;
+                d.y = 0f;
+                Debug.Log("[CAMERA LAB] DASH moved=" + d.magnitude.ToString("F3") + " dir=" + d.normalized.ToString("F3")
+                    + " yaw=" + _yaw.ToString("F1"));
+            }
+            if (_logWall && _runeCaster != null)
+            {
+                _logWall = false;
+                Vector3 hero = _hero.transform.position;
+                Vector3 aim = AimGround();
+                foreach (RuneWall wall in _runeCaster.Pool)
+                {
+                    if (wall == null || !wall.IsAlive) continue;
+                    Vector3 c = wall.transform.position;
+                    Debug.Log("[CAMERA LAB] WALL center=(" + c.x.ToString("F2") + "," + c.z.ToString("F2") + ") hero=("
+                        + hero.x.ToString("F2") + "," + hero.z.ToString("F2") + ") aim=(" + aim.x.ToString("F3") + ","
+                        + aim.z.ToString("F3") + ") facing=" + Vector3.Dot(wall.transform.forward, aim).ToString("F4"));
+                }
+            }
+        }
+#endif
 
         public bool TryGetButtonScreenPoint(int index, out Vector2 point)
         {
@@ -285,6 +431,41 @@ namespace Vow.Bootstrap
             else if (_buttons[1].Contains(point)) RotateThirdPerson(-30f);
             else if (_buttons[2].Contains(point)) RotateThirdPerson(30f);
             else if (_buttons[3].Contains(point)) ResetThirdPerson();
+        }
+
+        // 沿用 RuneButtonView 的 IMGUI 畫法（DrawTexture 填色＋粗體白字）；幾何一律取 LabActionButtonLayout。
+        private void DrawActionButtons(float unit)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            if (_actionLabel == null)
+            {
+                _actionLabel = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
+                _actionLabel.normal.textColor = Color.white;
+            }
+            int charges = _hero.Mover.CurrentCharges;
+            Rect attack = ToGuiRect(_actionLayout.Attack);
+            Rect dash = ToGuiRect(_actionLayout.Dash);
+            Fill(attack, AttackColor);
+            GUI.Label(attack, "ATK", _actionLabel);
+            Fill(dash, charges > 0 ? DashColor : EmptyColor);
+            GUI.Label(dash, DashLabels[Mathf.Clamp(charges, 0, DashLabels.Length - 1)], _actionLabel);
+            // 準星：螢幕中心＝鏡頭前方。
+            float s = 10f * unit;
+            Fill(new Rect(_width * 0.5f - s, _height * 0.5f - 1f, s * 2f, 2f), Color.white);
+            Fill(new Rect(_width * 0.5f - 1f, _height * 0.5f - s, 2f, s * 2f), Color.white);
+        }
+
+        private Rect ToGuiRect(ScreenRegion region)
+        {
+            return new Rect(region.XMin, _height - region.YMax, region.XMax - region.XMin, region.YMax - region.YMin);
+        }
+
+        private static void Fill(Rect rect, Color color)
+        {
+            Color previous = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            GUI.color = previous;
         }
 
         private void OnGUI()
@@ -314,8 +495,9 @@ namespace Vow.Bootstrap
                 float radius = r.JoystickRadiusPixels;
                 GUI.Box(new Rect(origin.x - radius, origin.y - radius, radius * 2f, radius * 2f), GUIContent.none, _buttonStyle);
                 GUI.Box(new Rect(origin.x + r.MoveX * radius - 14f, origin.y - r.MoveY * radius - 14f, 28f, 28f), GUIContent.none);
+                if (r.ActionButtonsEnabled) DrawActionButtons(unit);
             }
-            GUI.Label(_help, IsThirdPerson ? "Left: move | Right: look / tap enemy" : _panel.width >= 300f ? "Tap ground: move | enemy: attack" : "Tap ground / enemy", _labelStyle);
+            GUI.Label(_help, IsThirdPerson ? "Left: move | Right: look | ATK/DASH/Rune aim +" : _panel.width >= 300f ? "Tap ground: move | enemy: attack" : "Tap ground / enemy", _labelStyle);
         }
     }
 }
