@@ -9,6 +9,8 @@ namespace Vow.Input
         UiRegion,     // 落在已登記的 UI 區域：事件到此為止，不向下滲透給世界層（移動／普攻）
         Rune,         // 右下地脈符印：整段觸控歸符印手勢所有，拖到世界上空也不會變成點地或微彈
         Pip,          // 模式 B 左下微輪盤
+        ContinuousMove,
+        CameraLook,
         World         // 點地、點目標、模式 A 微彈
     }
 

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using Vow.Core;
 using Vow.Core.Logic;
@@ -97,7 +98,7 @@ namespace Vow.Combat
         {
             if (_hero == null || _castLogic == null || !_castLogic.TryBeginCast(Time.timeAsDouble)) return;
 
-            Vector3 worldDir = ScreenToWorldGroundDirection(screenDirection, _cameraTransform);
+            Vector3 worldDir = ResolveDragWorldDirection(screenDirection, _cameraTransform, _dragDirectionOverride);
             Vector3 pos = _hero.position;
             if (!_castLogic.TryDragPlacement(pos.x, pos.z, worldDir.x, worldDir.z, distance01, out RuneWallPlacement placement)) return;
 
@@ -131,6 +132,20 @@ namespace Vow.Combat
         public void ReleaseSlot(int slot)
         {
             _roster?.Remove(slot);
+        }
+
+        // camera-lab 第三人稱（docs/CAMERA_LAB_COMBAT_PLAN.md §1.3）：拖曳只取拉伸量，方向由覆寫來源（鏡頭前方）提供。
+        // null＝俯視原路徑：仍是改動前同一個 ScreenToWorldGroundDirection 的結果，經 CameraLabAim.WallDragDirection 原值交回。
+        private Func<Vector3> _dragDirectionOverride;
+        public void SetDragDirectionOverride(Func<Vector3> source) { _dragDirectionOverride = source; }
+
+        public static Vector3 ResolveDragWorldDirection(Vector2 screenDirection, Transform cameraTransform, Func<Vector3> overrideSource)
+        {
+            Vector3 screenWorld = ScreenToWorldGroundDirection(screenDirection, cameraTransform);
+            Vector3 aim = overrideSource != null ? overrideSource() : Vector3.zero;
+            CameraLabAim.WallDragDirection(overrideSource != null, aim.x, aim.z, screenWorld.x, screenWorld.z,
+                out float x, out float z);
+            return new Vector3(x, screenWorld.y, z);
         }
 
         // 螢幕方向（單位向量）→ 世界 XZ 方向：以鏡頭水平朝向為基準，與 HeroController.HandleCadenceFlick／
