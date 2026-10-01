@@ -321,46 +321,93 @@ namespace Vow.Tests.PlayMode
             }
         }
 
-        // H2(e)（H 修訂）：峽谷崖台→谷底，錐外退回不被崖壁擋（地形視野交給 CanEngage）。
-        [UnityTest]
-        public IEnumerator H2e_Canyon_PlateauToValley_FallbackNotBlockedByCliff()
+        // 峽谷對局中（對手 Hold）、第三人稱。大廳裡鎖定紅色＝點紅開局（英雄會被送回出生點），所以先在俯視下點紅開局。
+        private TrainingOpponent _red;
+        private IEnumerator StartCanyonMatchThirdPerson()
         {
             yield return Load(false);
             Assert.IsTrue(_bootstrap.TryGetCaptureButtonScreenPoint(out float sx, out float sy));
             _bootstrap.WorldTapInput.SendScreenTap(sx, sy);
             for (int i = 0; i < 30; i++) yield return null;
             Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState);
-            TrainingOpponent red = Object.FindObjectOfType<TrainingOpponent>();
-            // 大廳裡鎖定紅色＝點紅開局（英雄會被送回出生點），所以先在俯視下點紅開局，對局中再擺位置。
-            Vector3 redScreen = Camera.main.WorldToScreenPoint(red.transform.position + Vector3.up);
+            _red = Object.FindObjectOfType<TrainingOpponent>();
+            Vector3 redScreen = Camera.main.WorldToScreenPoint(_red.transform.position + Vector3.up);
             _bootstrap.WorldTapInput.SendScreenTap(redScreen.x, redScreen.y);
             yield return null;
             Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState, "點紅開局");
             _bootstrap.HoldOpponentForTest(true);
             _lab.SetThirdPerson(true);
             yield return null; yield return null;
+        }
 
-            CanyonTerrainSpec t = CanyonTerrainSpec.V0140;
-            HeroLocomotion move = _hero.GetComponent<HeroLocomotion>();
-            move.WarpTo(new Vector3(t.Board.CenterX(5), t.TileHeight(5), t.Board.CenterZ(5)));   // 崖台 +1
-            red.RespawnAt(new Vector3(t.Board.CenterX(4), t.TileHeight(4), t.Board.CenterZ(4)));  // 谷底 −1
+        // 英雄放 heroAt、對手放 redAt，準星對準（aimAtRed）或背對對手。
+        private IEnumerator PlaceCanyon(Vector3 heroAt, Vector3 redAt, bool aimAtRed)
+        {
+            _hero.GetComponent<HeroLocomotion>().WarpTo(heroAt);
+            _red.RespawnAt(redAt);
             for (int i = 0; i < 4; i++) yield return null;
-            Vector3 h = _hero.transform.position, r = red.transform.position;
-            Assert.AreEqual(1f, h.y, 0.05f, "英雄在崖台");
-            Assert.AreEqual(-1f, r.y, 0.05f, "對手在谷底");
-            Assert.IsTrue(_hero.CanEngage(red), "前提：遊戲視野規則允許崖台打谷底");
-            _lab.RotateThirdPerson(Mathf.Atan2(r.x - h.x, r.z - h.z) * Mathf.Rad2Deg + 180f - _lab.YawDegrees);   // 背對：錐外
+            Vector3 h = _hero.transform.position, r = _red.transform.position;
+            float bearing = Mathf.Atan2(r.x - h.x, r.z - h.z) * Mathf.Rad2Deg;
+            _lab.RotateThirdPerson(bearing + (aimAtRed ? 0f : 180f) - _lab.YawDegrees);
             for (int i = 0; i < 3; i++) yield return null;
-            Assert.AreSame(red, _lab.PreviewTarget, "崖台往谷底的錐外退回不得被崖壁擋");
-            Assert.IsFalse(_lab.PreviewInCone);
-            float health = red.HealthNormalized;
+        }
+
+        private static Vector3 TileCenter(int tile)
+        {
+            CanyonTerrainSpec t = CanyonTerrainSpec.V0140;
+            return new Vector3(t.Board.CenterX(tile), t.TileHeight(tile), t.Board.CenterZ(tile));
+        }
+
+        [UnityTest] // J1：崖台→谷底 7.58m（超出射程、跨崖走不到），錐外不挑
+        public IEnumerator J1_Canyon_PlateauToValleyOutOfRange_FallbackDoesNotPick()
+        {
+            yield return StartCanyonMatchThirdPerson();
+            yield return PlaceCanyon(TileCenter(5), TileCenter(4), false);
+            Assert.AreEqual(1f, _hero.transform.position.y, 0.05f, "英雄在崖台");
+            Assert.AreEqual(-1f, _red.transform.position.y, 0.05f, "對手在谷底");
+            Assert.IsTrue(_hero.CanEngage(_red), "前提：視野規則允許交戰");
+            Assert.IsFalse(_hero.IsTargetInAttackRange(_red), "前提：超出射程");
+            Assert.IsNull(_lab.PreviewTarget, "打不到也走不到→錐外不挑");
             TapAttack();
-            Assert.AreSame(red, _lab.LastAimTarget);
-            for (int i = 0; i < 120; i++) yield return null;
-            Vector3 after = _hero.transform.position;
-            Debug.Log("[CAMERA LAB TEST] H2e after 2s: redHealth " + health.ToString("F3") + "->" + red.HealthNormalized.ToString("F3")
-                + " heroMoved=" + Vector3.Distance(h, after).ToString("F2") + " heroY=" + after.y.ToString("F2")
-                + " target=" + (_hero.CurrentTarget == null ? "none" : ((Component)_hero.CurrentTarget).name));
+            Assert.IsNull(_lab.LastAimTarget);
+        }
+
+        [UnityTest] // J2：崖下 3.4m（射程內），錐外照挑，且真的打得到
+        public IEnumerator J2_Canyon_ValleyTargetBelowCliffWithinRange_FallbackPicksAndHits()
+        {
+            yield return StartCanyonMatchThirdPerson();
+            CanyonTerrainSpec t = CanyonTerrainSpec.V0140;
+            Vector3 a = TileCenter(5), c = TileCenter(4);
+            a.y = 0f; c.y = 0f;
+            Vector3 dir = (c - a).normalized;
+            float edge = -1f;
+            for (float s = 0f; s < Vector3.Distance(a, c); s += 0.02f)
+            {
+                Vector3 q = a + dir * s;
+                if (t.HeightAt(q.x, q.z, 0) < 0.5f) { edge = s; break; }
+            }
+            Assert.Greater(edge, 0f, "找得到崖緣");
+            Vector3 hp = a + dir * (edge - 0.4f); hp.y = 1f;
+            Vector3 rp = a + dir * (edge + 3.0f); rp.y = -1f;
+            yield return PlaceCanyon(hp, rp, false);
+            Assert.IsTrue(_hero.IsTargetInAttackRange(_red), "前提：崖下 3.4m 在射程內");
+            Assert.AreSame(_red, _lab.PreviewTarget, "射程內→錐外照挑（崖壁不擋視線）");
+            Assert.IsFalse(_lab.PreviewInCone);
+            float health = _red.HealthNormalized;
+            TapAttack();
+            Assert.AreSame(_red, _lab.LastAimTarget);
+            float deadline = Time.time + 2f;
+            while (_red.HealthNormalized >= health && Time.time < deadline) yield return null;
+            Assert.Less(_red.HealthNormalized, health, "2s 內真的打到");
+        }
+
+        [UnityTest] // J3：J1 同位置但準星對準（錐內）→ 照挑（錐內不受 J 限制）
+        public IEnumerator J3_Canyon_PlateauToValleyOutOfRange_InConeStillPicks()
+        {
+            yield return StartCanyonMatchThirdPerson();
+            yield return PlaceCanyon(TileCenter(5), TileCenter(4), true);
+            Assert.AreSame(_red, _lab.PreviewTarget);
+            Assert.IsTrue(_lab.PreviewInCone);
         }
 
         [UnityTest] // D1／E：搖桿按住推動中同時按 ATK

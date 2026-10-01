@@ -368,11 +368,21 @@ namespace Vow.Bootstrap
                 Vector3 p = candidate.TargetTransform.position;
                 float dx = p.x - origin.x, dz = p.z - origin.z;
                 bool inRange = dx * dx + dz * dz <= CameraLabAim.MaxAimDistance * CameraLabAim.MaxAimDistance;
-                // 視線只影響「錐外退回最近者」：沒瞄、系統自己挑時，不挑牆後面的敵人（英雄會突然跑去繞牆）。
-                picker.Consider(i, p.x, p.z, ReferenceEquals(candidate, current), inRange && HasClearSight(candidate));
+                // 只影響「錐外退回最近者」：沒瞄、系統自己挑時，只挑按下去馬上有結果的目標——
+                // 不在石牆後（英雄會突然跑去繞牆），且已在射程內或同一樓地板走得到（崖台→谷底超出射程會走一步就放棄）。
+                bool eligible = inRange && HasClearSight(candidate) && (_hero.IsTargetInAttackRange(candidate) || SameFloor(origin, p));
+                picker.Consider(i, p.x, p.z, ReferenceEquals(candidate, current), eligible);
             }
             // 錐內優先；錐內沒有就退回 8m 內最近者，8m 內都沒有才不出手。
             return picker.ResolvedIndex;
+        }
+
+        // 正式版「同一樓地板」判準（V0140 §5.2）；平地恆真。
+        private bool SameFloor(Vector3 a, Vector3 b)
+        {
+            ITerrainQuery terrain = _hero.GetComponent<HeroLocomotion>().TerrainQuery;
+            if (terrain == null) return true;
+            return terrain.IsSameFloor(a.x, a.z, terrain.ResolveLayer(a.x, a.z, a.y), b.x, b.z, terrain.ResolveLayer(b.x, b.z, b.y));
         }
 
         private static bool HasEnabledCollider(CombatTargetBehaviour target)
