@@ -93,6 +93,14 @@ namespace Vow.Tests.PlayMode
             int moveEvents = 0, targetEvents = 0;
             _input.OnMoveDestinationSelected += _ => moveEvents++;
             _input.OnCombatTargetSelected += _ => targetEvents++;
+            // 修補 r1 F4/F6：TOP 只有切換鈕（0）佔 UI 區；LEFT/RIGHT/RESET（1~3）只在 THIRD 存在。
+            Vector2 toggle = ButtonPoint(0);
+            Assert.AreEqual(TouchRoute.UiRegion,
+                _input.Routing.Route(toggle.x, toggle.y, Screen.width, Screen.height, _input.ActiveMode, out int topId));
+            Assert.AreEqual(_lab.UiRegionId, topId);
+            for (int i = 1; i < 4; i++)
+                Assert.IsFalse(_lab.TryGetButtonScreenPoint(i, out _), "TOP 不該有第 " + i + " 顆鈕");
+            TapButton(0);
             for (int i = 0; i < 4; i++)
             {
                 Vector2 p = ButtonPoint(i);
@@ -100,7 +108,6 @@ namespace Vow.Tests.PlayMode
                     _input.Routing.Route(p.x, p.y, Screen.width, Screen.height, _input.ActiveMode, out int id));
                 Assert.AreEqual(_lab.UiRegionId, id);
             }
-            TapButton(0);
             TapButton(1);
             Assert.AreEqual(330f, _lab.YawDegrees);
             TapButton(2);
@@ -119,6 +126,43 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(0, moveEvents);
             Assert.AreEqual(0, targetEvents);
         }
+
+#if UNITY_EDITOR
+        // 修補 r1 F4/F6：TOP 時原本 LEFT/RIGHT/RESET 那三格不再是 UI 區——點下去是點地移動（不被面板吃掉、不轉鏡頭）；
+        // 切 THIRD 四顆鈕照舊、切回 TOP 又只剩切換鈕。修正前版本這三格路由成 UiRegion，本測試紅。
+        [UnityTest]
+        public IEnumerator TopMode_OnlyToggleIsUi_FormerLabButtonAreasReachTheWorld()
+        {
+            yield return Load();
+            Rect[] buttons = (Rect[])typeof(CameraComparisonLab)
+                .GetField("_buttons", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(_lab);
+            int moveEvents = 0;
+            _input.OnMoveDestinationSelected += _ => moveEvents++;
+            for (int i = 1; i < 4; i++)
+            {
+                float x = buttons[i].center.x, y = Screen.height - buttons[i].center.y;
+                Assert.AreNotEqual(TouchRoute.UiRegion,
+                    _input.Routing.Route(x, y, Screen.width, Screen.height, _input.ActiveMode, out _),
+                    "TOP 時第 " + i + " 格不該被面板吃掉");
+                int before = moveEvents;
+                _input.SendScreenTap(x, y);
+                Assert.AreEqual(before + 1, moveEvents, "TOP 時點第 " + i + " 格應是點地移動");
+                Assert.IsFalse(_lab.IsThirdPerson);
+                Assert.AreEqual(0f, _lab.YawDegrees);
+            }
+            TapButton(0);
+            Assert.IsTrue(_lab.IsThirdPerson);
+            for (int i = 0; i < 4; i++) Assert.IsTrue(_lab.TryGetButtonScreenPoint(i, out _), "THIRD 四顆鈕都在");
+            TapButton(0);
+            Assert.IsFalse(_lab.IsThirdPerson);
+            for (int i = 1; i < 4; i++) Assert.IsFalse(_lab.TryGetButtonScreenPoint(i, out _), "切回 TOP 後只剩切換鈕");
+            buttons = (Rect[])typeof(CameraComparisonLab)
+                .GetField("_buttons", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(_lab);
+            Vector2 left = new Vector2(buttons[1].center.x, Screen.height - buttons[1].center.y);
+            Assert.AreNotEqual(TouchRoute.UiRegion,
+                _input.Routing.Route(left.x, left.y, Screen.width, Screen.height, _input.ActiveMode, out _), "切回 TOP 後 UI 區縮回切換鈕");
+        }
+#endif
 
         [UnityTest]
         public IEnumerator WallContractsCamera_AndHeroColliderDoesNotBlockIt()

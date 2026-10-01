@@ -297,7 +297,10 @@ namespace Vow.Bootstrap
                 && y + height > (hud.Water.YMin - 8f) * scale) _layoutAvailable = false;
             if (_width <= _height && IsThirdPerson) SetThirdPerson(false);
             _panel = new Rect(x, y, width, height);
-            if (!_layoutAvailable) _panel = new Rect(_width / 2f - 100f, _height - 38f, 200f, 24f);
+            // 放不下時的提示標籤：避開首頁底部置中的 #vow-version 版本列（bottom 6px＋兩行約 31 CSS px）。
+            // WebGL 的 Screen.dpi＝96×devicePixelRatio，用它把 40 CSS px 換成裝置像素（審查 r1 F4）。
+            float cssPixel = Screen.dpi > 0f ? Mathf.Max(1f, Screen.dpi / 96f) : 1f;
+            if (!_layoutAvailable) _panel = new Rect(_width / 2f - 100f, _height - 38f - 40f * cssPixel, 200f, 24f);
             _title = new Rect(x + 4f, y + 2f, width - 8f, 22f);
             _help = new Rect(x + 4f, y + height - 23f, width - 8f, 22f);
             int columns = oneRow ? 4 : 2;
@@ -305,6 +308,9 @@ namespace Vow.Bootstrap
             for (int i = 0; i < 4; i++)
                 _buttons[i] = new Rect(x + 5f + (i % columns) * (buttonWidth + 4f),
                     y + 26f + (i / columns) * 46f, buttonWidth, 42f);
+            // 俯視（TOP）只留 TOP/THIRD 切換鈕：LEFT/RIGHT/RESET 只在第三人稱有作用，TOP 不畫、不佔 UI 區、不吃點擊（審查 r1 F4/F6）。
+            // 切換鈕位置與大小不變；面板區縮成就是這顆鈕。
+            if (!IsThirdPerson && _layoutAvailable) _panel = _buttons[0];
             if (IsThirdPerson)
             {
                 float unit = Mathf.Min(_width / 844f, _height / 390f);
@@ -501,6 +507,7 @@ namespace Vow.Bootstrap
         {
             point = Vector2.zero;
             if (!_ready || !_layoutAvailable || !enabled || index < 0 || index >= 4) return false;
+            if (!IsThirdPerson && index != 0) return false;   // TOP 只有切換鈕
             point = new Vector2(_buttons[index].center.x, _height - _buttons[index].center.y);
             return true;
         }
@@ -511,6 +518,7 @@ namespace Vow.Bootstrap
             Vector2 point = _input.UiTapScreenPosition;
             point.y = _height - point.y;
             if (_buttons[0].Contains(point)) SetThirdPerson(!IsThirdPerson);
+            else if (!IsThirdPerson) return;
             else if (_buttons[1].Contains(point)) RotateThirdPerson(-30f);
             else if (_buttons[2].Contains(point)) RotateThirdPerson(30f);
             else if (_buttons[3].Contains(point)) ResetThirdPerson();
@@ -578,6 +586,11 @@ namespace Vow.Bootstrap
             if (!_layoutAvailable)
             {
                 GUI.Label(_panel, "CAMERA LAB: use landscape", _labelStyle);
+                return;
+            }
+            if (!IsThirdPerson)
+            {
+                GUI.Box(_buttons[0], "THIRD", _buttonStyle);
                 return;
             }
             GUI.Box(_panel, GUIContent.none);
