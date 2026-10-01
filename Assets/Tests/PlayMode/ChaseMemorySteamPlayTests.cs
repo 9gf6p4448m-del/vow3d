@@ -145,6 +145,52 @@ namespace Vow.Tests.PlayMode
             Assert.IsTrue(hit, "接回後 1.5 秒內沒有打到霧內木樁");
         }
 
+        // 修補 r1 F3：目標「看得見期間」移動過，之後才被蒸氣遮住 → 最後看見位置＝失去視野那一刻的位置，不是鎖定那幀的舊位置。
+        // 探針實測（vow-toolchain/integrate-r1fix-probe0.log [PROBE-F3]）：木樁 12 幀內由 (0,6) 移到 (3,9)、再起霧，
+        // 英雄沿 (0.07,-2.81)→(3,9) 的直線走（起霧後 1 秒 x≈1.39），進霧接回。只在鎖定那幀記位置的壞版本會走向 (0,6)，x 停在 ≈0.1。
+        [UnityTest]
+        public IEnumerator L3_TargetMovesWhileVisible_ThenHidden_HeroHeadsToWhereItWasLastSeen()
+        {
+            yield return Setup();
+            float health0 = _dummy.Health;
+            _input.TapTarget(_dummy);
+            yield return null;
+            Assert.AreSame(_dummy, _hero.CurrentTarget, "起霧前應該鎖得到木樁");
+            Vector3 movedTo = new Vector3(3f, 1f, 9f);   // 霧心 (0,9) 半徑 4 內；鎖定位置 (0,6) 以東 3m、以北 3m
+            const int moveFrames = 12;
+            for (int i = 1; i <= moveFrames; i++)
+            {
+                _dummy.transform.position = Vector3.Lerp(DummyAt, movedTo, i / (float)moveFrames);
+                yield return null;
+                Assert.IsTrue(_hero.CanEngage(_dummy), "前提：木樁移動期間都看得見（第 " + i + " 幀）");
+            }
+            Vector3 lossPoint = _hero.transform.position;
+            _field.CastWater(SteamCentre, (int)Faction.BlueTeam);
+            _field.CastFire(SteamCentre, (int)Faction.BlueTeam);
+            yield return null;
+            Assert.IsFalse(_hero.CanEngage(_dummy), "前提：起霧後看不見木樁");
+            Assert.AreSame(_dummy, _hero.LostTargetForTest, "前提：進入失去視野的追擊記憶");
+
+            // 行為：1 秒後英雄在「失去視野點→(3,9)」那條直線上，明顯往東偏（走向 (0,6) 的壞版本 x 幾乎不動）。
+            for (int i = 0; i < Mathf.RoundToInt(1f * Fps) - 1; i++) yield return null;
+            Vector3 p = _hero.transform.position;
+            Assert.IsNull(_hero.CurrentTarget, "前提：1 秒時仍未接回");
+            Assert.GreaterOrEqual(p.x - lossPoint.x, 1.0f,
+                "英雄沒有走向失去視野那一刻的位置 (3,9)（x=" + p.x.ToString("F2") + "，疑似走向鎖定那幀的 (0,6)）");
+            float t = (p.z - lossPoint.z) / (movedTo.z - lossPoint.z);
+            float expectedX = lossPoint.x + t * (movedTo.x - lossPoint.x);
+            Assert.LessOrEqual(Mathf.Abs(p.x - expectedX), LateralTolerance,
+                "英雄偏離「失去視野點→最後看見位置」直線（x=" + p.x.ToString("F2") + "，預期 " + expectedX.ToString("F2") + "）");
+
+            bool hit = false;
+            for (int i = 0; i < Mathf.RoundToInt(3f * Fps) && !hit; i++)
+            {
+                yield return null;
+                hit = _dummy.Health < health0 - 0.01f;
+            }
+            Assert.IsTrue(hit, "進霧後沒有接回並打到木樁（停在 " + _hero.transform.position + "）");
+        }
+
         private float SteamRadius()
         {
             for (int slot = 0; slot < _field.ZoneCapacity; slot++)

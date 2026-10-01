@@ -335,7 +335,8 @@ namespace Vow.Core
             {
                 _lostTarget = null;
                 _trackedTarget = current;
-                if (current.TargetTransform != null) _trackedLastSeen = current.TargetTransform.position;
+                // 只在「此刻看得見」時記位置：後搖／滑步期間大腦不驗目標，目標可能已入霧或出視野仍掛著（審查 r1 F2）。
+                if (current.TargetTransform != null && CanEngage(current)) _trackedLastSeen = current.TargetTransform.position;
                 return;
             }
             if (_trackedTarget != null)

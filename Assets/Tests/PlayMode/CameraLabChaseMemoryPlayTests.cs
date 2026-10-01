@@ -270,6 +270,73 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(0, w.Stalls);
             Assert.AreEqual(0, w.LostRises);
         }
+        // 修補 r1 F2：攻擊後搖期間（AttackRelease／AttackRecovery 大腦不驗目標）目標離開視野並移動 →
+        // 英雄走向「最後看得見」的位置，不被引到即時位置。俯視（TOP）、峽谷對局（地形視野：谷底看不到崖台）。
+        // 蒸氣不用來做這條：普攻命中即受擊顯影 1.5s＞後搖 0.37s，後搖期間目標恆看得見（探針 [PROBE-F2C]，見 integrate-r1fix-probe1.log）。
+        // 探針實測（integrate-r1fix-probe0/1.log [PROBE-F2]）：英雄 (0,-1,-1.5) 打谷底 3m 外的對手，命中進入 AttackRelease 後把對手搬到崖台 tile 5。
+        //   修正前：後搖結束（約 22 幀）後英雄往南坡口走向崖台的即時位置，4 秒內離最後看見位置 14m。
+        //   修正後：英雄走回最後看見位置 (0,-1,1.5)（距離 3.00→0.07），抵達即 Idle、記憶清掉、不再出手。
+        [UnityTest]
+        public IEnumerator K6_TargetHiddenDuringAttackRecovery_HeroGoesToLastSeen_NotTheLivePosition()
+        {
+            Time.captureDeltaTime = 1f / 60f;
+            SceneManager.LoadScene("VOW_Phase1_Greybox", LoadSceneMode.Single);
+            yield return null; yield return null;
+            _lab = Object.FindObjectOfType<CameraComparisonLab>();
+            _bootstrap = Object.FindObjectOfType<Phase1Bootstrap>();
+            _input = Object.FindObjectOfType<PlayerInputService>();
+            _hero = _lab.FollowedHero;
+            yield return null;
+            Assert.IsTrue(_bootstrap.TryGetCaptureButtonScreenPoint(out float sx, out float sy));
+            _bootstrap.WorldTapInput.SendScreenTap(sx, sy);
+            for (int i = 0; i < 30; i++) yield return null;
+            _red = Object.FindObjectOfType<TrainingOpponent>();
+            Vector3 redScreen = Camera.main.WorldToScreenPoint(_red.transform.position + Vector3.up);
+            _bootstrap.WorldTapInput.SendScreenTap(redScreen.x, redScreen.y);
+            yield return null;
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState, "點紅開局");
+            _bootstrap.HoldOpponentForTest(true);
+            Assert.IsFalse(_lab.IsThirdPerson, "前提：俯視模式");
+
+            _hero.GetComponent<HeroLocomotion>().WarpTo(TileCenter(0) + new Vector3(0f, 0f, -1.5f));
+            _red.GetComponent<HeroLocomotion>().WarpTo(TileCenter(0) + new Vector3(0f, 0f, 1.5f));
+            for (int i = 0; i < 4; i++) yield return null;
+            Assert.IsTrue(_hero.CanEngage(_red), "前提：同在谷底 3m，看得見");
+            Vector3 rs = Camera.main.WorldToScreenPoint(_red.transform.position + Vector3.up);
+            _bootstrap.WorldTapInput.SendScreenTap(rs.x, rs.y);
+            float health0 = _red.HealthNormalized;
+            int guard = 0;
+            while (_hero.StateMachine.CurrentState != PlayerState.AttackRelease && guard++ < 120) yield return null;
+            Assert.AreEqual(PlayerState.AttackRelease, _hero.StateMachine.CurrentState, "前提：2 秒內命中進入後搖");
+            float health1 = _red.HealthNormalized;
+            Assert.Less(health1, health0, "前提：第一刀打到");
+            Vector3 lastSeen = Flat(_red.transform.position);
+
+            _red.GetComponent<HeroLocomotion>().WarpTo(TileCenter(5));   // 後搖期間離開視野：谷底看不到崖台
+            yield return null;
+            Assert.IsFalse(_hero.CanEngage(_red), "前提：對手到崖台後看不見");
+            Assert.AreSame(_red, _hero.CurrentTarget, "前提：後搖期間大腦仍掛著目標（不驗）");
+
+            guard = 0;
+            while (_hero.LostTargetForTest == null && guard++ < 60) yield return null;
+            Assert.AreSame(_red, _hero.LostTargetForTest, "前提：後搖結束後進入失去視野的追擊記憶");
+            float startDist = Vector3.Distance(Flat(_hero.transform.position), lastSeen);
+            float maxDist = startDist;
+            for (int i = 0; i < 180; i++)
+            {
+                yield return null;
+                maxDist = Mathf.Max(maxDist, Vector3.Distance(Flat(_hero.transform.position), lastSeen));
+            }
+            float endDist = Vector3.Distance(Flat(_hero.transform.position), lastSeen);
+            Debug.Log("[CAMERA LAB TEST] K6 startDist=" + startDist.ToString("F2") + " maxDist=" + maxDist.ToString("F2")
+                + " endDist=" + endDist.ToString("F2") + " hero=" + _hero.transform.position.ToString("F2"));
+            Assert.LessOrEqual(maxDist, startDist + 0.3f,
+                "英雄離開了最後看見位置（最遠 " + maxDist.ToString("F2") + "m）：被引向目標的即時位置");
+            Assert.LessOrEqual(endDist, 0.5f, "3 秒內沒有走到最後看見位置（剩 " + endDist.ToString("F2") + "m）");
+            Assert.IsNull(_hero.LostTargetForTest, "抵達後記憶清掉");
+            Assert.AreEqual(PlayerState.Idle, _hero.StateMachine.CurrentState, "抵達後 Idle");
+            Assert.AreEqual(health1, _red.HealthNormalized, 1e-4f, "看不見期間沒有再出手");
+        }
     }
 }
 #endif
