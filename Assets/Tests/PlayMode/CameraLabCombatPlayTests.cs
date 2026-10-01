@@ -269,6 +269,51 @@ namespace Vow.Tests.PlayMode
             Assert.IsNull(_lab.LastAimTarget, "牆後木樁不得被選");
         }
 
+        // I1：佔領模式停用的木樁／測試牆（看不見、點不到）不得被 ATK／預覽挑中（峽谷佔領大廳探針發現）。
+        [UnityTest]
+        public IEnumerator I1_CaptureLobby_SuppressedDummiesAndWalls_AreNeverAimed()
+        {
+            yield return Load(false);
+            Assert.IsTrue(_bootstrap.TryGetCaptureButtonScreenPoint(out float sx, out float sy));
+            _bootstrap.WorldTapInput.SendScreenTap(sx, sy);
+            for (int i = 0; i < 30; i++) yield return null;
+            Assert.AreEqual(CaptureMatchState.Lobby, _bootstrap.CaptureState);
+            TrainingOpponent red = Object.FindObjectOfType<TrainingOpponent>();
+            _bootstrap.HoldOpponentForTest(true);
+            _lab.SetThirdPerson(true);
+            yield return null; yield return null;
+
+            CanyonTerrainSpec t = CanyonTerrainSpec.V0140;
+            CaptureBoardSpec board = t.Board;
+            HeroLocomotion move = _hero.GetComponent<HeroLocomotion>();
+            Vector3 hp = new Vector3(board.CenterX(0), t.TileHeight(0), board.CenterZ(0));
+            Vector3 rp = new Vector3(board.CenterX(1), t.TileHeight(1), board.CenterZ(1));
+            move.WarpTo(hp);
+            red.RespawnAt(rp);
+            for (int i = 0; i < 4; i++) yield return null;
+            Vector3 h = _hero.transform.position, r = red.transform.position;
+            _lab.RotateThirdPerson(Mathf.Atan2(r.x - h.x, r.z - h.z) * Mathf.Rad2Deg - _lab.YawDegrees);
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.AreSame(red, _lab.PreviewTarget, "對準對手→預覽是對手，不是隱形木樁");
+            TapAttack();
+            Assert.AreSame(red, _lab.LastAimTarget);
+
+            Vector3[] spots = { hp, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, -6f) };
+            for (int s = 0; s < spots.Length; s++)
+            {
+                move.WarpTo(spots[s]);
+                for (int i = 0; i < 3; i++) yield return null;
+                for (int k = 0; k < 12; k++)
+                {
+                    _lab.RotateThirdPerson(30f);
+                    yield return null;
+                    ICombatTarget p = _lab.PreviewTarget;
+                    Assert.IsFalse(p is DummyTarget, "位置 " + s + " 方向 " + k * 30 + "：預覽挑到停用的木樁");
+                    Assert.IsFalse(p is TestWallTarget, "位置 " + s + " 方向 " + k * 30 + "：預覽挑到停用的測試牆");
+                }
+            }
+        }
+
         [UnityTest] // D1／E：搖桿按住推動中同時按 ATK
         public IEnumerator D1_StickHeldWhileAttack_StillLocksDummy_AndKeepsStick()
         {

@@ -363,6 +363,7 @@ namespace Vow.Bootstrap
                 if (candidate == null || !candidate.IsAlive || candidate.TargetTransform == null) continue;
                 // 與點擊同規則：己方石牆不當目標（點擊會穿過去）；其餘交給英雄唯一的交戰判準。
                 if (candidate.TargetFaction == Faction.DestructibleWall && candidate.OwnerFaction == _hero.HeroFaction) continue;
+                if (!HasEnabledCollider(candidate)) continue;   // 佔領模式停用的木樁／測試牆：看不見、點不到→也挑不到
                 if (!_hero.CanEngage(candidate)) continue;
                 Vector3 p = candidate.TargetTransform.position;
                 float dx = p.x - origin.x, dz = p.z - origin.z;
@@ -372,6 +373,14 @@ namespace Vow.Bootstrap
             }
             // 錐內優先；錐內沒有就退回 8m 內最近者，8m 內都沒有才不出手。
             return picker.ResolvedIndex;
+        }
+
+        private static bool HasEnabledCollider(CombatTargetBehaviour target)
+        {
+            Collider[] colliders = target.TargetColliders;
+            for (int i = 0; i < colliders.Length; i++)
+                if (colliders[i] != null && colliders[i].enabled) return true;
+            return false;
         }
 
         // 英雄身高 1m → 目標身高 1m 的直線上，有石牆（不分陣營）或場景物件就算被擋；其他敵人／木樁不擋。
