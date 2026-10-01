@@ -1,10 +1,22 @@
 ---
-description: "接手 VOW，從 C 已驗收、D 已裁定且來源證據通過覆核、待建置部署繼續。先讀本檔與 vow-toolchain/v0140-D-source-evidence-final-report-20261001.md。"
+description: "接手 VOW：v0.14.0 已部署（gh-pages 4443510，來源 290ee2b）；D04–D06 截圖待主對話逐項勾選、camera-lab 線上頁被覆蓋待裁定。先讀本檔與驗收指南 §25。"
 ---
 
 # VOW 誓約 — Codex 接手紀錄（2026-10-01 更新）
 
-## 目前工作：v0.14.0 步驟 C 已驗收；D 已裁定、來源證據通過覆核、待建置部署
+## 目前工作：v0.14.0 已建置部署（D04–D06 待主對話勾選）
+
+### ★ D 建置部署（2026-10-01 17:20 +08:00；取代下方「D 狀態」的待建置敘述）★
+
+- **來源與建置**：D 來源 `290ee2b17660555a40772d4cd9832bd40775f3be`，在乾淨 worktree `scratch/v0140-D-deploy/vow-deploy`（detached）建置，主樹不建置。覆核條件 C3 依使用者 2026-10-01 裁定 A（僅本次建置）：554 檔 git blob／去 CR bytes 與 longwait manifest 相符、git status 空、`ProjectSettings.asset`＝7CFDC570…4DC7、Apply 前後 bytes 不變，建置前後皆 PASS。**建置 bytes 與證據擷取 bytes 差在換行（CRLF vs LF），內容相同；66 支 .cs 無跨行 verbatim 字串（靜態檢查，非建置比對）**。Unity batchmode `VOWWebGLBuilder.Build` ExitCode 0、333.7 s、10.6 MB、版本 0.14.0（log `vow-toolchain/v0140-D-webgl-build-20261001.log`）。
+- **三套測試**：引用 D 來源 290ee2b 證據（`vow-toolchain/v0140-D-source-evidence-20261001-8bf8580da61d4f9b909a4cf4849fa1bc/`）：verify 326 過／1 略／0 敗 `RESULT: ALL PASS`；EditMode 319 過／8 既有略／0 敗；PlayMode 248／248＋cold C03 1／1。本輪未重跑。
+- **部署**：`SKIP_BUILD=1 bash Tools/deploy-webgl.sh`（部署樹）exit 0 → `origin/gh-pages` `4443510a60ca7200212277784d301dc485211e86`（2026-10-01 17:17:57 +0800，`deploy: VOW v0.14.0 from 290ee2b`）；線上版本列 `VOW v0.14.0 / build 2026-10-01 09:15 UTC · 290ee2b`；線上 6 檔 SHA256 與本機產物相同。
+- **線上實看**：Chromium 844×390／DPR2／觸控 exit 0、pageerror 0、console.error 0；WebKit runner 0／0、真點 CAPTURE 進峽谷 Lobby；WebKit `iPhone 13 landscape` 載入 6.803 s、0／0。D01／D02／D03／D07 過；D04／D05／D06 子代理逐張初判過，依計畫須主對話逐項勾選才算 D 驗收完成。明細與截圖路徑見 `docs/PHASE1_ACCEPTANCE_GUIDE.md` §25。
+- **待裁定**：部署前 gh-pages 是 `971386c`（另一工作流 15:54 部署的 `camera-lab/` 子目錄）；`deploy-webgl.sh` 整份覆蓋後線上 `camera-lab/` 已不存在，是否復原待使用者決定（復原會讓 `origin/gh-pages -1` 不再是本次部署）。
+- **未驗證**：見 §25 六項（原生手感／崖台觸控精準度、線上 AI 走坡、線上遮擋、WebGL 實際幀率、PWA 舊版更新、斜坡上半段點地與光圈交界）。回退點 v0.13.1 `e82603c`（來源 `eb3c164`）。
+- 進度落檔：`vow-toolchain/v0140-D-deploy-progress-20261001.md`。主樹的 GDD.md、docs/PLAYER_EXPERIENCE_BLUEPRINT.md、Tools/DotnetCheck/__pycache__/ 未動、未提交。
+
+### 前一狀態：C 已驗收；D 已裁定、來源證據通過覆核、待建置部署
 
 - **最終驗收（2026-10-01）**：fresh Astra APPROVE／0 findings，僅批准來源 `12fbaa2a11d9cda927300892c4b031dafdbdda59` 的 C01–C05、效能記錄及 A18。完整報告在同層 `vow-toolchain/v0140-C-final-acceptance-review-20261001.md`；本次只更新交接文件，不改已驗收來源。
 - **實跑證據**：`UNITY_REFS_DIR=C:/Users/shung/.gemini/antigravity/scratch/vow-toolchain/refs bash Tools/DotnetCheck/verify.sh` → `RESULT: ALL PASS`（326過／1既有略／0敗，編譯0錯）；原始日誌 `v0140-C-final-verify-20261001.log` 及 receipt exit0。repair2 主run `v0140-C-durable-repair2-20261001T020454Z-26699243065146e7bed3eee239b88250`：EditMode319過／8既有略／0敗；PlayMode248過／0略／0敗，加獨立cold C03的1項，完整方法聯集249無漏無重；190突變全部caught/restored、SKIP0/MISSED0；7組Unity故障皆健康綠／指定行為斷言紅／還原綠。A18受保護diff空、test與BlockGrid刪行0。C03依批准的frame1/210各48B例外通過，原零配置未通過，原紅燈不改寫。

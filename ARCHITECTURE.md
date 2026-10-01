@@ -219,6 +219,54 @@ public interface ICaptureMatchView
 * `ICombatTarget`、`ISkillTelegraphService`、`IPlayerInputService` 的簽章不因佔領模式改動。
 * v0.10.0 聖所減傷的受傷百分比由組裝根每幀照抄本介面的 `Blue/RedDamageTakenPercent` 寫進英雄（`HeroController.TakeDuelDamage`）與對手（`CombatTargetBehaviour.ScaleIncomingDamage` 鉤子，只有 `TrainingOpponent` 覆寫）；非 Active 與開局點擊當幀一律 100。
 
+### 7. 地形查詢介面：ITerrainQuery（v0.14.0）
+
+地形資料契約定義於 `Vow.Core.Logic.ITerrainQuery`，不依賴 UnityEngine。`TerrainClass` 為 `Plain=0`、`Canyon=1`、`Cliff=2`、`Ramp=3`；Plain 同時代表中層與棋盤外。
+
+```csharp
+public interface ITerrainQuery
+{
+    int LayerCountAt(float x, float z);
+    float HeightAt(float x, float z, int layer);
+    TerrainClass ClassAt(float x, float z, int layer);
+    int ResolveLayer(float x, float z, float currentY);
+    bool IsSameFloor(float x0, float z0, int layer0,
+                     float x1, float z1, int layer1);
+}
+```
+
+本批實作是 `CanyonTerrainSpec`。`LayerCountAt` 恆為1、`ResolveLayer` 恆為0；所有本批移動實體持有層號0。`HeightAt` 先判斜坡矩形並依兩端高度線性內插，否則讀所在板塊高度，棋盤外為0。`ClassAt` 優先回Ramp，否則按板塊高度回Canyon／Cliff／Plain。`IsSameFloor` 的實際規則是兩點均不在崖壁格、連線不穿崖，不是單純比較 y 相同；本批層號參數只保留契約。
+
+`CaptureBoardSpec.V0140Canyon.Terrain` 持有地形；`CanyonTerrainSpec.V0140` 回傳同一物件。公開建構子 `CanyonTerrainSpec(CaptureBoardSpec board, float[] tileHeights, int[] rampLowTiles, int[] rampHighTiles)` 由兩端板塊高度產生斜坡，可描述任意落差；本版資料仍固定六處、每處1m落差。不要把 `RampAt` 寫成公開介面：它是此實作的 private 方法。
+
+資料流由 `Phase1Bootstrap` 組裝：預設 `_captureSpec=CaptureBoardSpec.V0140Canyon`；`SetCanyonMode` 決定傳入地形或null、啟停 `CanyonTerrain`／`CliffBarriers`、反向啟停平地Renderer／Collider，僅模式切換時以 `StampCliffs` 加／撤 BlockGrid 引用計數。它把同一地形傳給英雄及對手的 `HeroLocomotion`、`ElementField`、`RuneCaster`、`RuneGhostPreview`、`EnemyWallSpawner`、`CombatFeedbackService`、`SectorTelegraph`、`CaptureBoardView`。`AbyssalVanguardTarget` 另持棋盤規格，其高度讀 `_board.Terrain`，並由 `SetTerrainRoot` 取得物理命中排除的地形根。
+
+移動採 2.5D：平面導航仍經 `GridNavigator`／單張 `BlockGrid`；`HeroLocomotion.SetTerrain` 解層並更新高度，`UpdateTerrainHeight`／位移後讀 `HeightAt`，`EjectFromBox` 用 `BlockGrid.TryFindNearestFreeSameFloor` 避免把英雄推出到崖壁另一側。點地射線由 `PlayerInputService` 以 `Physics.RaycastNonAlloc` 命中地形實體；地形查詢決定移動後高度，不另造點地射線模型。
+
+必須區分兩種圖：`CaptureBoardSpec.Neighbor` 保留19塊、42條歸屬連通邊（BFS斷能／包夾不因峽谷改圖）；`CanyonTerrainSpec.WalkNeighborCount`／`WalkNeighbor`／`WalkDistance`／`FindWalkRoute` 描述同高度加斜坡的可走圖。`CaptureOpponentPolicy.SelectTargetTile(..., ITerrainQuery terrain)` 在峽谷用走路距離選塔，巨獸路線也用可走鄰接。第2批的雙BlockGrid、橋端portal與 `LayeredNavGraph` 是計畫形狀，本版尚未實作；本版 `GridNavigator.ResolveGoal`／`Steer` 公開簽章未加入layer參數。
+
+規則同樣讀單一地形來源：`CanyonRules.AttackRange`／`InAttackRange` 以攻擊者地形算射程，`WaterRadius` 以水域圓心地形算加成；`CaptureVisibilityLogic.CanSee` 合成顯形→真視野→倒地→谷底看崖台限制→局部半徑，下游顯隱、點選與AI共用它。`RevealTracker.NotifyHit`／`NotifyUnitHit` 記開火顯形；`GeothermalVentLogic.Tick` 管踏點引導／冷卻，`Phase1Bootstrap.TickVents` 發射時清戰鬥與舊移動，再呼叫 `HeroLocomotion.BeginVentFlight`。null地形保留Off／平地夾具行為，不以夾具綠燈取代正式峽谷端到端測試。
+
+**source 查核錨點（D 來源 `290ee2b` 行號，2026-10-01 逐列 read-back；之後移行需重讀）**：
+
+| 真符號／行為 | 現行 source 行號 |
+|---|---|
+| TerrainClass、ITerrainQuery 五方法 | `Assets/Scripts/Core/Logic/ITerrainQuery.cs:4`、`:6` |
+| CaptureBoardSpec.Terrain、V0140Canyon、建立地形 | `Assets/Scripts/Core/Logic/CaptureBoardSpec.cs:46`、`:165`、`:176` |
+| CanyonTerrainSpec.V0140、公建構子 | `Assets/Scripts/Core/Logic/CanyonTerrainSpec.cs:35`、`:78` |
+| WalkNeighborCount、WalkNeighbor、WalkDistance | `Assets/Scripts/Core/Logic/CanyonTerrainSpec.cs:252`、`:253`、`:256` |
+| LayerCountAt、ResolveLayer、HeightAt、ClassAt、IsSameFloor | `Assets/Scripts/Core/Logic/CanyonTerrainSpec.cs:271`、`:273`、`:277`、`:291`、`:300` |
+| StampCliffs、FindWalkRoute、private RampAt | `Assets/Scripts/Core/Logic/CanyonTerrainSpec.cs:329`、`:339`、`:387` |
+| Bootstrap 預設規格、TickVents、SetCanyonMode與注入 | `Assets/Scripts/Bootstrap/Phase1Bootstrap.cs:139`、`:935`、`:950`、`:963` |
+| HeroLocomotion層號／查詢、SetTerrain、UpdateTerrainHeight、BeginVentFlight | `Assets/Scripts/Core/HeroLocomotion.cs:26`、`:27`、`:31`、`:39`、`:47` |
+| 同樓地板推出搜尋 | `Assets/Scripts/Core/Logic/BlockGrid.cs:296`；`Assets/Scripts/Core/HeroLocomotion.cs:482` |
+| 真點地射線 | `Assets/Scripts/Input/PlayerInputService.cs:390` |
+| 峽谷AI選塔 | `Assets/Scripts/Core/Logic/CaptureOpponentPolicy.cs:97`；`Assets/Scripts/Combat/TrainingOpponent.cs:351` |
+| 巨獸地形根／高度、路線讀峽谷 | `Assets/Scripts/Combat/AbyssalVanguardTarget.cs:23`、`:24`、`:324` |
+| CanyonRules射程／距離／水域 | `Assets/Scripts/Core/Logic/CanyonRules.cs:10`、`:19`、`:28` |
+| 共用視野、命中顯形、地熱Tick | `Assets/Scripts/Core/Logic/CaptureVisibilityLogic.cs:37`；`Assets/Scripts/Core/Logic/RevealTracker.cs:22`、`:29`；`Assets/Scripts/Core/Logic/GeothermalVentLogic.cs:45` |
+| 按規格選谷心／平地核心 | `Assets/Scripts/Core/Logic/AbyssalVanguardTuning.cs:28`；`Assets/Scripts/Bootstrap/Phase1Bootstrap.cs:390` |
+
 ---
 
 ## 肆、 現代網絡架構規範 (Authoritative Netcode)
