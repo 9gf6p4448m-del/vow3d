@@ -121,6 +121,71 @@ namespace Vow.Tests.PlayMode
             Assert.Less(dummy.Health, health, "1.0s 內必須真的命中（含轉身）");
         }
 
+        // 與英雄同高度、離英雄 distance 公尺、相對 +z 偏 degrees 度（往 +x）的複製木樁，已登記進名冊。
+        private DummyTarget SpawnDummyAt(DummyTarget template, float degrees, float distance)
+        {
+            Vector3 h = _hero.transform.position;
+            float r = degrees * Mathf.Deg2Rad;
+            Vector3 p = new Vector3(h.x + Mathf.Sin(r) * distance, template.transform.position.y, h.z + Mathf.Cos(r) * distance);
+            DummyTarget clone = Object.Instantiate(template, p, template.transform.rotation);
+            _bootstrap.RegisterElementTarget(clone);
+            return clone;
+        }
+
+        [UnityTest] // G5：兩隻木樁——黏性、瞄準覆寫、預覽＝按下結果
+        public IEnumerator G5_TwoDummies_StickyKeepsCurrentTarget_SwitchesWhenAimMovesFar_PreviewMatchesAttack()
+        {
+            yield return Load();
+            DummyTarget a = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(a.transform.position + Vector3.back * 2f);
+            float d = _hero.AttackRange * 0.6f;
+            Vector3 h = _hero.transform.position;
+            a.transform.position = new Vector3(h.x, a.transform.position.y, h.z + d);   // 在攻擊範圍內：英雄只打、不走位
+            DummyTarget b = SpawnDummyAt(a, 25f, d);
+            yield return null; yield return null;
+            Assert.AreEqual(0f, _lab.YawDegrees);
+
+            Assert.AreSame(a, _lab.PreviewTarget, "yaw 0：A 夾角 0°、B 25° → 預覽 A");
+            TapAttack();
+            Assert.AreSame(a, _lab.LastAimTarget);
+            Assert.AreSame(_lab.PreviewTarget, _lab.LastAimTarget, "預覽＝按下結果（第 1 次）");
+            Assert.AreSame(a, _hero.CurrentTarget);
+
+            _lab.RotateThirdPerson(17f);   // A 17°、B 8°：B 只靠準星 9° < 15° → 黏住 A
+            yield return null;
+            Assert.AreSame(a, _lab.PreviewTarget, "黏性：預覽仍是 A");
+            TapAttack();
+            Assert.AreSame(a, _lab.LastAimTarget, "黏性：按下仍打 A");
+            Assert.AreSame(_lab.PreviewTarget, _lab.LastAimTarget, "預覽＝按下結果（第 2 次）");
+
+            _lab.RotateThirdPerson(8f);    // yaw 25：B 0°、A 25° → B 靠準星 25° > 15° → 換 B
+            yield return null;
+            Assert.AreSame(b, _lab.PreviewTarget, "瞄準覆寫：預覽換成 B");
+            TapAttack();
+            Assert.AreSame(b, _lab.LastAimTarget, "瞄準覆寫：按下打 B");
+            Assert.AreSame(_lab.PreviewTarget, _lab.LastAimTarget, "預覽＝按下結果（第 3 次）");
+            Assert.AreSame(b, _hero.CurrentTarget);
+        }
+
+        [UnityTest] // G6：預覽只在第三人稱有值；切回俯視清掉
+        public IEnumerator G6_PreviewOnlyInThirdPerson_ClearedWhenSwitchingToTop()
+        {
+            yield return Load();
+            DummyTarget a = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(a.transform.position + Vector3.back * 3f);
+            yield return null;
+            Assert.AreSame(a, _lab.PreviewTarget, "第三人稱正前方木樁→有預覽");
+            Assert.IsTrue(_lab.PreviewInCone);
+            _lab.SetThirdPerson(false);
+            yield return null;
+            Assert.IsNull(_lab.PreviewTarget, "俯視不畫標記");
+            _lab.SetThirdPerson(true);
+            yield return WarpAndSettle(a.transform.position + Vector3.forward * 3f);   // 木樁在背後：錐外退回
+            yield return null;
+            Assert.AreSame(a, _lab.PreviewTarget);
+            Assert.IsFalse(_lab.PreviewInCone, "錐外退回→標記改淡黃");
+        }
+
         [UnityTest] // D1／E：搖桿按住推動中同時按 ATK
         public IEnumerator D1_StickHeldWhileAttack_StillLocksDummy_AndKeepsStick()
         {

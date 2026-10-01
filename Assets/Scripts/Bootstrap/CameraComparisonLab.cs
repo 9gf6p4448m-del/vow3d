@@ -24,6 +24,8 @@ namespace Vow.Bootstrap
         private static readonly string[] DashLabels = { "DASH 0", "DASH 1", "DASH 2", "DASH 3", "DASH 4" };
         private static readonly Color AttackColor = new Color(0.85f, 0.45f, 0.2f, 0.9f);
         private static readonly Color DashColor = new Color(0.3f, 0.7f, 0.45f, 0.9f);
+        private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
+        private const float MarkerHeight = 3.0f;   // 頭頂血條在 2.4m，標記放在它上面
         private static readonly Color EmptyColor = new Color(0.15f, 0.18f, 0.22f, 0.85f);
         private RuneCaster _runeCaster;
         private RuneGhostPreview _runeGhost;
@@ -231,7 +233,12 @@ namespace Vow.Bootstrap
 
         private void LateUpdate()
         {
-            if (!_ready || !IsThirdPerson) return;
+            if (!_ready || !IsThirdPerson)
+            {
+                PreviewTarget = null;
+                PreviewInCone = false;
+                return;
+            }
             TouchGestureRouter router = _input.ContinuousRouter;
             if (!InputPermitted) router.CancelContinuousTouches();
             float sensitivity = 2.5f / Mathf.Clamp(_input.PixelsPerMillimeter, 3f, 25f);
@@ -239,6 +246,7 @@ namespace Vow.Bootstrap
             _pitch = Mathf.Clamp(_pitch - router.LookDeltaY * sensitivity, 10f, 50f);
             router.ConsumeLook();
             PositionThirdPerson();
+            RefreshAimPreview();
 #if UNITY_WEBGL && !UNITY_EDITOR
             LogPendingResults();
 #endif
@@ -338,16 +346,15 @@ namespace Vow.Bootstrap
             else if (button == LabActionButton.Dash) ActiveDash();
         }
 
-        private void AimAttack()
+        // ATK 與按前預覽共用同一個挑選：標記畫在哪，按下去就打誰。
+        // preferred＝英雄正在打的目標（黏性，見 AimTargetPicker）。
+        private int ResolveAimTarget(CombatTargetRoster roster, out AimTargetPicker picker)
         {
-            AimAttackCount++;
-            LastAimTarget = null;
-            CombatTargetRoster roster = _bootstrap.ElementRoster;
-            if (roster == null) return;
             Vector3 origin = _hero.transform.position;
             CameraLabAim.GroundForward(_yaw, out float ax, out float az);
-            AimTargetPicker picker = default;
+            picker = default;
             picker.Begin(origin.x, origin.z, ax, az, CameraLabAim.ConeHalfAngleDegrees, CameraLabAim.MaxAimDistance);
+            ICombatTarget current = _hero.CurrentTarget;
             for (int i = 0; i < roster.Count; i++)
             {
                 CombatTargetBehaviour candidate = roster.GetBehaviour(i);
@@ -356,16 +363,42 @@ namespace Vow.Bootstrap
                 if (candidate.TargetFaction == Faction.DestructibleWall && candidate.OwnerFaction == _hero.HeroFaction) continue;
                 if (!_hero.CanEngage(candidate)) continue;
                 Vector3 p = candidate.TargetTransform.position;
-                picker.Consider(i, p.x, p.z);
+                picker.Consider(i, p.x, p.z, ReferenceEquals(candidate, current));
             }
             // 錐內優先；錐內沒有就退回 8m 內最近者，8m 內都沒有才不出手。
-            int picked = picker.ResolvedIndex;
+            return picker.ResolvedIndex;
+        }
+
+        private void AimAttack()
+        {
+            AimAttackCount++;
+            LastAimTarget = null;
+            CombatTargetRoster roster = _bootstrap.ElementRoster;
+            if (roster == null) return;
+            int picked = ResolveAimTarget(roster, out AimTargetPicker picker);
             if (picked < 0) return;
             LastAimTarget = roster.Get(picked);
             _input.SubmitCombatTarget(LastAimTarget);
 #if UNITY_WEBGL && !UNITY_EDITOR
             Debug.Log("[CAMERA LAB] ATK target=" + roster.GetBehaviour(picked).name + " cone=" + (picker.BestIndex >= 0));
 #endif
+        }
+
+        // 按下 ATK 會打誰（第三人稱且按鈕啟用才有值）。每個 LateUpdate 重算，零配置。
+        public ICombatTarget PreviewTarget { get; private set; }
+        public bool PreviewInCone { get; private set; }
+
+        private void RefreshAimPreview()
+        {
+            PreviewTarget = null;
+            PreviewInCone = false;
+            if (!IsThirdPerson || !ActionButtonsActive || !InputPermitted) return;
+            CombatTargetRoster roster = _bootstrap.ElementRoster;
+            if (roster == null) return;
+            int picked = ResolveAimTarget(roster, out AimTargetPicker picker);
+            if (picked < 0) return;
+            PreviewTarget = roster.Get(picked);
+            PreviewInCone = picker.BestIndex >= 0;
         }
 
         private void ActiveDash()
@@ -455,6 +488,22 @@ namespace Vow.Bootstrap
             float s = 10f * unit;
             Fill(new Rect(_width * 0.5f - s, _height * 0.5f - 1f, s * 2f, 2f), Color.white);
             Fill(new Rect(_width * 0.5f - 1f, _height * 0.5f - s, 2f, s * 2f), Color.white);
+            DrawAimMarker(unit);
+        }
+
+        // 按下 ATK 會打誰：目標頭上的菱形（橘＝準星錐內、淡黃＝錐外退回最近者）。位置與 ATK 共用同一個挑選結果。
+        private void DrawAimMarker(float unit)
+        {
+            ICombatTarget target = PreviewTarget;
+            if (target == null || !target.IsAlive || target.TargetTransform == null || _camera == null) return;
+            Vector3 screen = _camera.WorldToScreenPoint(target.TargetTransform.position + Vector3.up * MarkerHeight);
+            if (screen.z <= 0f) return;
+            float size = 16f * unit;
+            Vector2 center = new Vector2(screen.x, _height - screen.y);
+            Matrix4x4 previousMatrix = GUI.matrix;
+            GUIUtility.RotateAroundPivot(45f, center);
+            Fill(new Rect(center.x - size * 0.5f, center.y - size * 0.5f, size, size), PreviewInCone ? AttackColor : FallbackMarkerColor);
+            GUI.matrix = previousMatrix;
         }
 
         private Rect ToGuiRect(ScreenRegion region)

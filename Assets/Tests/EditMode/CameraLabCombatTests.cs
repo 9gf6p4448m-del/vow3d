@@ -105,6 +105,50 @@ namespace Vow.Tests
             Assert.AreEqual(0, Resolve(0f, 1f, l[0], l[1], r[0], r[1]), "距離相同取先 Consider 者");
         }
 
+        // preferred 是 xz 陣列裡的第幾個目標（-1＝沒有）。
+        private static int ResolveSticky(float aimX, float aimZ, int preferred, params float[] xz)
+        {
+            AimTargetPicker picker = default;
+            picker.Begin(0f, 0f, aimX, aimZ, CameraLabAim.ConeHalfAngleDegrees, CameraLabAim.MaxAimDistance);
+            for (int i = 0; i < xz.Length / 2; i++) picker.Consider(i, xz[i * 2], xz[i * 2 + 1], i == preferred);
+            return picker.ResolvedIndex;
+        }
+
+        [Test] // G1：錐內黏性邊際 15°
+        public void G1_Sticky_KeepsPreferredUnlessOtherIsMoreThanFifteenDegreesCloserToAim()
+        {
+            Assert.AreEqual(15f, AimTargetPicker.StickyMarginDegrees);
+            float[] a = Polar(20f, 4f), b14 = Polar(6f, 4f), b16 = Polar(4f, 4f);
+            Assert.AreEqual(0, ResolveSticky(0f, 1f, 0, a[0], a[1], b14[0], b14[1]), "他人只靠準星 14°→維持原目標");
+            Assert.AreEqual(1, ResolveSticky(0f, 1f, 0, a[0], a[1], b16[0], b16[1]), "他人靠準星 16°→換目標");
+            Assert.AreEqual(1, ResolveSticky(0f, 1f, 1, a[0], a[1], b14[0], b14[1]), "preferred 本來就是夾角最小者→不變");
+        }
+
+        [Test] // G2：preferred 在錐外、錐內另有目標→瞄準覆寫黏性
+        public void G2_Sticky_PreferredOutsideCone_ConeCandidateWins()
+        {
+            float[] outside = Polar(60f, 3f), inside = Polar(25f, 6f);
+            Assert.AreEqual(1, ResolveSticky(0f, 1f, 0, outside[0], outside[1], inside[0], inside[1]));
+        }
+
+        [Test] // G3：錐內無目標時 preferred 在 8m 內就留著；超出 8m 回到最近者
+        public void G3_Sticky_ConeEmpty_KeepsPreferredWithinEightMetres_ElseNearest()
+        {
+            float[] far = Polar(150f, 7f), near = Polar(120f, 1.5f), tooFar = Polar(150f, 8.5f);
+            Assert.AreEqual(0, ResolveSticky(0f, 1f, 0, far[0], far[1], near[0], near[1]), "preferred 7m、他人 1.5m→不改打較近者");
+            Assert.AreEqual(1, ResolveSticky(0f, 1f, 0, tooFar[0], tooFar[1], near[0], near[1]), "preferred 8.5m 已超出→改打最近者");
+            Assert.AreEqual(-1, ResolveSticky(0f, 1f, 0, tooFar[0], tooFar[1]), "只有超出的 preferred→不出手");
+        }
+
+        [Test] // G4：不傳 preferred（或沒有 preferred）→與 A2／A2F 同結果
+        public void G4_NoPreferred_BehavesExactlyLikeNearestFallbackPicker()
+        {
+            float[] a = Polar(10f, 6f), b = Polar(10f, 3f), c = Polar(150f, 2f);
+            Assert.AreEqual(Resolve(0f, 1f, a[0], a[1], b[0], b[1]), ResolveSticky(0f, 1f, -1, a[0], a[1], b[0], b[1]));
+            Assert.AreEqual(Resolve(0f, 1f, c[0], c[1]), ResolveSticky(0f, 1f, -1, c[0], c[1]));
+            Assert.AreEqual(-1, ResolveSticky(0f, 1f, -1));
+        }
+
         // ───────────────────────── B 主動滑步 ─────────────────────────
 
         [Test] // B1
