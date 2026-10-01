@@ -410,6 +410,73 @@ namespace Vow.Tests.PlayMode
             Assert.IsTrue(_lab.PreviewInCone);
         }
 
+        // 鎖定後等到「失去視野、目標被清掉」那一幀（最多 2 秒）。
+        private IEnumerator WaitForLoss()
+        {
+            for (int i = 0; i < 120 && _hero.CurrentTarget != null; i++) yield return null;
+            Assert.IsNull(_hero.CurrentTarget, "前提：2 秒內因視野失去目標");
+        }
+
+        [UnityTest] // K1：崖台鎖定谷底對手 → 走到最後看見的位置（經斜坡）→ 重新看見就接回並打到
+        public IEnumerator K1_Canyon_LostSightChase_WalksRampAndHits()
+        {
+            yield return StartCanyonMatchThirdPerson();
+            yield return PlaceCanyon(TileCenter(5), TileCenter(4), true);
+            float health = _red.HealthNormalized;
+            TapAttack();
+            Assert.AreSame(_red, _lab.LastAimTarget);
+            float deadline = Time.time + 20f;
+            while (_red.HealthNormalized >= health && Time.time < deadline) yield return null;
+            Debug.Log("[CAMERA LAB TEST] K1 heroY=" + _hero.transform.position.y.ToString("F2") + " t=" + (20f - (deadline - Time.time)).ToString("F1"));
+            Assert.Less(_red.HealthNormalized, health, "20 秒內經斜坡下到谷底打到對手");
+            Assert.Less(_hero.transform.position.y, 0.9f, "英雄已離開崖台（崖壁擋路，只能經斜坡）；途中看見即接回，可能在斜坡上就出手");
+        }
+
+        [UnityTest] // K2：失去視野後不追即時位置——對手被搬走，英雄停在舊的最後位置、不出手
+        public IEnumerator K2_Canyon_LostSight_GoesToLastSeenNotLivePosition()
+        {
+            yield return StartCanyonMatchThirdPerson();
+            Vector3 lastSeen = TileCenter(4);
+            yield return PlaceCanyon(TileCenter(5), lastSeen, true);
+            float health = _red.HealthNormalized;
+            TapAttack();
+            yield return WaitForLoss();
+            _red.RespawnAt(TileCenter(1));   // 谷底另一端，離舊位置約 15m：英雄抵達舊位置時也看不見
+            yield return null;
+            float deadline = Time.time + 25f;
+            while (_hero.LostTargetForTest != null && Time.time < deadline)
+            {
+                Assert.IsNull(_hero.CurrentTarget, "看不見期間不得重新鎖定（不追即時位置）");
+                yield return null;
+            }
+            Vector3 h = _hero.transform.position;
+            float off = new Vector2(h.x - lastSeen.x, h.z - lastSeen.z).magnitude;
+            Debug.Log("[CAMERA LAB TEST] K2 stopOffset=" + off.ToString("F2") + " heroY=" + h.y.ToString("F2"));
+            Assert.LessOrEqual(off, 1.5f, "停在舊的最後看見位置附近");
+            Assert.IsNull(_hero.CurrentTarget);
+            Assert.AreEqual(health, _red.HealthNormalized, "沒有出手");
+        }
+
+        [UnityTest] // K3：失去視野後玩家推搖桿＝新指令 → 取消記憶，不自動接回
+        public IEnumerator K3_Canyon_LostSight_PlayerMoveCancelsMemory()
+        {
+            yield return StartCanyonMatchThirdPerson();
+            yield return PlaceCanyon(TileCenter(5), TileCenter(4), true);
+            float health = _red.HealthNormalized;
+            TapAttack();
+            yield return WaitForLoss();
+            Assert.AreSame(_red, _hero.LostTargetForTest, "前提：進入失去視野的追擊記憶");
+            Vector2 stick = new Vector2(Screen.width * .15f, Screen.height * .2f);
+            _input.BeginSimulatedHold(0, stick.x, stick.y);
+            _input.MoveSimulatedHold(0, stick.x, stick.y + 40f);
+            for (int i = 0; i < 10; i++) yield return null;
+            _input.EndSimulatedHold(0);
+            Assert.IsNull(_hero.LostTargetForTest, "搖桿新指令取消追擊記憶");
+            for (int i = 0; i < 180; i++) yield return null;
+            Assert.IsNull(_hero.CurrentTarget, "不自動接回");
+            Assert.AreEqual(health, _red.HealthNormalized);
+        }
+
         [UnityTest] // D1／E：搖桿按住推動中同時按 ATK
         public IEnumerator D1_StickHeldWhileAttack_StillLocksDummy_AndKeepsStick()
         {

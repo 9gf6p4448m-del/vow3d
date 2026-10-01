@@ -279,6 +279,7 @@ namespace Vow.Core
         {
             if (!IsAlive)
             {
+                ForgetLostTarget();
                 if (_locomotion.IsVentFlying) _locomotion.Step(Time.deltaTime);
                 return;
             }
@@ -292,6 +293,7 @@ namespace Vow.Core
             if (pushing && _continuousRequested && _stateMachine.CanMove)
             {
                 Vector3 p = transform.position;
+                ForgetLostTarget();
                 _brain.CommandMove(new GroundPoint(p.x, p.y, p.z));
                 _locomotion.Stop();
                 _continuousStarted = true;
@@ -313,6 +315,55 @@ namespace Vow.Core
             }
             _mover.Step(dt);
             _brain.Tick(dt);
+            TickLostTargetMemory();
+        }
+
+        // 失去視野的追擊記憶（camera-lab K）：目標還活著、只是看不見（CanEngage=false，例如崖台視野 8m、迷霧、蒸氣）時，
+        // 大腦會清掉目標（HeroCombatBrain.EngageCurrentTarget）。改為走到「最後看見的位置」——導航會自己走斜坡——
+        // 途中同一目標重新看得見就接回追打。看不見期間不追即時位置（迷霧公平）。
+        // 抵達、玩家任何新指令、英雄或目標死亡即取消。
+        private ICombatTarget _trackedTarget;
+        private Vector3 _trackedLastSeen;
+        private ICombatTarget _lostTarget;
+
+        public ICombatTarget LostTargetForTest => _lostTarget;
+
+        private void TickLostTargetMemory()
+        {
+            ICombatTarget current = _brain.CurrentTarget;
+            if (current != null)
+            {
+                _lostTarget = null;
+                _trackedTarget = current;
+                if (current.TargetTransform != null) _trackedLastSeen = current.TargetTransform.position;
+                return;
+            }
+            if (_trackedTarget != null)
+            {
+                ICombatTarget lost = _trackedTarget;
+                _trackedTarget = null;
+                if (lost.IsAlive && lost.TargetTransform != null && lost.CanBeTargetedBy(_faction) && !CanEngage(lost)
+                    && _brain.State == PlayerState.Idle)
+                {
+                    _lostTarget = lost;
+                    _brain.CommandMove(new GroundPoint(_trackedLastSeen.x, _trackedLastSeen.y, _trackedLastSeen.z));
+                    return;
+                }
+            }
+            if (_lostTarget == null) return;
+            if (!_lostTarget.IsAlive || _brain.State != PlayerState.Moving) { _lostTarget = null; return; }
+            if (CanEngage(_lostTarget))
+            {
+                ICombatTarget target = _lostTarget;
+                _lostTarget = null;
+                _brain.CommandAttack(target);
+            }
+        }
+
+        private void ForgetLostTarget()
+        {
+            _trackedTarget = null;
+            _lostTarget = null;
         }
 
         // 泥濘流沙（GDD 圍欄九）：進入（或成形時已在內）起算 1.2s 禁位移，之後只要還在區內就是 ×0.65。
@@ -365,6 +416,7 @@ namespace Vow.Core
         private void HandleMoveSelected(Vector3 destination)
         {
             if (_locomotion.IsVentFlying) return;
+            ForgetLostTarget();
             _brain.CommandMove(new GroundPoint(destination.x, destination.y, destination.z));
         }
 
@@ -372,6 +424,7 @@ namespace Vow.Core
         {
             if (_locomotion.IsVentFlying) return;
             if (!CanEngage(target)) return;   // 批 4：收斂成單一判準（陣營＋蒸氣遮蔽）
+            ForgetLostTarget();
             // 目標tap接手導航；仍按著但沒新操作的搖桿不搶走追擊。
             _continuousStarted = _continuousRequested = false;
             _brain.CommandAttack(target);
