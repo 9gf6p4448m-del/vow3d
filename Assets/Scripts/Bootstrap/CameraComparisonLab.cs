@@ -700,7 +700,15 @@ namespace Vow.Bootstrap
             if (!IsThirdPerson || !ActionButtonsActive || !InputPermitted) return;
             CombatTargetRoster roster = _bootstrap.ElementRoster;
             if (roster == null) return;
-            int picked = ResolveAimTarget(roster, out AimTargetPicker picker);
+            int picked;
+            AimTargetPicker picker;
+            // 覆審 r1 M2：弓蓄力中，標記用蓄力後的錐／射程挑（＝現在放開會打的目標）。
+            if (_attackHeld && _weapon.CurrentId == WeaponId.Bow)
+            {
+                BowShot shot = BowChargeLogic.Resolve(Time.unscaledTimeAsDouble - _attackPressedAt);
+                picked = ResolveAimTarget(roster, out picker, shot.ConeHalfAngleDegrees, shot.RangeMeters);
+            }
+            else picked = ResolveAimTarget(roster, out picker);
             if (picked < 0) return;
             PreviewTarget = roster.Get(picked);
             PreviewInCone = picker.BestIndex >= 0;

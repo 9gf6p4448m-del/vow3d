@@ -99,6 +99,10 @@ namespace Vow.Core
         private float _chargedShotRange, _chargedShotDamageScale;
         private bool _chargedShotPierce;
         private ICombatTargetResolver _chargedShotResolver;
+        // 覆審 r1 H1：預備只活到「這一箭」——大腦接上目標後一旦換掉／清掉目標（搖桿、點別人、失去視野、倒地）即解除；
+        // 還沒接上（後搖中排隊、輸入延遲）最多等一個攻擊週期＋前搖保險時限；目標死亡即解除。
+        private bool _chargedShotEngaged;
+        private float _chargedShotArmedAt;
         public bool HasChargedShot => _chargedShotTarget != null;
         private bool IsChargedShotEngaged => _chargedShotTarget != null && _brain != null
             && ReferenceEquals(_brain.CurrentTarget, _chargedShotTarget);
@@ -110,11 +114,26 @@ namespace Vow.Core
             _chargedShotDamageScale = damageScale;
             _chargedShotPierce = pierce;
             _chargedShotResolver = pierceResolver;
+            _chargedShotEngaged = _brain != null && ReferenceEquals(_brain.CurrentTarget, target);
+            _chargedShotArmedAt = Time.time;
         }
         public void DisarmChargedShot()
         {
             _chargedShotTarget = null;
             _chargedShotResolver = null;
+            _chargedShotEngaged = false;
+        }
+
+        // 每幀（大腦 Tick 之後）：H1 的時間面防線；入口面防線見各 _brain.Command* 呼叫點。
+        private void TickChargedShot()
+        {
+            if (_chargedShotTarget == null) return;
+            if (!_chargedShotTarget.IsAlive || _chargedShotTarget.TargetTransform == null) { DisarmChargedShot(); return; }
+            bool current = ReferenceEquals(_brain.CurrentTarget, _chargedShotTarget);
+            if (current) { _chargedShotEngaged = true; return; }
+            if (_chargedShotEngaged
+                || Time.time - _chargedShotArmedAt > _tuning.Combat.AttackPeriodSeconds + _tuning.Combat.WindupWatchdogSeconds)
+                DisarmChargedShot();
         }
         // camera-lab 武器灰盒（覆審 r1 M1）：比照搖桿起步，原地下一次移動指令清掉普攻目標與失聯追擊記憶（不改狀態機）。
         public void ClearCombatTargetInPlace()
@@ -229,6 +248,7 @@ namespace Vow.Core
 
         public void CancelCombatForDuel()
         {
+            DisarmChargedShot();
             _pactAttackWindow.Clear();
             _brain.ResetForRound();
             _mover.ResetForRound();
@@ -321,6 +341,7 @@ namespace Vow.Core
         {
             if (!IsAlive)
             {
+                DisarmChargedShot();
                 ForgetLostTarget();
                 if (_locomotion.IsVentFlying) _locomotion.Step(Time.deltaTime);
                 return;
@@ -336,6 +357,7 @@ namespace Vow.Core
             {
                 Vector3 p = transform.position;
                 ForgetLostTarget();
+                DisarmChargedShot();
                 _brain.CommandMove(new GroundPoint(p.x, p.y, p.z));
                 _locomotion.Stop();
                 _continuousStarted = true;
@@ -358,6 +380,7 @@ namespace Vow.Core
             _mover.Step(dt);
             _brain.Tick(dt);
             TickLostTargetMemory();
+            TickChargedShot();
         }
 
         // 失去視野的追擊記憶（camera-lab K）：目標還活著、只是看不見（CanEngage=false，例如崖台視野 8m、迷霧、蒸氣）時，
@@ -389,6 +412,7 @@ namespace Vow.Core
                     && _brain.State == PlayerState.Idle)
                 {
                     _lostTarget = lost;
+                    DisarmChargedShot();
                     _brain.CommandMove(new GroundPoint(_trackedLastSeen.x, _trackedLastSeen.y, _trackedLastSeen.z));
                     return;
                 }
@@ -399,6 +423,7 @@ namespace Vow.Core
             {
                 ICombatTarget target = _lostTarget;
                 _lostTarget = null;
+                DisarmChargedShot();
                 _brain.CommandAttack(target);
             }
         }
@@ -460,6 +485,7 @@ namespace Vow.Core
         {
             if (_locomotion.IsVentFlying) return;
             ForgetLostTarget();
+            DisarmChargedShot();
             _brain.CommandMove(new GroundPoint(destination.x, destination.y, destination.z));
         }
 
@@ -468,6 +494,7 @@ namespace Vow.Core
             if (_locomotion.IsVentFlying) return;
             if (!CanEngage(target)) return;   // 批 4：收斂成單一判準（陣營＋蒸氣遮蔽）
             ForgetLostTarget();
+            if (!ReferenceEquals(target, _chargedShotTarget)) DisarmChargedShot();   // 弓放開送出的就是預備目標本身
             // 目標tap接手導航；仍按著但沒新操作的搖桿不搶走追擊。
             _continuousStarted = _continuousRequested = false;
             _brain.CommandAttack(target);
@@ -572,7 +599,10 @@ namespace Vow.Core
             if (chargedPierce)
                 ResolveLinePierce(target, direction, chargedResolver, chargedRange, chargedScale);   // 已含裂風矢那一條線
             else if (empowered && _pactAttackTalent == PactTalent.WindPiercer)
-                ResolveWindPierce(target, direction);
+            {
+                if (charged) ResolveLinePierce(target, direction, _attackTargetResolver, chargedRange, 1f);   // 覆審 r1 L4
+                else ResolveWindPierce(target, direction);
+            }
             if (empowered && _pactAttackTalent == PactTalent.StoneShock && target is ICaptureStunnable stunnable)
                 stunnable.ApplyCaptureStun(0.5f);
 
