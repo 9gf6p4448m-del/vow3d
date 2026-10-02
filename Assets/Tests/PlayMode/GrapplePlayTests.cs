@@ -257,6 +257,12 @@ namespace Vow.Tests.PlayMode
             AssertGrappleSelected();
         }
 
+        [UnityTest] // 覆審 r2 N1：120Hz（遊戲實際鎖定幀率，每幀要求位移 <0.3m）——落差須跨幀累計才判得出被擋
+        public IEnumerator G5i_Grapple_120Hz_BlockedPull_StillNoAttack()
+        {
+            yield return AssertBlockedPullStopsWithoutAttack("G5i", 4.5f, 1f / 120f, 60);
+        }
+
         [UnityTest] // 覆審 r1 L1：真流沙縛足中按 ATK→不位移、也不起鉤（不吃冷卻）：縛足一結束立刻鉤得到
         public IEnumerator G5e_Grapple_RealQuicksandRoot_NoHookAndNoCooldownSpent()
         {
@@ -407,7 +413,8 @@ namespace Vow.Tests.PlayMode
             AssertGrappleSelected();
         }
 
-        [UnityTest] // M3：剛鉤到位（約 2m）後冷卻結束再按→直接普攻，不得「拉 0 公尺」燒掉冷卻（隨後 9m 立刻鉤得到）
+        [UnityTest] // M3（覆審 r2 N2）：鉤到位、冷卻結束後把英雄移到 2.1m（>停點 2m、在普攻射程內）再按→直接普攻：不起鉤（不動）、
+                     // 按下當下即鎖定、不吃冷卻（隨後 9m 立刻鉤得到）。舊行為會「拉 0.1m」並燒掉 4s 冷卻。
         public IEnumerator G4d_Grapple_JustArrived_AfterCooldown_NoZeroPullCooldownBurn()
         {
             yield return SetupGrapple(GrappleDistance);
@@ -417,16 +424,28 @@ namespace Vow.Tests.PlayMode
             yield return WaitSeconds(0.4f);
             Assert.AreEqual(2f, FlatDistance(_hero.transform.position, dummy.transform.position), 0.3f, "前提：第一鉤抵達");
             while (Time.time < t0 + 4.1f) yield return null;
-            Debug.Log("[CAMERA LAB TEST] G4d dist=" + FlatDistance(_hero.transform.position, dummy.transform.position).ToString("F6"));
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 2.1f);
+            _hero.ClearCombatTargetInPlace();
+            yield return WaitIdleAfterClear();
+            float d0 = FlatDistance(_hero.transform.position, dummy.transform.position);
+            Debug.Log("[CAMERA LAB TEST] G4d dist=" + d0.ToString("F6"));
+            Assert.Greater(d0, 2f, "前提：在停點 2m 外（舊行為會起鉤拉 0.1m）");
+            Assert.IsTrue(_hero.IsTargetInAttackRange(dummy), "前提：在普攻射程內");
+            Vector3 p0 = Flat(_hero.transform.position);
             TapAttack();
-            yield return WaitSeconds(0.3f);
-            Assert.AreSame(dummy, _hero.CurrentTarget, "到位後再按：照打同一目標");
+            Assert.AreSame(dummy, _hero.CurrentTarget, "射程內按下當下就走原普攻鎖定（不起鉤）");
+            float until = Time.time + 0.3f;
+            while (Time.time < until)
+            {
+                yield return null;
+                Assert.LessOrEqual((Flat(_hero.transform.position) - p0).magnitude, 0.05f, "射程內不起鉤、不拉 0.1m");
+            }
             yield return WarpAndSettle(dummy.transform.position + Vector3.back * GrappleDistance);
             _hero.ClearCombatTargetInPlace();
             yield return WaitIdleAfterClear();
             yield return TapAttackAndWait(0.5f);
             Assert.AreEqual(2f, FlatDistance(_hero.transform.position, dummy.transform.position), 0.3f,
-                "到位後那一按不吃冷卻：9m 立刻鉤得到");
+                "2.1m 那一按不吃冷卻：9m 立刻鉤得到");
             AssertGrappleSelected();
         }
 
