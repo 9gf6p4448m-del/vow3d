@@ -50,6 +50,8 @@ namespace Vow.Core.Logic
     // 黏性：呼叫端把「正在打的目標」標成 preferred。它在錐內時，他人夾角要小超過 StickyMarginDegrees 才換；
     // 它在距離內但錐外時，錐內有人就換（瞄準覆寫黏性）、錐內沒人就留著（不因另一個較近的敵人中途改打）。
     // fallbackEligible=false（呼叫端判定視線被牆擋）的候選不參加「錐外退回最近者」；錐內挑選與 preferred 不受影響。
+    // 武器多載 Begin(..., WeaponSpec)（v0.16.0 武器灰盒）：錐半角 ≤ 0＝沒有錐（只剩距離內最近者／preferred）；
+    // FallbackToNearest=false＝錐外一律不挑（含 preferred）。既有 6 參數 Begin＝有錐、可退回，行為不變。
     public struct AimTargetPicker
     {
         public const float StickyMarginDegrees = 15f;   // 灰盒暫定
@@ -59,6 +61,7 @@ namespace Vow.Core.Logic
         private float _originX, _originZ, _aimX, _aimZ, _cosLimit, _maxDistance;
         private float _bestCos, _bestDistance, _nearestDistance, _preferredCos;
         private bool _preferredInCone;
+        private bool _coneEnabled, _fallbackToNearest;
 
         public int BestIndex { get; private set; }
         public int NearestIndex { get; private set; }
@@ -78,6 +81,7 @@ namespace Vow.Core.Logic
                     }
                     return BestIndex;
                 }
+                if (!_fallbackToNearest) return -1;
                 return PreferredIndex >= 0 ? PreferredIndex : NearestIndex;
             }
         }
@@ -99,6 +103,15 @@ namespace Vow.Core.Logic
             BestIndex = -1;
             NearestIndex = -1;
             PreferredIndex = -1;
+            _coneEnabled = true;
+            _fallbackToNearest = true;
+        }
+
+        public void Begin(float originX, float originZ, float aimX, float aimZ, in WeaponSpec weapon)
+        {
+            Begin(originX, originZ, aimX, aimZ, weapon.ConeHalfAngleDegrees, weapon.AimRangeMeters);
+            _coneEnabled = weapon.ConeHalfAngleDegrees > 0f;
+            _fallbackToNearest = weapon.FallbackToNearest;
         }
 
         // 回傳這個候選是否落在準星錐內（不論是否成為最佳）。
@@ -119,13 +132,13 @@ namespace Vow.Core.Logic
             if (isPreferred)
             {
                 PreferredIndex = index;
-                if (cos >= _cosLimit)
+                if (_coneEnabled && cos >= _cosLimit)
                 {
                     _preferredInCone = true;
                     _preferredCos = cos;
                 }
             }
-            if (cos < _cosLimit) return false;
+            if (!_coneEnabled || cos < _cosLimit) return false;
 
             bool better = cos > _bestCos + CosTieEpsilon
                           || (cos >= _bestCos - CosTieEpsilon && d < _bestDistance);

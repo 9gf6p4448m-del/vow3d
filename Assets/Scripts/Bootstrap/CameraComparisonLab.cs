@@ -27,6 +27,12 @@ namespace Vow.Bootstrap
         private static readonly string[] DashLabels = { "DASH 0", "DASH 1", "DASH 2", "DASH 3", "DASH 4" };
         private static readonly Color AttackColor = new Color(0.85f, 0.45f, 0.2f, 0.9f);
         private static readonly Color DashColor = new Color(0.3f, 0.7f, 0.45f, 0.9f);
+        // v0.16.0 武器灰盒（GDD §貳.4 模式 C）：WPN 鈕循環切換，標籤＝目前武器（依 WeaponId 序）。
+        private static readonly string[] WeaponLabels = { "STD", "SWORD", "BOW", "HAMMER" };
+        private static readonly Color WeaponColor = new Color(0.45f, 0.4f, 0.75f, 0.9f);
+        private WeaponSelection _weapon;
+        public WeaponId CurrentWeapon => _weapon.CurrentId;
+        public int WeaponSwitchCount { get; private set; }
         private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
         private const float SightHeight = 1.0f;
         private readonly RaycastHit[] _sightHits = new RaycastHit[16];
@@ -188,6 +194,7 @@ namespace Vow.Bootstrap
                 _camera.fieldOfView = ThirdPersonFieldOfView;
                 _input.ContinuousRouter.SetThirdPersonEnabled(true);
                 _hero.SetContinuousMoveSource(ReadContinuousMove, () => _input.ContinuousRouter.MoveIntentVersion);
+                ApplyWeaponRange();
                 if (_runeCaster != null) _runeCaster.SetDragDirectionOverride(_aimGround);
                 if (_runeGhost != null) _runeGhost.SetDragDirectionOverride(_aimGround);
                 if (_hud != null) _hud.SetCameraLabThirdPerson(true);
@@ -199,6 +206,7 @@ namespace Vow.Bootstrap
                 IsThirdPerson = false;
                 _input.ContinuousRouter.SetThirdPersonEnabled(false);
                 _hero.SetContinuousMoveSource(null);
+                ApplyWeaponRange();
                 _input.ContinuousRouter.ActionButtonsEnabled = false;
                 if (_runeCaster != null) _runeCaster.SetDragDirectionOverride(null);
                 if (_runeGhost != null) _runeGhost.SetDragDirectionOverride(null);
@@ -336,6 +344,7 @@ namespace Vow.Bootstrap
                 + " toggle=" + Pt(_buttons[0].center.x, _height - _buttons[0].center.y)
                 + " atk=" + Pt((_actionLayout.Attack.XMin + _actionLayout.Attack.XMax) * .5f, (_actionLayout.Attack.YMin + _actionLayout.Attack.YMax) * .5f)
                 + " dash=" + Pt((_actionLayout.Dash.XMin + _actionLayout.Dash.XMax) * .5f, (_actionLayout.Dash.YMin + _actionLayout.Dash.YMax) * .5f)
+                + " wpn=" + Pt((_actionLayout.Weapon.XMin + _actionLayout.Weapon.XMax) * .5f, (_actionLayout.Weapon.YMin + _actionLayout.Weapon.YMax) * .5f)
                 + " rune=" + Pt((runeLog.Button.XMin + runeLog.Button.XMax) * .5f, (runeLog.Button.YMin + runeLog.Button.YMax) * .5f)
                 + " sat=" + _input.RuneSaturationPixels.ToString("F1") + " ppmm=" + _input.PixelsPerMillimeter.ToString("F2"));
 #endif
@@ -356,6 +365,24 @@ namespace Vow.Bootstrap
             if (!_ready || !IsThirdPerson || !InputPermitted) return;
             if (button == LabActionButton.Attack) AimAttack();
             else if (button == LabActionButton.Dash) ActiveDash();
+            else if (button == LabActionButton.Weapon) CycleWeapon();
+        }
+
+        private void CycleWeapon()
+        {
+            _weapon.Next();
+            WeaponSwitchCount++;
+            ApplyWeaponRange();
+#if UNITY_WEBGL && !UNITY_EDITOR
+            Debug.Log("[CAMERA LAB] WPN weapon=" + WeaponLabels[(int)_weapon.CurrentId] + " atkRange=" + _hero.AttackRangeOverride.ToString("F1"));
+#endif
+        }
+
+        // 武器射程覆寫只在第三人稱生效（弓 12m）；俯視與其他武器一律清掉＝沿用 HeroTuningAsset。
+        private void ApplyWeaponRange()
+        {
+            WeaponSpec weapon = _weapon.Current;
+            _hero.SetAttackRangeOverride(IsThirdPerson && weapon.OverridesAttackRange ? weapon.AttackRangeMeters : 0f);
         }
 
         // ATK 與按前預覽共用同一個挑選：標記畫在哪，按下去就打誰。
@@ -365,7 +392,9 @@ namespace Vow.Bootstrap
             Vector3 origin = _hero.transform.position;
             CameraLabAim.GroundForward(_yaw, out float ax, out float az);
             picker = default;
-            picker.Begin(origin.x, origin.z, ax, az, CameraLabAim.ConeHalfAngleDegrees, CameraLabAim.MaxAimDistance);
+            WeaponSpec weapon = _weapon.Current;   // Standard＝CameraLabAim 常數，行為同 v0.15
+            picker.Begin(origin.x, origin.z, ax, az, weapon);
+            float aimRange = weapon.AimRangeMeters;
             ICombatTarget current = _hero.CurrentTarget;
             for (int i = 0; i < roster.Count; i++)
             {
@@ -377,13 +406,13 @@ namespace Vow.Bootstrap
                 if (!_hero.CanEngage(candidate)) continue;
                 Vector3 p = candidate.TargetTransform.position;
                 float dx = p.x - origin.x, dz = p.z - origin.z;
-                bool inRange = dx * dx + dz * dz <= CameraLabAim.MaxAimDistance * CameraLabAim.MaxAimDistance;
+                bool inRange = dx * dx + dz * dz <= aimRange * aimRange;
                 // 只影響「錐外退回最近者」：沒瞄、系統自己挑時，只挑按下去馬上有結果的目標——
                 // 不在石牆後（英雄會突然跑去繞牆），且已在射程內或同一樓地板走得到（崖台→谷底超出射程會走一步就放棄）。
                 bool eligible = inRange && HasClearSight(candidate) && (_hero.IsTargetInAttackRange(candidate) || SameFloor(origin, p));
                 picker.Consider(i, p.x, p.z, ReferenceEquals(candidate, current), eligible);
             }
-            // 錐內優先；錐內沒有就退回 8m 內最近者，8m 內都沒有才不出手。
+            // 錐內優先；錐內沒有就退回 8m 內最近者，8m 內都沒有才不出手（Standard；其他武器見 WeaponSpec）。
             return picker.ResolvedIndex;
         }
 
@@ -544,6 +573,9 @@ namespace Vow.Bootstrap
             GUI.Label(attack, "ATK", _actionLabel);
             Fill(dash, charges > 0 ? DashColor : EmptyColor);
             GUI.Label(dash, DashLabels[Mathf.Clamp(charges, 0, DashLabels.Length - 1)], _actionLabel);
+            Rect weaponButton = ToGuiRect(_actionLayout.Weapon);
+            Fill(weaponButton, WeaponColor);
+            GUI.Label(weaponButton, WeaponLabels[(int)_weapon.CurrentId], _actionLabel);
             // 準星：螢幕中心＝鏡頭前方。
             float s = 10f * unit;
             Fill(new Rect(_width * 0.5f - s, _height * 0.5f - 1f, s * 2f, 2f), Color.white);

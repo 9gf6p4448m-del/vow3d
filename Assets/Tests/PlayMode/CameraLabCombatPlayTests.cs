@@ -743,6 +743,161 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(0L, AllocationProbe.LateUpdateBytes,
                 "THIRD 按鈕 LateUpdate 在 " + AllocationProbe.Frames + " 幀內配置了 " + AllocationProbe.LateUpdateBytes + " bytes");
         }
+
+        // ───────────── v0.16.0 武器灰盒（凍結檔 vow-toolchain/acceptance-weapons-20261002.md W3／W5／W6）─────────────
+
+        private void TapWeapon() { Vector2 c = Center(_lab.ActionButtonLayout.Weapon); _input.SendScreenTap(c.x, c.y); }
+
+        private void SelectWeapon(WeaponId id)
+        {
+            for (int i = 0; i < WeaponSelection.Count && _lab.CurrentWeapon != id; i++) TapWeapon();
+            Assert.AreEqual(id, _lab.CurrentWeapon, "WPN 鈕切不到 " + id);
+        }
+
+        [UnityTest] // W3：弓對 10m 木樁按 ATK＝站著射；對照：Standard 同 10m 木樁要走近
+        public IEnumerator W3_Bow_TenMetreDummy_ShootsInPlace_StandardWalksUp()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 10f);
+            Assert.AreEqual(0f, _lab.YawDegrees);
+            SelectWeapon(WeaponId.Bow);
+            Vector3 start = Flat(_hero.transform.position);
+            float health = dummy.Health;
+            float damage = _hero.AttackDamage;
+            Assert.AreEqual(60f, damage);
+            TapAttack();
+            Assert.AreSame(dummy, _lab.LastAimTarget, "弓：12° 錐內 10m 挑得到");
+            float deadline = Time.time + 2f;
+            while (dummy.Health >= health && Time.time < deadline) yield return null;
+            Assert.AreEqual(health - damage, dummy.Health, 1e-3f, "2 秒內該木樁扣 AttackDamage");
+            while (Time.time < deadline) yield return null;
+            float moved = (Flat(_hero.transform.position) - start).magnitude;
+            Debug.Log("[CAMERA LAB TEST] W3 bow moved=" + moved.ToString("F3"));
+            Assert.LessOrEqual(moved, 0.5f, "弓：英雄水平位移 ≤ 0.5m（站著射）");
+
+            // 對照（同場景重載、同 10m 木樁、Standard＝射程不覆寫）。
+            yield return Load();
+            dummy = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 10f);
+            Assert.AreEqual(WeaponId.Standard, _lab.CurrentWeapon);
+            start = Flat(_hero.transform.position);
+            TapAttack();
+            Assert.IsNull(_lab.LastAimTarget, "Standard：10m 超出 8m 準星距離，ATK 不出手（凍結 W1 的 Standard 行為）");
+            // ATK 挑到目標後送的就是這一個呼叫；直接送同一隻木樁，量 Standard 射程下英雄會不會走近。
+            _input.SubmitCombatTarget(dummy);
+            deadline = Time.time + 3f;
+            while (Time.time < deadline) yield return null;
+            moved = (Flat(_hero.transform.position) - start).magnitude;
+            Debug.Log("[CAMERA LAB TEST] W3 standard moved=" + moved.ToString("F3"));
+            Assert.Greater(moved, 3f, "Standard：射程 5m，英雄須走近（位移 > 3m）");
+        }
+
+        [UnityTest] // W5：WPN 鈕循環切換、不觸發 ATK／世界點擊；預設 Standard；弓射程覆寫只在第三人稱
+        public IEnumerator W5_WeaponButton_CyclesWeapons_WithoutAttackOrMove()
+        {
+            yield return Load();
+            Assert.AreEqual(WeaponId.Standard, _lab.CurrentWeapon, "預設 Standard");
+            Assert.AreEqual(0f, _hero.AttackRangeOverride, "Standard 不覆寫射程");
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 3f);
+            Vector3 start = Flat(_hero.transform.position);
+            WeaponId[] expected = { WeaponId.Sword, WeaponId.Bow, WeaponId.Hammer, WeaponId.Standard };
+            for (int i = 0; i < expected.Length; i++)
+            {
+                TapWeapon();
+                Assert.AreEqual(expected[i], _lab.CurrentWeapon, "第 " + (i + 1) + " 下");
+                Assert.AreEqual(expected[i] == WeaponId.Bow ? 12f : 0f, _hero.AttackRangeOverride, "射程覆寫 " + expected[i]);
+                yield return null;
+            }
+            for (int i = 0; i < 30; i++) yield return null;
+            Assert.AreEqual(4, _lab.WeaponSwitchCount);
+            Assert.AreEqual(0, _lab.AimAttackCount, "WPN 不觸發 ATK");
+            Assert.IsNull(_hero.CurrentTarget, "WPN 不鎖定木樁");
+            Assert.Less((Flat(_hero.transform.position) - start).magnitude, 0.05f, "WPN 不讓英雄移動");
+
+            SelectWeapon(WeaponId.Bow);
+            Assert.AreEqual(12f, _hero.AttackRangeOverride);
+            _lab.SetThirdPerson(false);
+            Assert.AreEqual(0f, _hero.AttackRangeOverride, "回俯視清掉射程覆寫");
+            _lab.SetThirdPerson(true);
+            Assert.AreEqual(12f, _hero.AttackRangeOverride, "回第三人稱重新套用");
+        }
+
+        [UnityTest] // W6：WPN 切換＋各武器 ATK 的 Update／LateUpdate 零配置（附正向對照）
+        public IEnumerator W6_WeaponSwitchAndWeaponAttacks_AllocateNothing_PositiveControlCatchesAllocation()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            dummy.Configure(100000f, dummy.TargetFaction);   // 窗口內不死，鎖定才有鑑別力
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 3f);
+
+            GameObject driverObject = new GameObject("WeaponButtonDriver");
+            WeaponButtonDriver driver = driverObject.AddComponent<WeaponButtonDriver>();
+            driver.Lab = _lab;
+            driver.Input = _input;
+            for (int i = 0; i < 130; i++) yield return null; // 暖機：四把武器各按過 ATK
+
+            AllocationProbe.Reset();
+            GameObject rig = new GameObject("WeaponProbeRig");
+            rig.AddComponent<AllocationProbeBegin>();
+            rig.AddComponent<AllocationProbeEnd>();
+            yield return null;
+            int switchesBefore = _lab.WeaponSwitchCount, bowBefore = driver.BowLocks, swordBefore = driver.SwordLocks;
+            AllocationProbe.Measuring = true;
+            for (int i = 0; i < 180; i++) yield return null;
+            AllocationProbe.Measuring = false;
+            long updateBytes = AllocationProbe.UpdateBytes, lateBytes = AllocationProbe.LateUpdateBytes;
+            int frames = AllocationProbe.Frames;
+
+            // 正向對照：同一套探針＋同一個 driver，多掛一個每幀配置的元件，必須量到 > 0。
+            GameObject allocator = new GameObject("DeliberateAllocator");
+            allocator.AddComponent<DeliberateAllocator>();
+            AllocationProbe.Reset();
+            yield return null;
+            AllocationProbe.Measuring = true;
+            for (int i = 0; i < 30; i++) yield return null;
+            AllocationProbe.Measuring = false;
+            long controlBytes = AllocationProbe.UpdateBytes;
+            Object.Destroy(allocator);
+            Object.Destroy(rig);
+            Object.Destroy(driverObject);
+
+            Assert.GreaterOrEqual(frames, 180);
+            Assert.Greater(_lab.WeaponSwitchCount, switchesBefore + 4, "窗口內 WPN 切換不足一輪");
+            Assert.Greater(driver.BowLocks, bowBefore, "窗口內沒有弓的鎖定，0 byte 沒有鑑別力");
+            Assert.Greater(driver.SwordLocks, swordBefore, "窗口內沒有劍的鎖定，0 byte 沒有鑑別力");
+            Assert.Greater(controlBytes, 0L, "正向對照量不到配置：探針失效");
+            Assert.AreEqual(0L, updateBytes, "武器路徑 Update 在 " + frames + " 幀內配置了 " + updateBytes + " bytes");
+            Assert.AreEqual(0L, lateBytes, "武器路徑 LateUpdate 在 " + frames + " 幀內配置了 " + lateBytes + " bytes");
+        }
+    }
+
+    // W6：在 Update 夾區內每 30 幀切一次武器、隔 10 幀按一次 ATK（四把武器輪流）。
+    public sealed class WeaponButtonDriver : MonoBehaviour
+    {
+        internal PlayerInputService Input;
+        internal CameraComparisonLab Lab;
+        public int Frame;
+        public int BowLocks, SwordLocks;
+
+        private void Update()
+        {
+            if (Input == null) return;
+            Frame++;
+            if (Frame % 30 == 1)
+            {
+                ScreenRegion w = Lab.ActionButtonLayout.Weapon;
+                Input.SendScreenTap((w.XMin + w.XMax) * .5f, (w.YMin + w.YMax) * .5f);
+            }
+            else if (Frame % 30 == 11)
+            {
+                ScreenRegion a = Lab.ActionButtonLayout.Attack;
+                Input.SendScreenTap((a.XMin + a.XMax) * .5f, (a.YMin + a.YMax) * .5f);
+                if (Lab.LastAimTarget != null && Lab.CurrentWeapon == WeaponId.Bow) BowLocks++;
+                if (Lab.LastAimTarget != null && Lab.CurrentWeapon == WeaponId.Sword) SwordLocks++;
+            }
+        }
     }
 }
 #endif

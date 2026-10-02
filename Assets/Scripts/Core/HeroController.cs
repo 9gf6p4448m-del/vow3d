@@ -84,6 +84,11 @@ namespace Vow.Core
         public ICombatTarget CurrentTarget => _brain != null ? _brain.CurrentTarget : null;
         public float CadenceWindowRemainingNormalized => _brain != null ? _brain.CadenceWindowRemainingNormalized : 0f;
         public float AttackRange => _tuning != null ? _tuning.AttackRange : 0f;
+        public float AttackDamage => _tuning != null ? _tuning.AttackDamage : 0f;
+        // camera-lab 武器灰盒（v0.16.0）：攻擊射程覆寫，只影響 IsTargetInAttackRange；≤ 0＝不覆寫（沿用 HeroTuningAsset.AttackRange）。
+        private float _attackRangeOverride;
+        public float AttackRangeOverride => _attackRangeOverride;
+        public void SetAttackRangeOverride(float meters) { _attackRangeOverride = meters > 0f ? meters : 0f; }
         public float Health => _vitality != null ? _vitality.Health : 100f;
         public float MaxHealth => _vitality != null ? _vitality.MaxHealth : 100f;
         public bool IsAlive => _vitality == null || _vitality.IsAlive;
@@ -478,7 +483,8 @@ namespace Vow.Core
 
             Vector3 offset = targetTransform.position - transform.position;
             offset.y = 0f;
-            return CanyonRules.InAttackRange(_tuning.AttackRange, transform.position.x, transform.position.z,
+            float baseRange = _attackRangeOverride > 0f ? _attackRangeOverride : _tuning.AttackRange;
+            return CanyonRules.InAttackRange(baseRange, transform.position.x, transform.position.z,
                 targetTransform.position.x, targetTransform.position.z, _locomotion.TerrainQuery);
         }
 

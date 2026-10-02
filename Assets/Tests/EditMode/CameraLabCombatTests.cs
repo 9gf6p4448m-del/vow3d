@@ -581,7 +581,7 @@ namespace Vow.Tests
                 ScreenRegion rune = RuneButtonLayout.Compute(w, h, ppmm).Button;
                 float margin = Math.Max(RuneButtonLayout.EdgeMarginMillimeters * ppmm, GestureMath.EdgeDeadzonePixels + 8f);
                 ScreenRegion move = new ScreenRegion(0f, 0f, w * 0.42f, h * 0.55f);
-                ScreenRegion[] buttons = { layout.Attack, layout.Dash };
+                ScreenRegion[] buttons = { layout.Attack, layout.Dash, layout.Weapon };
                 foreach (ScreenRegion b in buttons)
                 {
                     Assert.Greater(b.XMax - b.XMin, 0f, label);
