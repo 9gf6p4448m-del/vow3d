@@ -89,12 +89,38 @@ namespace Vow.Core
         private float _attackRangeOverride;
         public float AttackRangeOverride => _attackRangeOverride;
         // 實際普攻射程：有武器覆寫用覆寫值，否則沿用 HeroTuningAsset.AttackRange（射程圈與裂風矢射線共用，避免寫死 5m）。
-        public float EffectiveAttackRange => _attackRangeOverride > 0f ? _attackRangeOverride : AttackRange;
+        public float EffectiveAttackRange => IsChargedShotEngaged ? _chargedShotRange
+            : _attackRangeOverride > 0f ? _attackRangeOverride : AttackRange;
         public void SetAttackRangeOverride(float meters) { _attackRangeOverride = meters > 0f ? meters : 0f; }
+        // camera-lab 弓蓄力（2026-10-03，acceptance-bowcharge-20261003.md）：下一次對「這個目標」結算的普攻＝蓄力箭——
+        // 射程（只在大腦正打這個目標時生效）、傷害倍率、穿透（沿線可傷目標各吃一次，規則同裂風矢）。結算即清除。
+        // 沒有預備時一切行為與原本相同（其他武器、快速射擊都不呼叫 ArmChargedShot）。
+        private ICombatTarget _chargedShotTarget;
+        private float _chargedShotRange, _chargedShotDamageScale;
+        private bool _chargedShotPierce;
+        private ICombatTargetResolver _chargedShotResolver;
+        public bool HasChargedShot => _chargedShotTarget != null;
+        private bool IsChargedShotEngaged => _chargedShotTarget != null && _brain != null
+            && ReferenceEquals(_brain.CurrentTarget, _chargedShotTarget);
+        public void ArmChargedShot(ICombatTarget target, float rangeMeters, float damageScale, bool pierce,
+            ICombatTargetResolver pierceResolver)
+        {
+            _chargedShotTarget = target;
+            _chargedShotRange = rangeMeters;
+            _chargedShotDamageScale = damageScale;
+            _chargedShotPierce = pierce;
+            _chargedShotResolver = pierceResolver;
+        }
+        public void DisarmChargedShot()
+        {
+            _chargedShotTarget = null;
+            _chargedShotResolver = null;
+        }
         // camera-lab 武器灰盒（覆審 r1 M1）：比照搖桿起步，原地下一次移動指令清掉普攻目標與失聯追擊記憶（不改狀態機）。
         public void ClearCombatTargetInPlace()
         {
             if (_locomotion.IsVentFlying) return;
+            DisarmChargedShot();
             Vector3 p = transform.position;
             ForgetLostTarget();
             _brain.CommandMove(new GroundPoint(p.x, p.y, p.z));
@@ -528,9 +554,24 @@ namespace Vow.Core
                 ? target.TargetTransform.position - transform.position : Vector3.zero;
             float damage = _tuning.AttackDamage * (_attackDamageMultiplier != null
                 ? _attackDamageMultiplier(transform.position) : 1f);
+            bool charged = _chargedShotTarget != null && ReferenceEquals(target, _chargedShotTarget);
+            bool chargedPierce = false;
+            float chargedRange = 0f, chargedScale = 1f;
+            ICombatTargetResolver chargedResolver = null;
+            if (charged)
+            {
+                chargedRange = _chargedShotRange;
+                chargedScale = _chargedShotDamageScale;
+                chargedPierce = _chargedShotPierce;
+                chargedResolver = _chargedShotResolver;
+                DisarmChargedShot();
+                damage *= chargedScale;
+            }
             bool empowered = _pactAttackTalent != PactTalent.None && _pactAttackWindow.Consume(_brain.Clock);
             target.ReceiveDamage(damage, DamageType.Physical, gameObject);
-            if (empowered && _pactAttackTalent == PactTalent.WindPiercer)
+            if (chargedPierce)
+                ResolveLinePierce(target, direction, chargedResolver, chargedRange, chargedScale);   // 已含裂風矢那一條線
+            else if (empowered && _pactAttackTalent == PactTalent.WindPiercer)
                 ResolveWindPierce(target, direction);
             if (empowered && _pactAttackTalent == PactTalent.StoneShock && target is ICaptureStunnable stunnable)
                 stunnable.ApplyCaptureStun(0.5f);
@@ -559,9 +600,16 @@ namespace Vow.Core
 
         private void ResolveWindPierce(ICombatTarget directTarget, Vector3 direction)
         {
-            if (_attackTargetResolver == null || direction.sqrMagnitude < 1e-6f) return;
+            ResolveLinePierce(directTarget, direction, _attackTargetResolver, EffectiveAttackRange, 1f);
+        }
+
+        // 裂風矢與滿蓄弓箭共用：沿英雄→直接目標方向、射程內的射線，每個可傷目標（不含直接目標、己方石牆、同陣營）各吃一次。
+        private void ResolveLinePierce(ICombatTarget directTarget, Vector3 direction, ICombatTargetResolver resolver,
+            float rangeMeters, float damageScale)
+        {
+            if (resolver == null || direction.sqrMagnitude < 1e-6f) return;
             Vector3 origin = transform.position + Vector3.up * 0.9f;
-            int count = Physics.RaycastNonAlloc(origin, direction.normalized, _pierceHits, EffectiveAttackRange,
+            int count = Physics.RaycastNonAlloc(origin, direction.normalized, _pierceHits, rangeMeters,
                                                 Physics.AllLayers, QueryTriggerInteraction.Ignore);
             if (count >= _pierceHits.Length)
             {
@@ -572,13 +620,13 @@ namespace Vow.Core
             _piercedTargets.Add(directTarget);
             for (int i = 0; i < count; i++)
             {
-                if (!_attackTargetResolver.TryResolve(_pierceHits[i].collider, out ICombatTarget target)
+                if (!resolver.TryResolve(_pierceHits[i].collider, out ICombatTarget target)
                     || target == null || !target.IsAlive || !_piercedTargets.Add(target)
                     || !target.CanBeTargetedBy(_faction)) continue;
                 if (target.TargetFaction == Faction.DestructibleWall
                     && target is IFactionOwned owned && owned.OwnerFaction == _faction) continue;
                 float damage = _tuning.AttackDamage * (_attackDamageMultiplier != null
-                    ? _attackDamageMultiplier(transform.position) : 1f);
+                    ? _attackDamageMultiplier(transform.position) : 1f) * damageScale;
                 target.ReceiveDamage(damage, DamageType.Physical, gameObject);
             }
         }

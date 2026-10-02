@@ -44,6 +44,21 @@ namespace Vow.Bootstrap
         private ICombatTarget _grappleTarget;
         private Vector3 _grappleShortfall;   // 整段累計「要求位移－實際位移」（水平）
         private const float GrappleBlockedMeters = 0.3f;   // 累計落差超過即算被擋（同 G2 停點容差）
+        // 弓蓄力＋按住 ATK 範圍預覽（2026-10-03，vow-toolchain/acceptance-bowcharge-20261003.md）：
+        // 弓按下只開始蓄力，放開才朝準星出手（錐內沒人也算一次出手）；其他武器仍按下即出手，按住只多一個範圍預覽。
+        // 蓄力中 DASH／切 WPN／切 TOP↔THIRD／模式切換／觸控 Canceled／輸入被鎖 → 作廢，不出手。
+        private bool _attackHeld;
+        private double _attackPressedAt;   // Time.unscaledTimeAsDouble，與觸控路由同一個時鐘
+        public int BowShotCount { get; private set; }
+        public WeaponAimPreview ActivePreview { get; private set; }
+        public bool IsAttackHeld => _attackHeld;
+        private const int PreviewArcSegments = 32;
+        private const float PreviewGroundOffset = 0.05f;
+        private static readonly Color PreviewColor = new Color(0.55f, 0.9f, 1f, 0.9f);
+        private readonly Vector3[] _previewPoints = new Vector3[PreviewArcSegments + 3];
+        private GameObject _previewObject;
+        private LineRenderer _previewLine;
+        public GameObject AimPreviewIndicator => _previewObject;
         private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
         private const float SightHeight = 1.0f;
         private readonly RaycastHit[] _sightHits = new RaycastHit[16];
@@ -146,6 +161,7 @@ namespace Vow.Bootstrap
             _runeCaster = Object.FindObjectOfType<RuneCaster>();
             _runeGhost = Object.FindObjectOfType<RuneGhostPreview>();
             _aimGround = AimGround; // 委派只在這裡建一次，執行期零配置
+            CreatePreviewIndicator();
             _ready = true;
             Subscribe();
             RefreshLayout();
@@ -163,6 +179,8 @@ namespace Vow.Bootstrap
             if (_subscribed) return;
             _input.OnUiRegionTapped += OnUiTapped;
             _input.OnLabActionButton += OnActionButton;
+            _input.OnLabActionButtonReleased += OnActionButtonReleased;
+            _input.OnLabActionButtonCanceled += OnActionButtonCanceled;
 #if UNITY_WEBGL && !UNITY_EDITOR
             _input.OnRuneCastReleased += OnRuneReleasedForLog;
 #endif
@@ -181,6 +199,8 @@ namespace Vow.Bootstrap
                 {
                     _input.OnUiRegionTapped -= OnUiTapped;
                     _input.OnLabActionButton -= OnActionButton;
+                    _input.OnLabActionButtonReleased -= OnActionButtonReleased;
+                    _input.OnLabActionButtonCanceled -= OnActionButtonCanceled;
 #if UNITY_WEBGL && !UNITY_EDITOR
                     _input.OnRuneCastReleased -= OnRuneReleasedForLog;
 #endif
@@ -215,6 +235,8 @@ namespace Vow.Bootstrap
             else
             {
                 IsThirdPerson = false;
+                EndAttackHold();
+                _hero.DisarmChargedShot();   // 俯視不結算已放開、尚未命中的蓄力箭（同錘的 CancelPending）
                 _input.ContinuousRouter.SetThirdPersonEnabled(false);
                 _hero.SetContinuousMoveSource(null);
                 ApplyWeaponRange();
@@ -268,6 +290,7 @@ namespace Vow.Bootstrap
             {
                 PreviewTarget = null;
                 PreviewInCone = false;
+                if (_attackHeld) EndAttackHold();
                 return;
             }
             TouchGestureRouter router = _input.ContinuousRouter;
@@ -278,6 +301,7 @@ namespace Vow.Bootstrap
             router.ConsumeLook();
             PositionThirdPerson();
             RefreshAimPreview();
+            RefreshWeaponPreview();
 #if UNITY_WEBGL && !UNITY_EDITOR
             LogPendingResults();
 #endif
@@ -383,16 +407,70 @@ namespace Vow.Bootstrap
             if (!_ready || !IsThirdPerson || !InputPermitted) return;
             if (button == LabActionButton.Attack)
             {
+                _attackHeld = true;
+                _attackPressedAt = Time.unscaledTimeAsDouble;
                 if (_weapon.Current.IsSweep) HammerSweep();
                 else if (_weapon.Current.IsGrapple) GrappleAttack();
+                else if (_weapon.CurrentId == WeaponId.Bow) { }   // 弓：按下只開始蓄力，放開才出手（OnActionButtonReleased）
                 else AimAttack();
+                RefreshWeaponPreview();
             }
-            else if (button == LabActionButton.Dash) { if (!_grapple.Pulling) ActiveDash(); }
-            else if (button == LabActionButton.Weapon) CycleWeapon();
+            else if (button == LabActionButton.Dash) { EndAttackHold(); if (!_grapple.Pulling) ActiveDash(); }
+            else if (button == LabActionButton.Weapon) { EndAttackHold(); CycleWeapon(); }
+        }
+
+        // ATK 放開：弓才在這裡出手；其他武器只收掉預覽。作廢過（_attackHeld 已清）的放開一律不理。
+        private void OnActionButtonReleased(LabActionButton button, float heldSeconds)
+        {
+            if (button != LabActionButton.Attack || !_attackHeld) return;
+            bool bow = _weapon.CurrentId == WeaponId.Bow;
+            EndAttackHold();
+            if (!bow || !_ready || !IsThirdPerson || !InputPermitted) return;
+            BowRelease(heldSeconds);
+        }
+
+        private void OnActionButtonCanceled(LabActionButton button)
+        {
+            if (button == LabActionButton.Attack) EndAttackHold();
+        }
+
+        private void EndAttackHold()
+        {
+            _attackHeld = false;
+            HidePreview();
+        }
+
+        // 弓放開：t < 0.2s＝快速射擊，與 05f97b9 的按下即出手同一條 AimAttack（錐 12°、12m、倍率 1.0、不穿透）；
+        // 其餘依 BowChargeLogic 收窄錐、延伸射程、加倍率（滿蓄穿透），交給英雄下一次對該目標的普攻結算。錐內沒人也算一次出手。
+        private void BowRelease(double heldSeconds)
+        {
+            BowShotCount++;
+            _hero.DisarmChargedShot();   // 上一支還沒命中的蓄力箭作廢：一次放開只算一支
+            BowShot shot = BowChargeLogic.Resolve(heldSeconds);
+            if (shot.IsQuick)
+            {
+                AimAttack();
+                return;
+            }
+            AimAttackCount++;
+            LastAimTarget = null;
+            CombatTargetRoster roster = _bootstrap.ElementRoster;
+            if (roster == null) return;
+            int picked = ResolveAimTarget(roster, out AimTargetPicker _, shot.ConeHalfAngleDegrees, shot.RangeMeters);
+#if UNITY_WEBGL && !UNITY_EDITOR
+            Debug.Log("[CAMERA LAB] BOW held=" + heldSeconds.ToString("F2") + " p=" + shot.Progress.ToString("F2")
+                + " target=" + (picked >= 0 ? roster.GetBehaviour(picked).name : "none"));
+#endif
+            if (picked < 0) return;
+            ICombatTarget target = roster.Get(picked);
+            LastAimTarget = target;
+            _hero.ArmChargedShot(target, shot.RangeMeters, shot.DamageMultiplier, shot.Pierce, _bootstrap.TargetRegistry);
+            _input.SubmitCombatTarget(target);
         }
 
         private void CycleWeapon()
         {
+            _hero.DisarmChargedShot();   // 離開弓：已放開、尚未命中的蓄力箭不再結算
             _weapon.Next();
             // 覆審 r1 M1：切到錘（不走單目標普攻）時原地清掉普攻目標（循環順序下離開弓必定切到錘）。
             if (IsThirdPerson && _weapon.Current.IsSweep) ClearTargetForSweepWeapon();
@@ -522,14 +600,17 @@ namespace Vow.Bootstrap
 
         // ATK 與按前預覽共用同一個挑選：標記畫在哪，按下去就打誰。
         // preferred＝英雄正在打的目標（黏性，見 AimTargetPicker）。
-        private int ResolveAimTarget(CombatTargetRoster roster, out AimTargetPicker picker)
+        // coneHalfAngleOverride／aimRangeOverride ≥ 0：弓蓄力改寫錐半角與距離（< 0＝沿用武器，原路徑不變）。
+        private int ResolveAimTarget(CombatTargetRoster roster, out AimTargetPicker picker,
+            float coneHalfAngleOverride = -1f, float aimRangeOverride = -1f)
         {
             Vector3 origin = _hero.transform.position;
             CameraLabAim.GroundForward(_yaw, out float ax, out float az);
             picker = default;
             WeaponSpec weapon = _weapon.Current;   // Standard＝CameraLabAim 常數，行為同 v0.15
-            picker.Begin(origin.x, origin.z, ax, az, weapon);
-            float aimRange = weapon.AimRangeMeters;
+            if (coneHalfAngleOverride >= 0f) picker.Begin(origin.x, origin.z, ax, az, weapon, coneHalfAngleOverride, aimRangeOverride);
+            else picker.Begin(origin.x, origin.z, ax, az, weapon);
+            float aimRange = aimRangeOverride >= 0f ? aimRangeOverride : weapon.AimRangeMeters;
             ICombatTarget current = _hero.CurrentTarget;
             for (int i = 0; i < roster.Count; i++)
             {
@@ -623,6 +704,65 @@ namespace Vow.Bootstrap
             if (picked < 0) return;
             PreviewTarget = roster.Get(picked);
             PreviewInCone = picker.BestIndex >= 0;
+        }
+
+        // 按住 ATK 的範圍預覽：形狀＋參數＝WeaponAimPreview（Standard 無）；頂點＝英雄腳下、方向＝準星水平前方。每幀零配置。
+        private void RefreshWeaponPreview()
+        {
+            if (!_attackHeld) return;
+            if (!IsThirdPerson || !InputPermitted) { EndAttackHold(); return; }
+            WeaponAimPreview preview = WeaponAimPreview.For(_weapon.CurrentId, Time.unscaledTimeAsDouble - _attackPressedAt);
+            ActivePreview = preview;
+            if (preview.Kind == WeaponPreviewKind.None || _previewLine == null)
+            {
+                if (_previewObject != null && _previewObject.activeSelf) _previewObject.SetActive(false);
+                return;
+            }
+            Vector3 apex = _hero.transform.position;
+            apex.y += PreviewGroundOffset;
+            CameraLabAim.GroundForward(_yaw, out float ax, out float az);
+            float baseDegrees = Mathf.Atan2(ax, az) * Mathf.Rad2Deg;
+            float full = preview.FullAngleDegrees;
+            float range = preview.RangeMeters;
+            _previewPoints[0] = apex;
+            for (int i = 0; i <= PreviewArcSegments; i++)
+            {
+                float radians = (baseDegrees - preview.HalfAngleDegrees + full * i / PreviewArcSegments) * Mathf.Deg2Rad;
+                _previewPoints[i + 1] = new Vector3(apex.x + Mathf.Sin(radians) * range, apex.y, apex.z + Mathf.Cos(radians) * range);
+            }
+            _previewPoints[_previewPoints.Length - 1] = apex;
+            _previewLine.SetPositions(_previewPoints);
+            if (!_previewObject.activeSelf) _previewObject.SetActive(true);
+        }
+
+        private void HidePreview()
+        {
+            ActivePreview = default;
+            if (_previewObject != null && _previewObject.activeSelf) _previewObject.SetActive(false);
+        }
+
+        // 一條 LineRenderer（設定比照 VOWPhase1SceneBuilder.CreateSectorTelegraph，借用場景扇形預警的材質）。
+        // 不直接重用 SectorTelegraph：它的高度取地形第 0 層，英雄站在崖台上時預覽會埋進地形裡。
+        private void CreatePreviewIndicator()
+        {
+            _previewObject = new GameObject("WeaponAimPreview");
+            _previewObject.layer = 2;   // Ignore Raycast
+            _previewObject.transform.rotation = Quaternion.Euler(90f, 0f, 0f);   // 線寬攤平在地面上
+            _previewLine = _previewObject.AddComponent<LineRenderer>();
+            _previewLine.useWorldSpace = true;
+            _previewLine.loop = false;
+            _previewLine.alignment = LineAlignment.TransformZ;
+            _previewLine.numCapVertices = 0;
+            _previewLine.widthMultiplier = 0.12f;
+            _previewLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _previewLine.receiveShadows = false;
+            _previewLine.startColor = PreviewColor;
+            _previewLine.endColor = PreviewColor;
+            _previewLine.positionCount = _previewPoints.Length;
+            Vow.Combat.Feedback.SectorTelegraph sector = _bootstrap.SectorTelegraph;
+            LineRenderer source = sector != null ? sector.GetComponent<LineRenderer>() : null;
+            if (source != null) _previewLine.sharedMaterial = source.sharedMaterial;
+            _previewObject.SetActive(false);
         }
 
         private void ActiveDash()
