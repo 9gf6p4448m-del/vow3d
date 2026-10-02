@@ -441,26 +441,30 @@ namespace Vow.Bootstrap
 #endif
         }
 
-        // 鉤鎖：挑準星錐內（±20°、10m、視線無石牆、同一樓地板）的目標，把自己拉到它前方 2m。冷卻內、縛足、
-        // 不能移動（後搖／滑步中）時不鉤；已在 2m 內＝直接接普攻（不吃冷卻）。鉤本身不傷害。
+        // 鉤鎖：挑準星錐內（±20°、10m、視線無石牆、同一樓地板）的目標，把自己拉到它前方 2m。鉤本身不傷害。
+        // 使用者 2026-10-02 補充裁定：目標已在普攻射程內（EffectiveAttackRange）→直接普攻，不起鉤、不吃冷卻、不打斷前搖（M3）；
+        // 冷卻中→退回普通普攻：射程內才打，射程外原地不動、不追（M2）。縛足、不能移動（後搖／滑步中）時不起鉤（不吃冷卻）。
         private void GrappleAttack()
         {
             AimAttackCount++;
             LastAimTarget = null;
-            if (_grapple.Pulling || _hero.IsRooted || !_hero.StateMachine.CanMove || _hero.Mover.IsDashing) return;
+            if (_grapple.Pulling) return;
             CombatTargetRoster roster = _bootstrap.ElementRoster;
             if (roster == null) return;
             int picked = ResolveAimTarget(roster, out AimTargetPicker _);
             if (picked < 0) return;
             ICombatTarget target = roster.Get(picked);
-            Vector3 h = _hero.transform.position, p = target.TargetTransform.position;
-            if (!_grapple.TryStart(Time.time, _weapon.Current, h.x, h.z, p.x, p.z))
+            bool inAttackRange = _hero.IsTargetInAttackRange(target);
+            if (inAttackRange || !_grapple.IsReady(Time.time))
             {
-                if (!_grapple.IsReady(Time.time)) return;
+                if (!inAttackRange) return;
                 LastAimTarget = target;
-                _input.SubmitCombatTarget(target);
+                _input.SubmitCombatTarget(target);   // 同一目標重送＝無事發生（HeroCombatBrain），不打斷前搖
                 return;
             }
+            if (_hero.IsRooted || !_hero.StateMachine.CanMove || _hero.Mover.IsDashing) return;
+            Vector3 h = _hero.transform.position, p = target.TargetTransform.position;
+            if (!_grapple.TryStart(Time.time, _weapon.Current, h.x, h.z, p.x, p.z)) return;
             LastAimTarget = target;
             _grappleTarget = target;
             _grappleShortfall = Vector3.zero;

@@ -315,6 +315,121 @@ namespace Vow.Tests.PlayMode
             Assert.IsFalse(_hero.IsAlive, "前提：英雄已倒地");
         }
 
+        // ───── 使用者 2026-10-02 補充裁定（覆審 r1 M2／M3）：射程內直接普攻；冷卻中退回普攻（射程內才打、射程外不動）─────
+
+        // 普攻中清目標：後搖期間原地移動指令會排隊，等到目標清掉且可移動（最多 1.5s）再按，才是「冷卻有沒有被吃」的乾淨量測點。
+        private IEnumerator WaitIdleAfterClear()
+        {
+            float until = Time.time + 1.5f;
+            do yield return null; while ((_hero.CurrentTarget != null || !_hero.StateMachine.CanMove) && Time.time < until);
+            Assert.IsNull(_hero.CurrentTarget, "前提：普攻目標已清掉");
+            Assert.IsTrue(_hero.StateMachine.CanMove, "前提：可移動（不在後搖）");
+        }
+
+        [UnityTest] // M3：目標已在普攻射程內（3.5m）→直接普攻、不起鉤（英雄不動）、連按不打斷；不吃冷卻（隨後 9m 立刻鉤得到）
+        public IEnumerator G2b_Grapple_TargetInAttackRange_DirectAttack_NoHookNoCooldown()
+        {
+            yield return SetupGrapple(3.5f);
+            DummyTarget dummy = _grappleDummy;
+            Assert.IsTrue(_hero.IsTargetInAttackRange(dummy), "前提：3.5m 在普攻射程內");
+            Vector3 p0 = Flat(_hero.transform.position);
+            float h0 = dummy.Health;
+            TapAttack();
+            Assert.AreSame(dummy, _hero.CurrentTarget, "射程內按下當下就走原普攻鎖定");
+            float deadline = Time.time + 1.5f;
+            bool tappedAgain = false;
+            while (dummy.Health >= h0 && Time.time < deadline)
+            {
+                yield return null;
+                if (!tappedAgain) { TapAttack(); tappedAgain = true; }   // 前搖中再按：不得起鉤、不得打斷
+                Assert.LessOrEqual((Flat(_hero.transform.position) - p0).magnitude, 0.05f, "射程內不起鉤、英雄不動");
+            }
+            Assert.AreEqual(h0 - _hero.AttackDamage, dummy.Health, 1e-3f, "射程內直接普攻命中");
+            Assert.LessOrEqual((Flat(_hero.transform.position) - p0).magnitude, 0.05f, "射程內不起鉤、英雄不動");
+
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * GrappleDistance);
+            _hero.ClearCombatTargetInPlace();
+            yield return WaitIdleAfterClear();
+            yield return TapAttackAndWait(0.5f);
+            Assert.AreEqual(2f, FlatDistance(_hero.transform.position, dummy.transform.position), 0.3f,
+                "射程內那幾按不吃冷卻：9m 立刻鉤得到");
+            AssertGrappleSelected();
+        }
+
+        [UnityTest] // M2：鉤到位後冷卻中，目標在射程內→按 ATK 退回普攻（打得到、不動）
+        public IEnumerator G4b_Grapple_CooldownTargetInRange_FallsBackToBasicAttack()
+        {
+            yield return SetupGrapple(GrappleDistance);
+            DummyTarget dummy = _grappleDummy;
+            TapAttack();
+            float t0 = Time.time;
+            yield return WaitSeconds(0.4f);
+            Assert.AreEqual(2f, FlatDistance(_hero.transform.position, dummy.transform.position), 0.3f, "前提：第一鉤抵達");
+            yield return WaitSeconds(0.6f);
+            _hero.ClearCombatTargetInPlace();
+            yield return WaitSeconds(1.0f);
+            Assert.IsNull(_hero.CurrentTarget, "前提：普攻目標已清掉");
+            Assert.Less(Time.time, t0 + 3f, "前提：仍在 4s 冷卻內");
+            Vector3 p0 = Flat(_hero.transform.position);
+            float h0 = dummy.Health;
+            TapAttack();
+            float deadline = Time.time + 1.5f;
+            while (dummy.Health >= h0 && Time.time < deadline) yield return null;
+            Assert.AreEqual(h0 - _hero.AttackDamage, dummy.Health, 1e-3f, "冷卻中、射程內：退回普攻命中");
+            Assert.AreSame(dummy, _hero.CurrentTarget);
+            Assert.LessOrEqual((Flat(_hero.transform.position) - p0).magnitude, 0.05f, "冷卻中不鉤、英雄不動");
+            AssertGrappleSelected();
+        }
+
+        [UnityTest] // M2：冷卻中，目標在射程外（6.5m，錐內 10m 內）→原地不動、不追、不鎖定
+        public IEnumerator G4c_Grapple_CooldownTargetOutOfRange_StaysStill()
+        {
+            yield return SetupGrapple(GrappleDistance);
+            DummyTarget dummy = _grappleDummy;
+            TapAttack();
+            float t0 = Time.time;
+            yield return WaitSeconds(0.4f);
+            Assert.AreEqual(2f, FlatDistance(_hero.transform.position, dummy.transform.position), 0.3f, "前提：第一鉤抵達");
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 6.5f);
+            _hero.ClearCombatTargetInPlace();
+            yield return null; yield return null;
+            Assert.IsFalse(_hero.IsTargetInAttackRange(dummy), "前提：6.5m 在普攻射程外");
+            Vector3 p0 = Flat(_hero.transform.position);
+            TapAttack();
+            float until = Time.time + 1f;
+            while (Time.time < until)
+            {
+                yield return null;
+                Assert.LessOrEqual((Flat(_hero.transform.position) - p0).magnitude, 0.05f, "冷卻中、射程外：原地不動、不追");
+                Assert.IsNull(_hero.CurrentTarget, "冷卻中、射程外：不鎖定");
+            }
+            Assert.Less(Time.time, t0 + 4f, "前提：全程在冷卻內");
+            AssertGrappleSelected();
+        }
+
+        [UnityTest] // M3：剛鉤到位（約 2m）後冷卻結束再按→直接普攻，不得「拉 0 公尺」燒掉冷卻（隨後 9m 立刻鉤得到）
+        public IEnumerator G4d_Grapple_JustArrived_AfterCooldown_NoZeroPullCooldownBurn()
+        {
+            yield return SetupGrapple(GrappleDistance);
+            DummyTarget dummy = _grappleDummy;
+            TapAttack();
+            float t0 = Time.time;
+            yield return WaitSeconds(0.4f);
+            Assert.AreEqual(2f, FlatDistance(_hero.transform.position, dummy.transform.position), 0.3f, "前提：第一鉤抵達");
+            while (Time.time < t0 + 4.1f) yield return null;
+            Debug.Log("[CAMERA LAB TEST] G4d dist=" + FlatDistance(_hero.transform.position, dummy.transform.position).ToString("F6"));
+            TapAttack();
+            yield return WaitSeconds(0.3f);
+            Assert.AreSame(dummy, _hero.CurrentTarget, "到位後再按：照打同一目標");
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * GrappleDistance);
+            _hero.ClearCombatTargetInPlace();
+            yield return WaitIdleAfterClear();
+            yield return TapAttackAndWait(0.5f);
+            Assert.AreEqual(2f, FlatDistance(_hero.transform.position, dummy.transform.position), 0.3f,
+                "到位後那一按不吃冷卻：9m 立刻鉤得到");
+            AssertGrappleSelected();
+        }
+
         [UnityTest] // G8：鉤鎖一整輪（起鉤→拉→抵達→普攻）Update／LateUpdate 零配置（附正向對照）
         public IEnumerator G8_GrappleHookCycle_AllocatesNothing_PositiveControlCatchesAllocation()
         {
