@@ -793,6 +793,40 @@ namespace Vow.Tests.PlayMode
             Assert.Greater(moved, 3f, "Standard：射程 5m，英雄須走近（位移 > 3m）");
         }
 
+        // 弓射程卷 R1：鎖定目標時的射程圈半徑＝實際普攻射程（Standard 5m、Bow 12m），走真實 CadenceAimPreview，只換最底層 telegraph。
+        [UnityTest]
+        public IEnumerator R1_RangeRing_UsesWeaponAttackRange()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 10f);
+            RecordingTelegraph telegraph = new RecordingTelegraph();
+            GameObject host = new GameObject("R1_RingProbe");
+            CadenceAimPreview preview = host.AddComponent<CadenceAimPreview>();
+            preview.Initialize(_hero, _input, telegraph, Camera.main);
+            _input.SubmitCombatTarget(dummy);
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.IsNotNull(_hero.CurrentTarget, "須有鎖定目標才會畫射程圈");
+            Assert.AreEqual(5f, telegraph.LastZoneRadius, 1e-3f, "Standard：射程圈 5m");
+            SelectWeapon(WeaponId.Bow);
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.IsNotNull(_hero.CurrentTarget, "切弓後目標仍在");
+            Assert.AreEqual(12f, telegraph.LastZoneRadius, 1e-3f, "Bow：射程圈 12m");
+            Object.Destroy(host);
+        }
+
+        private sealed class RecordingTelegraph : ISkillTelegraphService
+        {
+            public float LastZoneRadius = -1f;
+            public TelegraphShape ActiveShape { get; private set; }
+            public bool IsAiming { get; private set; }
+            public void ShowLineIndicator(Vector3 origin, Vector3 direction, float length, float width) { ActiveShape = TelegraphShape.LineCast; IsAiming = true; }
+            public void ShowZoneIndicator(Vector3 center, float radius, float edgeThickness) { ActiveShape = TelegraphShape.ZoneCast; IsAiming = true; LastZoneRadius = radius; }
+            public void UpdateAimTransform(Vector3 currentAimPosition) { }
+            public void HideIndicator() { IsAiming = false; }
+            public void TriggerSnapFeedback() { }
+        }
+
         [UnityTest] // W5：WPN 鈕循環切換、不觸發 ATK／世界點擊；預設 Standard；弓射程覆寫只在第三人稱
         public IEnumerator W5_WeaponButton_CyclesWeapons_WithoutAttackOrMove()
         {

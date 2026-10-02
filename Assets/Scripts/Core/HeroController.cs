@@ -88,6 +88,8 @@ namespace Vow.Core
         // camera-lab 武器灰盒（v0.16.0）：攻擊射程覆寫，只影響 IsTargetInAttackRange；≤ 0＝不覆寫（沿用 HeroTuningAsset.AttackRange）。
         private float _attackRangeOverride;
         public float AttackRangeOverride => _attackRangeOverride;
+        // 實際普攻射程：有武器覆寫用覆寫值，否則沿用 HeroTuningAsset.AttackRange（射程圈與裂風矢射線共用，避免寫死 5m）。
+        public float EffectiveAttackRange => _attackRangeOverride > 0f ? _attackRangeOverride : AttackRange;
         public void SetAttackRangeOverride(float meters) { _attackRangeOverride = meters > 0f ? meters : 0f; }
         // camera-lab 武器灰盒（覆審 r1 M1）：比照搖桿起步，原地下一次移動指令清掉普攻目標與失聯追擊記憶（不改狀態機）。
         public void ClearCombatTargetInPlace()
@@ -492,7 +494,7 @@ namespace Vow.Core
 
             Vector3 offset = targetTransform.position - transform.position;
             offset.y = 0f;
-            float baseRange = _attackRangeOverride > 0f ? _attackRangeOverride : _tuning.AttackRange;
+            float baseRange = EffectiveAttackRange;
             return CanyonRules.InAttackRange(baseRange, transform.position.x, transform.position.z,
                 targetTransform.position.x, targetTransform.position.z, _locomotion.TerrainQuery);
         }
@@ -559,7 +561,7 @@ namespace Vow.Core
         {
             if (_attackTargetResolver == null || direction.sqrMagnitude < 1e-6f) return;
             Vector3 origin = transform.position + Vector3.up * 0.9f;
-            int count = Physics.RaycastNonAlloc(origin, direction.normalized, _pierceHits, 5f,
+            int count = Physics.RaycastNonAlloc(origin, direction.normalized, _pierceHits, EffectiveAttackRange,
                                                 Physics.AllLayers, QueryTriggerInteraction.Ignore);
             if (count >= _pierceHits.Length)
             {

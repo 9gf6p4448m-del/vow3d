@@ -68,7 +68,7 @@ namespace Vow.Bootstrap
             ICombatTarget target = _hero.CurrentTarget;
             if (target != null && target.IsAlive)
             {
-                _telegraph.ShowZoneIndicator(heroPosition, _hero.AttackRange, RangeRingThickness);
+                _telegraph.ShowZoneIndicator(heroPosition, _hero.EffectiveAttackRange, RangeRingThickness);
                 return;
             }
 

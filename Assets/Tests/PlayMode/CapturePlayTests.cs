@@ -807,6 +807,56 @@ namespace Vow.Tests.PlayMode
                 "同射線己方石牆不可被裂風矢傷害");
         }
 
+        // 弓射程卷（R2）：裂風矢射線長度＝實際普攻射程（武器覆寫 12m），不再寫死 5m。
+        [UnityTest]
+        public IEnumerator R2_WindPiercer_BowRange_PiercesEnemyWallEightMetresBehind()
+        {
+            float wallHealthBefore = 0f, wallHealthAfter = 0f;
+            yield return WindPierceEightMetreWall(12f, (b, a) => { wallHealthBefore = b; wallHealthAfter = a; });
+            Assert.AreEqual(wallHealthBefore - 60f, wallHealthAfter, 0.01f, "弓射程 12m：後方 8m 敵牆應吃一次普攻傷害");
+        }
+
+        [UnityTest]
+        public IEnumerator R2_WindPiercer_StandardRange_DoesNotReachEnemyWallEightMetresBehind()
+        {
+            float wallHealthBefore = 0f, wallHealthAfter = 0f;
+            yield return WindPierceEightMetreWall(0f, (b, a) => { wallHealthBefore = b; wallHealthAfter = a; });
+            Assert.AreEqual(wallHealthBefore, wallHealthAfter, 0.01f, "未覆寫射程 5m：後方 8m 敵牆不受傷（對照組）");
+        }
+
+        private IEnumerator WindPierceEightMetreWall(float rangeOverride, System.Action<float, float> report)
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _bootstrap.SeedCaptureScoresForTest(500, 0);
+            yield return null;
+            TapTalentOption(0); // Tier 1 SwiftStep.
+            TapTalentOption(0); // Tier 2 WindPiercer.
+            ScriptedInput input = new ScriptedInput();
+            _hero.Initialize(input, null, Camera.main);
+            _opponent.SetHitstopFrozen(true);
+            _hero.SetAttackRangeOverride(rangeOverride);
+
+            Assert.IsTrue(_hero.Mover.TryExecuteCadenceDash(Vector3.back));
+            int frames = 0;
+            while (_hero.Mover.IsDashing && frames++ < 16) yield return null;
+            Assert.IsFalse(_hero.Mover.IsDashing);
+            _opponent.transform.position = _hero.transform.position + Vector3.forward * 1.1f;
+            RuneWall wall = _bootstrap.EnemyWalls.SpawnFrom(_hero.transform.position, Vector3.forward);
+            Assert.IsNotNull(wall);
+            Vector3 flatOffset = wall.transform.position - _hero.transform.position;
+            flatOffset.y = 0f;
+            wall.transform.position += Vector3.forward * (8f - flatOffset.magnitude);
+            Physics.SyncTransforms();
+            float beforeTarget = _opponent.Health;
+            float beforeWall = wall.Health;
+            input.TapTarget(_opponent);
+            frames = 0;
+            while (_opponent.Health >= beforeTarget && frames++ < 90) yield return null;
+            Assert.AreEqual(beforeTarget - 60f, _opponent.Health, 0.01f, "直接目標須真的命中，否則射線沒被行使");
+            report(beforeWall, wall.Health);
+        }
+
         [UnityTest]
         public IEnumerator V0110_AI_OnlyActiveChaseCastsRedWallFourMetresAheadOfOpponent()
         {
