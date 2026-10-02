@@ -251,6 +251,9 @@ namespace Vow.Bootstrap
                 RefreshLayout();
             // 覆審 r1 L2：前搖到點時武器已不是錘、或輸入被鎖（倒地／通風口飛行／對局暫停）→取消這一掃。
             if (_ready && IsThirdPerson && _sweep.TryConsumeResolve(Time.time) && _weapon.Current.IsSweep && InputPermitted) ResolveSweep();
+            // 覆審 r3 N1：第三人稱拿錘＝不留單目標普攻。不論目標從哪來（點敵人、冷卻中 TOP 鎖定後切回、切武器、起手），
+            // 只要英雄能移動且不在滑步中就原地清掉；滑步／收招中等到可移動那一幀才清，不排入「走回頭」的待執行移動（F2）。
+            if (_ready && IsThirdPerson && _weapon.Current.IsSweep) ClearTargetForSweepWeapon();
         }
 
         private void LateUpdate()
@@ -385,7 +388,7 @@ namespace Vow.Bootstrap
         {
             _weapon.Next();
             // 覆審 r1 M1：切到錘（不走單目標普攻）時原地清掉普攻目標（循環順序下離開弓必定切到錘）。
-            if (IsThirdPerson && _weapon.Current.IsSweep) _hero.ClearCombatTargetInPlace();
+            if (IsThirdPerson && _weapon.Current.IsSweep) ClearTargetForSweepWeapon();
             WeaponSwitchCount++;
             ApplyWeaponRange();
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -402,8 +405,7 @@ namespace Vow.Bootstrap
             if (!_sweep.TryStart(Time.time, hammer.SweepCooldownSeconds, hammer.SweepWindupSeconds)) return;
             SweepStartCount++;
             // 覆審 r2 F1：以起手為準清掉普攻目標——不論目標從哪個入口來（含 TOP 鎖定後切回 THIRD），錘下都不疊普攻。
-            // 只在有目標時下（無目標時不碰移動，避免滑步中按錘被排入「走回起手點」）。
-            if (_hero.CurrentTarget != null) _hero.ClearCombatTargetInPlace();
+            ClearTargetForSweepWeapon();
             CameraLabAim.GroundForward(_yaw, out _sweepDirX, out _sweepDirZ);
         }
 
@@ -438,6 +440,13 @@ namespace Vow.Bootstrap
             if (target == null || !target.IsAlive || target.TargetTransform == null) return false;
             if (target.TargetFaction == Faction.DestructibleWall && target.OwnerFaction == heroFaction) return false;
             return target.CanBeTargetedBy(heroFaction);
+        }
+
+        // 錘下清普攻目標的唯一入口：只在有目標、可移動（Idle／Moving／前搖可打斷）且不在滑步中時下原地移動指令。
+        private void ClearTargetForSweepWeapon()
+        {
+            if (_hero.CurrentTarget == null || !_hero.StateMachine.CanMove || _hero.Mover.IsDashing) return;
+            _hero.ClearCombatTargetInPlace();
         }
 
         // 武器射程覆寫只在第三人稱生效（弓 12m）；俯視與其他武器一律清掉＝沿用 HeroTuningAsset。

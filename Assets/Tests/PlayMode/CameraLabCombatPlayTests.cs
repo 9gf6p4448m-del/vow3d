@@ -1070,17 +1070,105 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(WeaponId.Hammer, _lab.CurrentWeapon, "錘仍是現役武器");
             yield return null;
             float h0 = dummy.Health;
-            // 冷卻 0.8s 內連按 ATK（0.7s 內按 8 下），之後等到 1.2s：窗口內只應有一次橫掃、沒有普攻。
-            for (int i = 0; i < 8; i++)
+            // 覆審 r3 N3：以幀數為準（Time.captureDeltaTime 固定 1/60）——冷卻 0.8s（48 幀）內連按 6 下、每下隔 5 幀，
+            // 按鍵總跨度 25 幀≈0.42s；從第一下起算滿 72 幀（1.2s）再檢查：窗口內只應有一次橫掃、沒有普攻。
+            int frames = 0;
+            for (int i = 0; i < 6; i++)
             {
                 TapAttack();
-                yield return WaitSeconds(0.0875f);
+                if (i < 5) for (int f = 0; f < 5; f++) { yield return null; frames++; }
             }
-            yield return WaitSeconds(0.5f);
+            while (frames < 72) { yield return null; frames++; }
             Assert.AreEqual(h0 - _hero.AttackDamage, dummy.Health, 1e-3f, "1.2s 內只吃一次橫掃傷害（普攻不得疊加）");
             Assert.AreEqual(1, _lab.SweepStartCount, "冷卻內連按只起手一次");
             Assert.AreEqual(1, _lab.SweepResolveCount);
             Assert.IsNull(_hero.CurrentTarget, "錘起手清掉普攻目標");
+        }
+
+        private IEnumerator WaitFrames(int n)
+        {
+            for (int i = 0; i < n; i++) yield return null;
+        }
+
+        [UnityTest] // 覆審 r3 N1 ①：拿錘起手後 0.1s 在右半屏點 3m 木樁——不得重新疊普攻
+        public IEnumerator W4f_HammerActive_TapEnemyAfterSweepStart_NoBasicAttack()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            dummy.Configure(1000f, dummy.TargetFaction);
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 3f);
+            SelectWeapon(WeaponId.Hammer);
+            _lab.RotateThirdPerson(-15f);   // 木樁落在準星右側（右半屏），仍在錘的扇形內
+            yield return null;
+            float h0 = dummy.Health;
+            TapAttack();
+            Assert.AreEqual(1, _lab.SweepStartCount);
+            yield return WaitFrames(6);   // 0.1s
+            Vector3 sp = Camera.main.WorldToScreenPoint(dummy.transform.position + Vector3.up);
+            Assert.Greater(sp.x, Screen.width * 0.5f, "木樁要在右半屏");
+            _input.SendScreenTap(sp.x, sp.y);
+            bool locked = false;
+            for (int i = 0; i < 66; i++) { if (ReferenceEquals(_hero.CurrentTarget, dummy)) locked = true; yield return null; }   // 共 1.2s
+            Debug.Log("[CAMERA LAB TEST] W4f tap locked=" + locked + " sp=" + sp);
+            Assert.AreEqual(h0 - _hero.AttackDamage, dummy.Health, 1e-3f, "1.2s 內只吃一次橫掃傷害（點敵人不得疊普攻）");
+            Assert.IsNull(_hero.CurrentTarget, "拿錘不留普攻目標");
+            float h1 = dummy.Health;
+            yield return WaitFrames(90);   // 再 1.5s 不按 ATK
+            Assert.AreEqual(h1, dummy.Health, "之後不按 ATK 也不再普攻");
+        }
+
+        [UnityTest] // 覆審 r3 N2：錘冷卻中從 TOP 鎖目標再切回 THIRD——不得普攻
+        public IEnumerator W4g_HammerCooldown_TopLockThenThird_NoBasicAttack()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            dummy.Configure(1000f, dummy.TargetFaction);
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 3f);
+            SelectWeapon(WeaponId.Hammer);
+            TapAttack();
+            yield return WaitFrames(18);   // 0.3s：橫掃已結算，仍在 0.8s 冷卻內
+            Assert.AreEqual(1, _lab.SweepResolveCount);
+            _lab.SetThirdPerson(false);
+            yield return null; yield return null;
+            Vector3 sp = Camera.main.WorldToScreenPoint(dummy.transform.position + Vector3.up);
+            _input.SendScreenTap(sp.x, sp.y);
+            yield return null;
+            Assert.AreSame(dummy, _hero.CurrentTarget, "TOP 點木樁＝鎖住");
+            _lab.SetThirdPerson(true);
+            float h0 = dummy.Health;
+            yield return WaitFrames(90);   // 1.5s，不按 ATK
+            Assert.AreEqual(h0, dummy.Health, "錘為現役武器：切回 THIRD 後不得普攻");
+            Assert.IsNull(_hero.CurrentTarget);
+        }
+
+        [UnityTest] // 覆審 r3 F2：有目標、命中連動滑步中按錘——滑步結束後不走回頭
+        public IEnumerator W4h_HitLinkedDash_PressHammerMidDash_NoWalkBack()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            dummy.Configure(1000f, dummy.TargetFaction);
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 3f);
+            float health = dummy.Health;
+            TapAttack();
+            int guard = 0;
+            while (dummy.Health >= health && guard++ < 90) yield return null;
+            Assert.Less(dummy.Health, health, "Standard 先命中");
+            TapDash();
+            Assert.AreEqual(ActiveDashOutcome.CadenceFlick, _lab.LastDashOutcome, "命中窗口內＝命中連動滑步");
+            Assert.IsTrue(_hero.Mover.IsDashing);
+            SelectWeapon(WeaponId.Hammer);
+            TapAttack();
+            Vector3 pressed = Flat(_hero.transform.position);
+            guard = 0;
+            while (_hero.Mover.IsDashing && guard++ < 120) yield return null;
+            Vector3 dashEnd = Flat(_hero.transform.position);
+            yield return WaitFrames(60);
+            Vector3 after = Flat(_hero.transform.position);
+            Debug.Log("[CAMERA LAB TEST] W4h pressed=" + pressed.ToString("F3") + " dashEnd=" + dashEnd.ToString("F3") + " after=" + after.ToString("F3")
+                + " fromPress=" + (after - pressed).magnitude.ToString("F3") + " fromDashEnd=" + (after - dashEnd).magnitude.ToString("F3"));
+            // 量「滑步結束後」有沒有再移動：走回頭＝滑步後往按鍵點移動。以滑步終點為基準（按鍵當下滑步才剛開始，按鍵點不是靜止點）。
+            Assert.LessOrEqual((after - dashEnd).magnitude, 0.5f, "滑步結束後不走回按鍵位置");
+            Assert.IsNull(_hero.CurrentTarget, "滑步結束後清掉普攻目標");
         }
 
         [UnityTest] // 覆審 r1 L1：TOP/THIRD 不重置錘冷卻
