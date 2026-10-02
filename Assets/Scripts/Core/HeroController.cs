@@ -498,6 +498,8 @@ namespace Vow.Core
             // 目標tap接手導航；仍按著但沒新操作的搖桿不搶走追擊。
             _continuousStarted = _continuousRequested = false;
             _brain.CommandAttack(target);
+            // 覆審 r2：同一幀就被打斷（放開＋DASH）也要算「接上過」，下一幀每幀防線才會解除。
+            if (_chargedShotTarget != null && ReferenceEquals(_brain.CurrentTarget, _chargedShotTarget)) _chargedShotEngaged = true;
         }
 
         // 螢幕向量 → 世界 XZ 方向（以鏡頭水平朝向為基準，玩家往螢幕哪邊彈，角色就往畫面上的那邊滑）。
