@@ -277,6 +277,21 @@ namespace Vow.Tests.PlayMode
                 Debug.Log("[BOWCHARGE TEST] A7 " + label + " tap=" + tapHit.ToString("F3") + " hold=" + holdHit.ToString("F3"));
                 Assert.IsTrue(released, label + "：有按滿 1.0s 再放開");
                 Assert.AreEqual(tapHit, holdHit, 1e-3f, label + "：按住 1.0s 的傷害與點擊相同（沒有蓄力效果）");
+
+                // 覆審 r1 M3：放開之後那一發也要量——放開不得把下一發升級（倍率／穿透）。
+                float hr = dummy.Health;
+                if (weapons[w] == 3)
+                {
+                    yield return WaitSeconds(1f);
+                    Assert.AreEqual(hr, dummy.Health, 1e-3f, label + "：放開後不再出手（錘只在按下時橫掃，與點擊相同）");
+                }
+                else
+                {
+                    yield return WaitForDrop(dummy, hr, 2f);
+                    float afterRelease = hr - dummy.Health;
+                    Debug.Log("[BOWCHARGE TEST] A7 " + label + " afterRelease=" + afterRelease.ToString("F3"));
+                    Assert.AreEqual(tapHit, afterRelease, 1e-3f, label + "：放開後那一發＝一般普攻（與點擊相同，沒有蓄力倍率）");
+                }
             }
         }
 
