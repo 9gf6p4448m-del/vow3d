@@ -873,33 +873,6 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(0L, updateBytes, "武器路徑 Update 在 " + frames + " 幀內配置了 " + updateBytes + " bytes");
             Assert.AreEqual(0L, lateBytes, "武器路徑 LateUpdate 在 " + frames + " 幀內配置了 " + lateBytes + " bytes");
         }
-    }
-
-    // W6：在 Update 夾區內每 30 幀切一次武器、隔 10 幀按一次 ATK（四把武器輪流）。
-    public sealed class WeaponButtonDriver : MonoBehaviour
-    {
-        internal PlayerInputService Input;
-        internal CameraComparisonLab Lab;
-        public int Frame;
-        public int BowLocks, SwordLocks;
-
-        private void Update()
-        {
-            if (Input == null) return;
-            Frame++;
-            if (Frame % 30 == 1)
-            {
-                ScreenRegion w = Lab.ActionButtonLayout.Weapon;
-                Input.SendScreenTap((w.XMin + w.XMax) * .5f, (w.YMin + w.YMax) * .5f);
-            }
-            else if (Frame % 30 == 11)
-            {
-                ScreenRegion a = Lab.ActionButtonLayout.Attack;
-                Input.SendScreenTap((a.XMin + a.XMax) * .5f, (a.YMin + a.YMax) * .5f);
-                if (Lab.LastAimTarget != null && Lab.CurrentWeapon == WeaponId.Bow) BowLocks++;
-                if (Lab.LastAimTarget != null && Lab.CurrentWeapon == WeaponId.Sword) SwordLocks++;
-            }
-        }
 
         private IEnumerator WaitSeconds(float seconds)
         {
@@ -981,6 +954,33 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(f0 - 2f * damage, front.Health, 1e-3f, "冷卻後再結算一次");
             Assert.AreEqual(a0 - damage, ally.Health, 1e-3f, "改成敵方後同位置受傷");
             Assert.AreEqual(w0 - damage, wall.Health, 1e-3f, "改成中立牆後同位置受傷");
+        }
+    }
+
+    // W6：在 Update 夾區內每 30 幀切一次武器、隔 10 幀按一次 ATK（四把武器輪流）。
+    public sealed class WeaponButtonDriver : MonoBehaviour
+    {
+        internal PlayerInputService Input;
+        internal CameraComparisonLab Lab;
+        public int Frame;
+        public int BowLocks, SwordLocks;
+
+        private void Update()
+        {
+            if (Input == null) return;
+            Frame++;
+            if (Frame % 30 == 1)
+            {
+                ScreenRegion w = Lab.ActionButtonLayout.Weapon;
+                Input.SendScreenTap((w.XMin + w.XMax) * .5f, (w.YMin + w.YMax) * .5f);
+            }
+            else if (Frame % 30 == 11)
+            {
+                ScreenRegion a = Lab.ActionButtonLayout.Attack;
+                Input.SendScreenTap((a.XMin + a.XMax) * .5f, (a.YMin + a.YMax) * .5f);
+                if (Lab.LastAimTarget != null && Lab.CurrentWeapon == WeaponId.Bow) BowLocks++;
+                if (Lab.LastAimTarget != null && Lab.CurrentWeapon == WeaponId.Sword) SwordLocks++;
+            }
         }
     }
 }
