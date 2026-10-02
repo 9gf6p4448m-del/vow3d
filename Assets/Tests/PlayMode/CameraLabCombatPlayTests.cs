@@ -1051,6 +1051,38 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(WeaponId.Sword, _lab.CurrentWeapon, "關閉後可切");
         }
 
+        [UnityTest] // 覆審 r2 F1：錘為現役武器時從 TOP 鎖目標再切回 THIRD——連按 ATK 只吃一次橫掃、普攻不疊加
+        public IEnumerator W4e_HammerActive_TopLockThenThird_RepeatedAtk_OnlyOneSweepNoBasicAttack()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            dummy.Configure(1000f, dummy.TargetFaction);
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 3f);
+            SelectWeapon(WeaponId.Hammer);
+            _lab.SetThirdPerson(false);
+            yield return null; yield return null;
+            Vector3 sp = Camera.main.WorldToScreenPoint(dummy.transform.position + Vector3.up);
+            Assert.Greater(sp.z, 0f, "木樁在 TOP 鏡頭前");
+            _input.SendScreenTap(sp.x, sp.y);
+            yield return null;
+            Assert.AreSame(dummy, _hero.CurrentTarget, "TOP 點木樁＝鎖住（普攻目標）");
+            _lab.SetThirdPerson(true);
+            Assert.AreEqual(WeaponId.Hammer, _lab.CurrentWeapon, "錘仍是現役武器");
+            yield return null;
+            float h0 = dummy.Health;
+            // 冷卻 0.8s 內連按 ATK（0.7s 內按 8 下），之後等到 1.2s：窗口內只應有一次橫掃、沒有普攻。
+            for (int i = 0; i < 8; i++)
+            {
+                TapAttack();
+                yield return WaitSeconds(0.0875f);
+            }
+            yield return WaitSeconds(0.5f);
+            Assert.AreEqual(h0 - _hero.AttackDamage, dummy.Health, 1e-3f, "1.2s 內只吃一次橫掃傷害（普攻不得疊加）");
+            Assert.AreEqual(1, _lab.SweepStartCount, "冷卻內連按只起手一次");
+            Assert.AreEqual(1, _lab.SweepResolveCount);
+            Assert.IsNull(_hero.CurrentTarget, "錘起手清掉普攻目標");
+        }
+
         [UnityTest] // 覆審 r1 L1：TOP/THIRD 不重置錘冷卻
         public IEnumerator W4c_Hammer_ToggleViewKeepsCooldown()
         {

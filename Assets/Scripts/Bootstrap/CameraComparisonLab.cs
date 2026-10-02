@@ -383,10 +383,9 @@ namespace Vow.Bootstrap
 
         private void CycleWeapon()
         {
-            WeaponSpec previous = _weapon.Current;
             _weapon.Next();
-            // 覆審 r1 M1：切到錘（不走單目標普攻）或從弓切走（射程縮回 5m 會去追舊目標）時，原地清掉普攻目標。
-            if (IsThirdPerson && (_weapon.Current.IsSweep || previous.OverridesAttackRange)) _hero.ClearCombatTargetInPlace();
+            // 覆審 r1 M1：切到錘（不走單目標普攻）時原地清掉普攻目標（循環順序下離開弓必定切到錘）。
+            if (IsThirdPerson && _weapon.Current.IsSweep) _hero.ClearCombatTargetInPlace();
             WeaponSwitchCount++;
             ApplyWeaponRange();
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -402,6 +401,9 @@ namespace Vow.Bootstrap
             WeaponSpec hammer = _weapon.Current;
             if (!_sweep.TryStart(Time.time, hammer.SweepCooldownSeconds, hammer.SweepWindupSeconds)) return;
             SweepStartCount++;
+            // 覆審 r2 F1：以起手為準清掉普攻目標——不論目標從哪個入口來（含 TOP 鎖定後切回 THIRD），錘下都不疊普攻。
+            // 只在有目標時下（無目標時不碰移動，避免滑步中按錘被排入「走回起手點」）。
+            if (_hero.CurrentTarget != null) _hero.ClearCombatTargetInPlace();
             CameraLabAim.GroundForward(_yaw, out _sweepDirX, out _sweepDirZ);
         }
 
