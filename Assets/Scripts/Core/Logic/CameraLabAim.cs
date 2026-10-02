@@ -115,6 +115,15 @@ namespace Vow.Core.Logic
             _fallbackToNearest = weapon.FallbackToNearest;
         }
 
+        // 弓蓄力（2026-10-03）：錐半角與距離隨蓄力改變；錐外退回與否沿用武器（弓＝不退回）。
+        public void Begin(float originX, float originZ, float aimX, float aimZ, in WeaponSpec weapon,
+            float coneHalfAngleDegrees, float maxDistance)
+        {
+            Begin(originX, originZ, aimX, aimZ, coneHalfAngleDegrees, maxDistance);
+            _coneEnabled = coneHalfAngleDegrees > 0f;
+            _fallbackToNearest = weapon.FallbackToNearest;
+        }
+
         // 回傳這個候選是否落在準星錐內（不論是否成為最佳）。
         public bool Consider(int index, float targetX, float targetZ, bool isPreferred = false, bool fallbackEligible = true)
         {
