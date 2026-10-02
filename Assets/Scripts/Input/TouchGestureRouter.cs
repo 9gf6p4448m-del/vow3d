@@ -75,6 +75,8 @@ namespace Vow.Input
         private readonly float[] _lastX = new float[MaxTouches], _lastY = new float[MaxTouches];
         private readonly double[] _startTime = new double[MaxTouches];
         private readonly bool[] _lookDragged = new bool[MaxTouches];
+        // 2026-10-03 弓蓄力：按住中的 ATK 鈕（只追 ATK）。放開送 Released、作廢送 Canceled，兩者擇一且只送一次。
+        private readonly LabActionButton[] _slotHeldAction = new LabActionButton[MaxTouches];
         public void SetThirdPersonEnabled(bool enabled)
         {
             if (ThirdPersonEnabled == enabled) return;
@@ -135,6 +137,7 @@ namespace Vow.Input
                 if (!_slotUsed[i]) continue;
                 _slotRoute[i] = TouchRoute.Rejected;
                 _trackers[i].Cancel();
+                CancelHeldAction(i);
             }
         }
 
@@ -156,6 +159,7 @@ namespace Vow.Input
                     if (!_slotUsed[i]) continue;
                     _slotRoute[i] = TouchRoute.Rejected;
                     _trackers[i].Cancel();
+                    CancelHeldAction(i);
                 }
             }
         }
@@ -249,6 +253,7 @@ namespace Vow.Input
             _slotRoute[slot] = route;
             _slotUiRegion[slot] = regionId;
             _slotUiRegionTouchVersion[slot] = _routing.UiRegionTouchVersion(regionId);
+            _slotHeldAction[slot] = action == LabActionButton.Attack && _sink is IActionButtonSink ? action : LabActionButton.None;
             if (action != LabActionButton.None && _sink is IActionButtonSink actionSink) actionSink.OnActionButtonPressed(action);
 
             switch (route)
@@ -318,6 +323,12 @@ namespace Vow.Input
 
         private void EndTouch(int slot, float x, float y, double now)
         {
+            LabActionButton held = _slotHeldAction[slot];
+            if (held != LabActionButton.None)
+            {
+                _slotHeldAction[slot] = LabActionButton.None;
+                if (_sink is IActionButtonSink holdSink) holdSink.OnActionButtonReleased(held, (float)(now - _startTime[slot]));
+            }
             if (_slotRoute[slot] == TouchRoute.CameraLook) MoveTouch(slot, x, y, now);
             switch (_slotRoute[slot])
             {
@@ -363,7 +374,16 @@ namespace Vow.Input
             if (_slotRoute[slot] == TouchRoute.Pip) _pip.End();
             if (_slotRoute[slot] == TouchRoute.Rune) EmitRune(_rune.Cancel());
             _trackers[slot].Cancel();
+            CancelHeldAction(slot);
             _slotUsed[slot] = false;
+        }
+
+        private void CancelHeldAction(int slot)
+        {
+            LabActionButton held = _slotHeldAction[slot];
+            if (held == LabActionButton.None) return;
+            _slotHeldAction[slot] = LabActionButton.None;
+            if (_sink is IActionButtonSink holdSink) holdSink.OnActionButtonCanceled(held);
         }
 
         private void EmitRune(RuneGestureOutcome outcome)
@@ -402,6 +422,7 @@ namespace Vow.Input
                 _slotTouchId[i] = touchId;
                 _slotRoute[i] = TouchRoute.Rejected;
                 _slotUiRegion[i] = -1;
+                _slotHeldAction[i] = LabActionButton.None;
                 _trackers[i] = default;
                 return i;
             }

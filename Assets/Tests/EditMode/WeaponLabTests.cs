@@ -264,6 +264,8 @@ namespace Vow.Tests
                 else if (button == LabActionButton.Dash) DashPresses++;
                 else if (button == LabActionButton.Weapon) Weapon++;
             }
+            public void OnActionButtonReleased(LabActionButton button, float heldSeconds) { }
+            public void OnActionButtonCanceled(LabActionButton button) { }
         }
 
         [Test]

@@ -446,6 +446,8 @@ namespace Vow.Tests
                 if (button == LabActionButton.Attack) Attack++;
                 if (button == LabActionButton.Dash) DashPresses++;
             }
+            public void OnActionButtonReleased(LabActionButton button, float heldSeconds) { }
+            public void OnActionButtonCanceled(LabActionButton button) { }
         }
 
         private const float W = 844f, H = 390f, Ppmm = 6.3f;

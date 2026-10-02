@@ -13,6 +13,10 @@ namespace Vow.Input
     public interface IActionButtonSink
     {
         void OnActionButtonPressed(LabActionButton button);
+        // 2026-10-03 弓蓄力：只有 ATK 會送放開／作廢（DASH／WPN 仍只在按下送一次）。
+        // 放開＝手指離開螢幕，heldSeconds＝按下到放開的秒數；作廢＝觸控 Canceled、切模式／切 TOP↔THIRD 等整批作廢，之後不會再送放開。
+        void OnActionButtonReleased(LabActionButton button, float heldSeconds);
+        void OnActionButtonCanceled(LabActionButton button);
     }
 
     // ATK／DASH 兩顆圓鈕的螢幕幾何（Unity 螢幕座標：原點左下、像素）。不依賴 UnityEngine，畫面與路由共用這一份。

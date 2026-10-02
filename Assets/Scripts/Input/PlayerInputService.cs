@@ -385,6 +385,20 @@ namespace Vow.Input
             OnLabActionButton?.Invoke(button);
         }
 
+        // 2026-10-03 弓蓄力：ATK 放開（帶按住秒數）／作廢。同一條觸控採樣路徑，與按下成對、擇一送出。
+        public event Action<LabActionButton, float> OnLabActionButtonReleased;
+        public event Action<LabActionButton> OnLabActionButtonCanceled;
+
+        void IActionButtonSink.OnActionButtonReleased(LabActionButton button, float heldSeconds)
+        {
+            OnLabActionButtonReleased?.Invoke(button, heldSeconds);
+        }
+
+        void IActionButtonSink.OnActionButtonCanceled(LabActionButton button)
+        {
+            OnLabActionButtonCanceled?.Invoke(button);
+        }
+
         // 準星選出的目標走與「點中敵人」相同的出口（後續由 DuelInputRouter 做開局／對局過濾）。
         public void SubmitCombatTarget(ICombatTarget target)
         {
