@@ -238,5 +238,48 @@ namespace Vow.Tests
             r.ProcessTouch(2, TouchPhaseKind.Ended, x, y, 1.05, 1.0);
             Assert.AreEqual(1, sink.Weapon, "俯視不觸發");
         }
+
+        // ───────────────────────── W4 錘（純邏輯部分）─────────────────────────
+
+        private static bool InHammer(float degreesFromAim, float distance)
+        {
+            float[] p = Polar(degreesFromAim, distance);
+            return WeaponSweep.Contains(WeaponSpec.Hammer, 0f, 0f, 0f, 1f, p[0], p[1]);
+        }
+
+        [Test]
+        public void W4_HammerSweep_FullAngleHundredDegrees_RadiusThreePointFive()
+        {
+            Assert.IsTrue(InHammer(0f, 3f), "正前 3m");
+            Assert.IsTrue(InHammer(-30f, 2.5f), "左 30° 2.5m");
+            Assert.IsTrue(InHammer(49f, 3f), "49° 在全角 100° 內");
+            Assert.IsFalse(InHammer(51f, 3f), "51° 在外（全角不是半角）");
+            Assert.IsFalse(InHammer(70f, 3f), "70° 在外");
+            Assert.IsFalse(InHammer(180f, 3f), "正後 3m");
+            Assert.IsTrue(InHammer(0f, 3.49f), "3.49m 在半徑內");
+            Assert.IsFalse(InHammer(0f, 3.51f), "3.51m 超出半徑");
+            Assert.IsFalse(InHammer(0f, 5f), "5m 超出半徑");
+            float[] q = Polar(90f, 3f);
+            Assert.IsTrue(WeaponSweep.Contains(WeaponSpec.Hammer, 0f, 0f, 1f, 0f, q[0], q[1]), "方向跟著準星（+x）");
+        }
+
+        [Test]
+        public void W4_SweepTimer_WindupThenResolveOnce_CooldownBlocksRestart()
+        {
+            WeaponSpec h = WeaponSpec.Hammer;
+            WeaponSweepTimer t = default;
+            Assert.IsFalse(t.TryConsumeResolve(1f), "沒起手不結算");
+            Assert.IsTrue(t.TryStart(1f, h.SweepCooldownSeconds, h.SweepWindupSeconds), "首次起手");
+            Assert.IsTrue(t.Pending);
+            Assert.IsFalse(t.TryConsumeResolve(1.2f), "前搖 0.25s 未到");
+            Assert.IsTrue(t.TryConsumeResolve(1.25f), "前搖到點結算");
+            Assert.IsFalse(t.TryConsumeResolve(1.3f), "只結算一次");
+            Assert.IsFalse(t.TryStart(1.5f, h.SweepCooldownSeconds, h.SweepWindupSeconds), "0.8s 冷卻內不起手");
+            Assert.IsFalse(t.TryConsumeResolve(1.79f), "冷卻內那一下不會結算");
+            Assert.IsTrue(t.TryStart(1.8f, h.SweepCooldownSeconds, h.SweepWindupSeconds), "冷卻後可再起手");
+            Assert.IsTrue(t.TryConsumeResolve(2.05f));
+            t.Reset();
+            Assert.IsFalse(t.Pending);
+        }
     }
 }

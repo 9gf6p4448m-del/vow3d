@@ -33,6 +33,12 @@ namespace Vow.Bootstrap
         private WeaponSelection _weapon;
         public WeaponId CurrentWeapon => _weapon.CurrentId;
         public int WeaponSwitchCount { get; private set; }
+        // 錘：獨立橫掃流程（冷卻＋前搖後結算扇形傷害），不經 HeroCombatBrain 的單目標狀態機。
+        private WeaponSweepTimer _sweep;
+        private float _sweepDirX, _sweepDirZ;
+        public int SweepStartCount { get; private set; }
+        public int SweepResolveCount { get; private set; }
+        public int LastSweepHits { get; private set; }
         private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
         private const float SightHeight = 1.0f;
         private readonly RaycastHit[] _sightHits = new RaycastHit[16];
@@ -207,6 +213,7 @@ namespace Vow.Bootstrap
                 _input.ContinuousRouter.SetThirdPersonEnabled(false);
                 _hero.SetContinuousMoveSource(null);
                 ApplyWeaponRange();
+                _sweep.Reset();   // 俯視不結算未完成的橫掃
                 _input.ContinuousRouter.ActionButtonsEnabled = false;
                 if (_runeCaster != null) _runeCaster.SetDragDirectionOverride(null);
                 if (_runeGhost != null) _runeGhost.SetDragDirectionOverride(null);
@@ -242,6 +249,7 @@ namespace Vow.Bootstrap
             if (_ready && (_width != Screen.width || _height != Screen.height || _captureState != _bootstrap.CaptureState
                 || _talentVisible != _bootstrap.TalentPanelVisible))
                 RefreshLayout();
+            if (_ready && IsThirdPerson && _sweep.TryConsumeResolve(Time.time)) ResolveSweep();
         }
 
         private void LateUpdate()
@@ -363,7 +371,11 @@ namespace Vow.Bootstrap
         private void OnActionButton(LabActionButton button)
         {
             if (!_ready || !IsThirdPerson || !InputPermitted) return;
-            if (button == LabActionButton.Attack) AimAttack();
+            if (button == LabActionButton.Attack)
+            {
+                if (_weapon.Current.IsSweep) HammerSweep();
+                else AimAttack();
+            }
             else if (button == LabActionButton.Dash) ActiveDash();
             else if (button == LabActionButton.Weapon) CycleWeapon();
         }
@@ -376,6 +388,50 @@ namespace Vow.Bootstrap
 #if UNITY_WEBGL && !UNITY_EDITOR
             Debug.Log("[CAMERA LAB] WPN weapon=" + WeaponLabels[(int)_weapon.CurrentId] + " atkRange=" + _hero.AttackRangeOverride.ToString("F1"));
 #endif
+        }
+
+        // 錘：按 ATK 就朝準星水平前方起手（錐內沒人也出手，使用者 2026-10-02 簽准）；冷卻內再按不起手。
+        private void HammerSweep()
+        {
+            AimAttackCount++;
+            LastAimTarget = null;
+            WeaponSpec hammer = _weapon.Current;
+            if (!_sweep.TryStart(Time.time, hammer.SweepCooldownSeconds, hammer.SweepWindupSeconds)) return;
+            SweepStartCount++;
+            CameraLabAim.GroundForward(_yaw, out _sweepDirX, out _sweepDirZ);
+        }
+
+        // 前搖結束：以英雄當下位置為頂點、起手時的準星方向為軸，扇形內每個可傷目標各吃一次 AttackDamage。
+        private void ResolveSweep()
+        {
+            SweepResolveCount++;
+            LastSweepHits = 0;
+            CombatTargetRoster roster = _bootstrap.ElementRoster;
+            if (roster == null || !_hero.IsAlive) return;
+            WeaponSpec hammer = WeaponSpec.Hammer;
+            Vector3 apex = _hero.transform.position;
+            float damage = _hero.AttackDamage;
+            Faction faction = _hero.HeroFaction;
+            for (int i = 0; i < roster.Count; i++)
+            {
+                CombatTargetBehaviour target = roster.GetBehaviour(i);
+                if (!IsSweepDamageable(target, faction)) continue;
+                Vector3 p = target.TargetTransform.position;
+                if (!WeaponSweep.Contains(hammer, apex.x, apex.z, _sweepDirX, _sweepDirZ, p.x, p.z)) continue;
+                target.ReceiveDamage(damage, DamageType.Physical, _hero.gameObject);
+                LastSweepHits++;
+            }
+#if UNITY_WEBGL && !UNITY_EDITOR
+            Debug.Log("[CAMERA LAB] SWEEP hits=" + LastSweepHits + " dir=(" + _sweepDirX.ToString("F3") + "," + _sweepDirZ.ToString("F3") + ")");
+#endif
+        }
+
+        // 與 ElementField.IsElementDamageable 同語意：己方石牆不吃、其餘依 CanBeTargetedBy（同陣營不傷）。
+        private static bool IsSweepDamageable(CombatTargetBehaviour target, Faction heroFaction)
+        {
+            if (target == null || !target.IsAlive || target.TargetTransform == null) return false;
+            if (target.TargetFaction == Faction.DestructibleWall && target.OwnerFaction == heroFaction) return false;
+            return target.CanBeTargetedBy(heroFaction);
         }
 
         // 武器射程覆寫只在第三人稱生效（弓 12m）；俯視與其他武器一律清掉＝沿用 HeroTuningAsset。

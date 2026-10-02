@@ -844,6 +844,7 @@ namespace Vow.Tests.PlayMode
             rig.AddComponent<AllocationProbeEnd>();
             yield return null;
             int switchesBefore = _lab.WeaponSwitchCount, bowBefore = driver.BowLocks, swordBefore = driver.SwordLocks;
+            int sweepsBefore = _lab.SweepResolveCount;
             AllocationProbe.Measuring = true;
             for (int i = 0; i < 180; i++) yield return null;
             AllocationProbe.Measuring = false;
@@ -867,6 +868,7 @@ namespace Vow.Tests.PlayMode
             Assert.Greater(_lab.WeaponSwitchCount, switchesBefore + 4, "窗口內 WPN 切換不足一輪");
             Assert.Greater(driver.BowLocks, bowBefore, "窗口內沒有弓的鎖定，0 byte 沒有鑑別力");
             Assert.Greater(driver.SwordLocks, swordBefore, "窗口內沒有劍的鎖定，0 byte 沒有鑑別力");
+            Assert.Greater(_lab.SweepResolveCount, sweepsBefore, "窗口內沒有錘的橫掃結算，0 byte 沒有鑑別力");
             Assert.Greater(controlBytes, 0L, "正向對照量不到配置：探針失效");
             Assert.AreEqual(0L, updateBytes, "武器路徑 Update 在 " + frames + " 幀內配置了 " + updateBytes + " bytes");
             Assert.AreEqual(0L, lateBytes, "武器路徑 LateUpdate 在 " + frames + " 幀內配置了 " + lateBytes + " bytes");
@@ -897,6 +899,88 @@ namespace Vow.Tests.PlayMode
                 if (Lab.LastAimTarget != null && Lab.CurrentWeapon == WeaponId.Bow) BowLocks++;
                 if (Lab.LastAimTarget != null && Lab.CurrentWeapon == WeaponId.Sword) SwordLocks++;
             }
+        }
+
+        private IEnumerator WaitSeconds(float seconds)
+        {
+            float until = Time.time + seconds;
+            while (Time.time < until) yield return null;
+        }
+
+        [UnityTest] // W4：錘橫掃——錐內沒人也出手；半徑、全角、陣營、冷卻
+        public IEnumerator W4_Hammer_SweepsTowardAim_RadiusAngleFactionAndCooldown()
+        {
+            yield return Load();
+            DummyTarget front = Object.FindObjectOfType<DummyTarget>();
+            front.Configure(1000f, front.TargetFaction);
+            yield return WarpAndSettle(front.transform.position + Vector3.back * 3f);   // 木樁在正前 3m
+            SelectWeapon(WeaponId.Hammer);
+
+            // ① 準星轉向背面（3.5m 內沒有任何目標）：照樣起手、結算、零命中。
+            _lab.RotateThirdPerson(180f);
+            float frontStart = front.Health;
+            TapAttack();
+            Assert.AreEqual(1, _lab.SweepStartCount, "錐內沒人也出手");
+            Assert.IsNull(_lab.LastAimTarget, "錘不鎖定目標");
+            Assert.IsNull(_hero.CurrentTarget, "錘不走單目標普攻");
+            yield return WaitSeconds(0.35f);
+            Assert.AreEqual(1, _lab.SweepResolveCount, "前搖後結算");
+            Assert.AreEqual(0, _lab.LastSweepHits);
+            Assert.AreEqual(frontStart, front.Health, "背後的木樁不受傷");
+            _lab.RotateThirdPerson(180f);
+            Assert.AreEqual(0f, _lab.YawDegrees, 1e-3f);
+            yield return WaitSeconds(0.6f);   // 等冷卻
+
+            DummyTarget second = SpawnDummyAt(front, -30f, 2.5f);   // 扇形內第二隻
+            DummyTarget behind = SpawnDummyAt(front, 180f, 3f);     // 正後 3m
+            DummyTarget far = SpawnDummyAt(front, 0f, 5f);          // 正前 5m（超半徑）
+            DummyTarget side = SpawnDummyAt(front, 70f, 3f);        // 70°：全角誤當半角時會被掃到
+            DummyTarget ally = SpawnDummyAt(front, 25f, 2f);        // 己陣營
+            ally.Configure(1000f, _hero.HeroFaction);
+            DummyTarget[] enemies = { second, behind, far, side };
+            foreach (DummyTarget d in enemies) d.Configure(1000f, front.TargetFaction);
+            Vector3 h = _hero.transform.position;
+            TestWallTarget wall = PlaceOwnTestWall(new Vector3(h.x - 1.0f, h.y, h.z + 1.6f));   // 己方石牆，牆心在扇形內
+            yield return null;
+            float f0 = front.Health, s0 = second.Health, b0 = behind.Health, r0 = far.Health, d0 = side.Health;
+            float a0 = ally.Health, w0 = wall.Health;
+
+            // ② 正式一掃。
+            float damage = _hero.AttackDamage;
+            TapAttack();
+            Assert.AreEqual(2, _lab.SweepStartCount);
+            yield return WaitSeconds(0.2f);
+            Assert.AreEqual(1, _lab.SweepResolveCount, "前搖 0.25s 未到不結算");
+            Assert.AreEqual(f0, front.Health);
+            yield return WaitSeconds(0.15f);
+            Assert.AreEqual(2, _lab.SweepResolveCount);
+            Assert.AreEqual(f0 - damage, front.Health, 1e-3f, "正前 3m 受 60");
+            Assert.AreEqual(s0 - damage, second.Health, 1e-3f, "扇形內第二隻也受 60");
+            Assert.AreEqual(b0, behind.Health, "正後 3m 0 傷");
+            Assert.AreEqual(r0, far.Health, "正前 5m（超半徑）0 傷");
+            Assert.AreEqual(d0, side.Health, "70°（扇形外）0 傷");
+            Assert.AreEqual(a0, ally.Health, "己陣營 0 傷");
+            Assert.AreEqual(w0, wall.Health, "己方石牆 0 傷");
+
+            // ③ 冷卻內（起手後約 0.4s）再按：不起手、不結算。
+            TapAttack();
+            Assert.AreEqual(2, _lab.SweepStartCount, "0.8s 冷卻內不起手");
+            yield return WaitSeconds(0.35f);   // 起手後約 0.75s（若誤起手，0.65s 時會結算）
+            Assert.AreEqual(2, _lab.SweepResolveCount, "冷卻內不結算");
+            Assert.AreEqual(f0 - damage, front.Health, 1e-3f, "冷卻內木樁不再扣血");
+            yield return WaitSeconds(0.15f);
+
+            // ④ 冷卻後再按：可再結算；同時把牆改中立、己陣營木樁改敵方——同一位置改受傷（陣營過濾的鑑別力）。
+            SetOwner(wall, Faction.Neutral);
+            ally.Configure(1000f, front.TargetFaction);
+            a0 = ally.Health;
+            TapAttack();
+            Assert.AreEqual(3, _lab.SweepStartCount, "冷卻後可再起手");
+            yield return WaitSeconds(0.35f);
+            Assert.AreEqual(3, _lab.SweepResolveCount);
+            Assert.AreEqual(f0 - 2f * damage, front.Health, 1e-3f, "冷卻後再結算一次");
+            Assert.AreEqual(a0 - damage, ally.Health, 1e-3f, "改成敵方後同位置受傷");
+            Assert.AreEqual(w0 - damage, wall.Health, 1e-3f, "改成中立牆後同位置受傷");
         }
     }
 }
