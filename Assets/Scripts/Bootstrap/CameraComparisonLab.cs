@@ -17,6 +17,9 @@ namespace Vow.Bootstrap
         public const float ThirdPersonDistance = 8f;
         public const float ThirdPersonFieldOfView = 55f;
         public const float FocusHeight = 1f;
+        // 試玩回饋：準星在螢幕正中央、正好疊在英雄身上。鏡頭位置不動（仍繞英雄軌道），視線抬高這個角度，
+        // 英雄下移到畫面下半部、準星落在他頭頂上方；ATK／DASH／塑牆只用水平朝向，不受影響。
+        public const float LookUpBiasDegrees = 12f;
         private const float CollisionRadius = 0.25f;
         private readonly RaycastHit[] _hits = new RaycastHit[128];
         private readonly Rect[] _buttons = new Rect[4];
@@ -269,7 +272,8 @@ namespace Vow.Bootstrap
             }
             // 緩衝滿時不猜漏掉的牆：保守回焦點。
             if (count == _hits.Length) distance = 0f;
-            _rig.transform.SetPositionAndRotation(focus + direction * distance, rotation);
+            _rig.transform.SetPositionAndRotation(focus + direction * distance,
+                Quaternion.Euler(_pitch - LookUpBiasDegrees, _yaw, 0f));
         }
 
         private void RefreshLayout()

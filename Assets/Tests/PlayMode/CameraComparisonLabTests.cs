@@ -121,10 +121,32 @@ namespace Vow.Tests.PlayMode
             Vector3 focus = _hero.transform.position + Vector3.up * CameraComparisonLab.FocusHeight;
             Vector3 offset = focus - _rig.transform.position;
             Assert.LessOrEqual(offset.magnitude, CameraComparisonLab.ThirdPersonDistance + 0.001f);
-            Assert.Less(Vector3.Cross(offset, _rig.transform.forward).magnitude, 0.002f);
-            Assert.Less(Quaternion.Angle(_rig.transform.rotation, Quaternion.Euler(25f, 0f, 0f)), 0.001f);
+            // 位置仍在軌道上（焦點—鏡頭連線平行於軌道方向）；視線另外抬高 LookUpBiasDegrees（準星不壓英雄）。
+            Assert.Less(Vector3.Cross(offset, Quaternion.Euler(25f, 0f, 0f) * Vector3.forward).magnitude, 0.002f);
+            Assert.Less(Quaternion.Angle(_rig.transform.rotation, Quaternion.Euler(25f - CameraComparisonLab.LookUpBiasDegrees, 0f, 0f)), 0.001f);
             Assert.AreEqual(0, moveEvents);
             Assert.AreEqual(0, targetEvents);
+        }
+
+        // 試玩回饋（準星疊在英雄身上）：THIRD 時英雄頭頂須落在螢幕中央準星下方、腳底仍在畫面內。
+        // LookUpBiasDegrees 改 0 → 頭頂高於準星，本測試紅在第一個斷言。
+        [UnityTest]
+        public IEnumerator ThirdPerson_CrosshairClearsHeroHead_AndFeetStayOnScreen()
+        {
+            yield return Load();
+            TapButton(0);
+            Assert.IsTrue(_lab.IsThirdPerson);
+            for (int pass = 0; pass < 2; pass++)
+            {
+                if (pass == 1) TapButton(2);   // yaw 30
+                yield return null;
+                Vector3 pos = _hero.transform.position;
+                Vector3 head = _camera.WorldToScreenPoint(pos + Vector3.up * 2.4f);
+                Vector3 feet = _camera.WorldToScreenPoint(pos);
+                Assert.Less(head.y, Screen.height * 0.5f - Screen.height * 0.02f,
+                    "pass " + pass + "：頭頂 y=" + head.y + "，準星 y=" + Screen.height * 0.5f);
+                Assert.Greater(feet.y, 0f, "pass " + pass + "：腳底出畫面 y=" + feet.y);
+            }
         }
 
 #if UNITY_EDITOR
