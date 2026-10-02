@@ -71,6 +71,7 @@ namespace Vow.Tests
             Assert.AreEqual(WeaponId.Sword, sel.Next());
             Assert.AreEqual(WeaponId.Bow, sel.Next());
             Assert.AreEqual(WeaponId.Hammer, sel.Next());
+            Assert.AreEqual(WeaponId.Grapple, sel.Next());
             Assert.AreEqual(WeaponId.Standard, sel.Next(), "循環回 Standard");
             Assert.AreEqual(WeaponId.Standard, sel.Current.Id);
             sel.Next();
