@@ -922,11 +922,19 @@ namespace Vow.Tests.PlayMode
             float damage = _hero.AttackDamage;
             TapAttack();
             Assert.AreEqual(2, _lab.SweepStartCount);
-            yield return WaitSeconds(0.2f);
-            Assert.AreEqual(1, _lab.SweepResolveCount, "前搖 0.25s 未到不結算");
-            Assert.AreEqual(f0, front.Health);
-            yield return WaitSeconds(0.15f);
+            // 覆審 r1 L5：不靠牆鐘餘裕——Time.captureDeltaTime 固定 1/60，Time.time 逐幀走遊戲時間；
+            // 逐幀等到結算，斷言結算那一幀距起手落在 [0.25, 0.25+1 幀]，結算前木樁血量不變（比原本只看 0.2s 時未結算更嚴）。
+            float pressedAt = Time.time;
+            for (int i = 0; i < 60 && _lab.SweepResolveCount == 1; i++)
+            {
+                Assert.AreEqual(f0, front.Health, "前搖未結算前不扣血");
+                yield return null;
+            }
             Assert.AreEqual(2, _lab.SweepResolveCount);
+            float windup = Time.time - pressedAt;
+            Assert.GreaterOrEqual(windup, 0.25f - 1e-3f, "前搖 0.25s 未到不結算");
+            Assert.LessOrEqual(windup, 0.25f + 1f / 60f + 1e-3f, "前搖到點那一幀結算");
+            yield return WaitSeconds(0.1f);
             Assert.AreEqual(f0 - damage, front.Health, 1e-3f, "正前 3m 受 60");
             Assert.AreEqual(s0 - damage, second.Health, 1e-3f, "扇形內第二隻也受 60");
             Assert.AreEqual(b0, behind.Health, "正後 3m 0 傷");
@@ -954,6 +962,151 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(f0 - 2f * damage, front.Health, 1e-3f, "冷卻後再結算一次");
             Assert.AreEqual(a0 - damage, ally.Health, 1e-3f, "改成敵方後同位置受傷");
             Assert.AreEqual(w0 - damage, wall.Health, 1e-3f, "改成中立牆後同位置受傷");
+        }
+
+        [UnityTest] // 覆審 r1 M1：先鎖目標再切錘——只吃橫掃一次、不再普攻；弓鎖 10m 後切錘不追
+        public IEnumerator W4b_LockedTarget_ThenSwitchToHammer_OnlySweepDamage_NoChase()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            dummy.Configure(1000f, dummy.TargetFaction);
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 3f);
+            float health = dummy.Health;
+            TapAttack();
+            Assert.AreSame(dummy, _hero.CurrentTarget, "Standard 先鎖住木樁");
+            float deadline = Time.time + 1f;
+            while (dummy.Health >= health && Time.time < deadline) yield return null;
+            Assert.Less(dummy.Health, health, "先真的打到一下");
+            SelectWeapon(WeaponId.Hammer);
+            float h0 = dummy.Health;
+            TapAttack();
+            yield return WaitSeconds(1.2f);   // 普攻週期 0.8s：若普攻還在，窗口內至少多一下
+            Assert.AreEqual(h0 - _hero.AttackDamage, dummy.Health, 1e-3f, "1.2s 內只吃一次橫掃傷害");
+            Assert.AreEqual(1, _lab.SweepResolveCount);
+            Assert.IsNull(_hero.CurrentTarget, "錘下不留普攻目標");
+
+            yield return Load();
+            dummy = Object.FindObjectOfType<DummyTarget>();
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 10f);
+            SelectWeapon(WeaponId.Bow);
+            TapAttack();
+            Assert.AreSame(dummy, _hero.CurrentTarget, "弓鎖住 10m 木樁");
+            yield return WaitSeconds(0.5f);
+            SelectWeapon(WeaponId.Hammer);
+            Vector3 start = Flat(_hero.transform.position);
+            yield return WaitSeconds(1.5f);
+            float moved = (Flat(_hero.transform.position) - start).magnitude;
+            Debug.Log("[CAMERA LAB TEST] W4b bow->hammer moved=" + moved.ToString("F3"));
+            Assert.Less(moved, 0.5f, "弓切錘：英雄不去追 10m 外的舊目標");
+            Assert.IsNull(_hero.CurrentTarget);
+        }
+
+        // 經 DuelInputRouter 的移動鎖查詢把英雄輸入鎖住（與通風口飛行同一個入口），false＝還原成場景原本的查詢。
+        private System.Func<bool> _savedLock;
+        private void SetHeroInputLockedForTest(bool locked)
+        {
+            object router = typeof(Phase1Bootstrap).GetField("_duelInput", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(_bootstrap);
+            System.Reflection.FieldInfo field = router.GetType().GetField("_movementInputLocked", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (locked) { _savedLock = (System.Func<bool>)field.GetValue(router); field.SetValue(router, (System.Func<bool>)(() => true)); }
+            else field.SetValue(router, _savedLock);
+        }
+
+        [UnityTest] // 覆審 r1 M2：天賦盤顯示時 WPN 讓開（不畫、不收路由），關閉後恢復原位
+        public IEnumerator W5b_TalentPanelVisible_WeaponButtonYields_RestoresAfterClose()
+        {
+            yield return Load(false);
+            _bootstrap.UseFlatCaptureSpecForTest();
+            Assert.IsTrue(_bootstrap.TryGetCaptureButtonScreenPoint(out float cx, out float cy), "拿不到 CAPTURE 鈕");
+            _bootstrap.WorldTapInput.SendScreenTap(cx, cy);
+            yield return null;
+            TrainingOpponent opponent = Object.FindObjectOfType<TrainingOpponent>();
+            Vector3 os = Camera.main.WorldToScreenPoint(opponent.transform.position + Vector3.up);
+            _bootstrap.WorldTapInput.SendScreenTap(os.x, os.y);
+            yield return null;
+            Assert.AreEqual(CaptureMatchState.Active, _bootstrap.CaptureState);
+            _lab.SetThirdPerson(true);
+            yield return null;
+            Assert.IsTrue(_lab.ActionButtonLayout.WeaponVisible, "天賦盤未顯示：WPN 在");
+            Vector2 wpn = Center(_lab.ActionButtonLayout.Weapon);
+            _bootstrap.SeedCaptureScoresForTest(250, 0);
+            yield return null; yield return null;
+            Assert.IsTrue(_bootstrap.TalentPanelVisible, "天賦盤應顯示");
+            int tier = _bootstrap.TalentPendingTier;
+            Debug.Log("[CAMERA LAB TEST] W5b screen=" + Screen.width + "x" + Screen.height + " wpn=" + wpn + " tier=" + tier);
+            _input.SendScreenTap(wpn.x, wpn.y);
+            yield return null;
+            Assert.AreEqual(WeaponId.Standard, _lab.CurrentWeapon, "天賦盤顯示時點 WPN 位置不切武器");
+            Assert.AreEqual(0, _lab.WeaponSwitchCount);
+            Assert.IsTrue(_bootstrap.TalentPanelVisible, "不誤選天賦（盤仍開著）");
+            Assert.AreEqual(tier, _bootstrap.TalentPendingTier, "不誤選天賦（待選階不變）");
+            Assert.IsFalse(_lab.ActionButtonLayout.WeaponVisible, "天賦盤顯示：WPN 讓開");
+
+            Assert.IsTrue(_bootstrap.TryGetTalentButtonScreenPoint(0, out float tx, out float ty));
+            _bootstrap.WorldTapInput.SendScreenTap(tx, ty);
+            yield return null; yield return null;
+            Assert.IsFalse(_bootstrap.TalentPanelVisible, "選完天賦盤關閉");
+            Assert.IsTrue(_lab.ActionButtonLayout.WeaponVisible, "天賦盤關閉：WPN 恢復");
+            Assert.AreEqual(wpn, Center(_lab.ActionButtonLayout.Weapon), "恢復原位");
+            TapWeapon();
+            Assert.AreEqual(WeaponId.Sword, _lab.CurrentWeapon, "關閉後可切");
+        }
+
+        [UnityTest] // 覆審 r1 L1：TOP/THIRD 不重置錘冷卻
+        public IEnumerator W4c_Hammer_ToggleViewKeepsCooldown()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            dummy.Configure(1000f, dummy.TargetFaction);
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 3f);
+            SelectWeapon(WeaponId.Hammer);
+            float h0 = dummy.Health;
+
+            // L1：起手後立刻 TOP→THIRD，再按 ATK 仍在冷卻內。
+            TapAttack();
+            Assert.AreEqual(1, _lab.SweepStartCount);
+            _lab.SetThirdPerson(false);
+            _lab.SetThirdPerson(true);
+            TapAttack();
+            Assert.AreEqual(1, _lab.SweepStartCount, "切視角不得重置 0.8s 冷卻");
+            yield return WaitSeconds(0.9f);
+            Assert.AreEqual(h0, dummy.Health, "切到俯視已取消那一掃");
+        }
+
+        [UnityTest] // 覆審 r1 L2：前搖中切走武器或輸入被鎖→取消這一掃；解鎖後下一掃照常（正向對照）
+        public IEnumerator W4d_Hammer_SwitchOrInputLockDuringWindup_CancelsSweep()
+        {
+            yield return Load();
+            DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
+            dummy.Configure(1000f, dummy.TargetFaction);
+            yield return WarpAndSettle(dummy.transform.position + Vector3.back * 3f);
+            SelectWeapon(WeaponId.Hammer);
+            float h0 = dummy.Health;
+
+            // L2-a：前搖中切走武器→不結算。
+            TapAttack();
+            Assert.AreEqual(1, _lab.SweepStartCount);
+            TapWeapon();
+            Assert.AreEqual(WeaponId.Standard, _lab.CurrentWeapon);
+            yield return WaitSeconds(0.4f);
+            Assert.AreEqual(h0, dummy.Health, "前搖中切走武器：這一掃取消");
+            Assert.AreEqual(0, _lab.SweepResolveCount);
+            yield return WaitSeconds(0.5f);
+
+            // L2-b：前搖中輸入被鎖（HeroInputBlockedForLab）→不結算；解鎖後下一掃照常。
+            SelectWeapon(WeaponId.Hammer);
+            TapAttack();
+            Assert.AreEqual(2, _lab.SweepStartCount);
+            SetHeroInputLockedForTest(true);
+            Assert.IsTrue(_bootstrap.HeroInputBlockedForLab);
+            yield return WaitSeconds(0.4f);
+            SetHeroInputLockedForTest(false);
+            Assert.IsFalse(_bootstrap.HeroInputBlockedForLab);
+            Assert.AreEqual(h0, dummy.Health, "前搖中輸入被鎖：這一掃取消");
+            yield return WaitSeconds(0.5f);
+            TapAttack();
+            Assert.AreEqual(3, _lab.SweepStartCount);
+            yield return WaitSeconds(0.35f);
+            Assert.AreEqual(h0 - _hero.AttackDamage, dummy.Health, 1e-3f, "正向對照：正常一掃照樣扣血");
         }
     }
 

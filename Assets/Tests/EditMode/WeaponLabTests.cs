@@ -120,6 +120,26 @@ namespace Vow.Tests
             Assert.AreEqual(-1, ResolveWith(b, 0, Polar(20f, 6f)), "正在打的目標出錐也不留（錐外一律不挑）");
         }
 
+        // 覆審 r1 M3（主對話裁定＝照凍結 W2 字面）：劍永遠取射程內最近，不吃「正在打的目標」黏性。
+        [Test]
+        public void W2_Sword_IgnoresPreferred_AlwaysNearestWithinFive()
+        {
+            WeaponSpec sw = WeaponSpec.Sword;
+            Assert.AreEqual(1, ResolveWith(sw, 0, Polar(0f, 4.5f), Polar(90f, 1f)), "正在打 4.5m 的 A，B 走到 1m→選 B");
+            Assert.AreEqual(1, ResolveWith(sw, 0, Polar(0f, 6f), Polar(180f, 3f)), "正在打的 A 已在 5m 外→選 5m 內的 B");
+            Assert.AreEqual(0, ResolveWith(sw, 0, Polar(0f, 2f), Polar(90f, 3f)), "A 本來就最近→A");
+            Assert.AreEqual(-1, ResolveWith(sw, 0, Polar(0f, 5.5f)), "只剩 5m 外的 A→不挑");
+        }
+
+        // 有錐武器的黏性不變：弓錐內正在打的目標，他人只靠準星不到 15° 就不換。
+        [Test]
+        public void W2_Bow_KeepsStickyPreferredInCone()
+        {
+            WeaponSpec b = WeaponSpec.Bow;
+            Assert.AreEqual(0, ResolveWith(b, 0, Polar(10f, 8f), Polar(0f, 6f)), "錐內 preferred 10° vs 他人 0°（差 10°<15°）→留");
+            Assert.AreEqual(1, ResolveWith(b, -1, Polar(10f, 8f), Polar(0f, 6f)), "沒有 preferred→夾角小者");
+        }
+
         // Standard 走武器多載必須與既有 6 參數 Begin 逐案相同（含黏性與 fallbackEligible）。
         [Test]
         public void W2_Standard_WeaponOverload_MatchesLegacyBegin_OnRandomCases()
@@ -190,6 +210,41 @@ namespace Vow.Tests
                 Assert.GreaterOrEqual(wpn.XMin, w * 0.5f, label + " 右側拇指區");
                 Assert.AreEqual(LabActionButton.Weapon, layout.Hit((wpn.XMin + wpn.XMax) * .5f, (wpn.YMin + wpn.YMax) * .5f), label);
             }
+        }
+
+        // 覆審 r1 M2：佔領模式三選一天賦盤（DebugHudLayout.TalentPanel，IMGUI 座標×Scale）可見時，WPN 區須為空、或不與它重疊；
+        // 天賦盤不可見時 WPN 照原位。6 組既有解析度（dpi＝ppmm×25.4）＋審查列 844x390@dpi96、2532x1170@dpi288。
+        [Test]
+        public void W5_TalentPanelVisible_WeaponYieldsOrAvoidsPanel_RestoresWhenHidden()
+        {
+            float[,] cases =
+            {
+                { 844f, 390f, 6.3f * 25.4f }, { 640f, 360f, 6.3f * 25.4f }, { 1280f, 720f, 7.56f * 25.4f },
+                { 1688f, 780f, 7.56f * 25.4f }, { 1688f, 780f, 12.6f * 25.4f }, { 2532f, 1170f, 18.9f * 25.4f },
+                { 844f, 390f, 96f }, { 2532f, 1170f, 288f }
+            };
+            int overlappedBefore = 0;
+            for (int c = 0; c < cases.GetLength(0); c++)
+            {
+                float w = cases[c, 0], h = cases[c, 1], dpi = cases[c, 2];
+                float ppmm = GestureMath.MillimetersToPixels(1f, dpi, 160f);
+                string label = w + "x" + h + "@dpi" + dpi;
+                DebugHudLayout hud = DebugHudLayout.Compute(w, h, dpi, true, true, true, true, true);
+                float s = hud.Scale;
+                HudRect t = hud.TalentPanel;
+                ScreenRegion talent = new ScreenRegion(t.XMin * s, h - t.YMax * s, t.XMax * s, h - t.YMin * s);
+
+                LabActionButtonLayout hidden = LabActionButtonLayout.Compute(w, h, ppmm, false);
+                Assert.IsTrue(hidden.WeaponVisible, label + " 天賦盤沒顯示：WPN 在");
+                if (Overlaps(hidden.Weapon, talent)) overlappedBefore++;
+
+                LabActionButtonLayout shown = LabActionButtonLayout.Compute(w, h, ppmm, true);
+                Assert.IsTrue(!shown.WeaponVisible || !Overlaps(shown.Weapon, talent), label + " 天賦盤顯示時 WPN 壓到天賦盤");
+                float cxw = (hidden.Weapon.XMin + hidden.Weapon.XMax) * .5f, cyw = (hidden.Weapon.YMin + hidden.Weapon.YMax) * .5f;
+                if (!shown.WeaponVisible) Assert.AreNotEqual(LabActionButton.Weapon, shown.Hit(cxw, cyw), label + " 讓開時不收路由");
+                Assert.AreEqual(LabActionButton.Attack, shown.Hit((shown.Attack.XMin + shown.Attack.XMax) * .5f, (shown.Attack.YMin + shown.Attack.YMax) * .5f), label + " ATK 不受影響");
+            }
+            Assert.Greater(overlappedBefore, 0, "原位置至少一組與天賦盤重疊，否則本測試沒有鑑別力");
         }
 
         private sealed class WeaponSink : ITouchGestureSink, IActionButtonSink

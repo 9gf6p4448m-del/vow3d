@@ -89,6 +89,15 @@ namespace Vow.Core
         private float _attackRangeOverride;
         public float AttackRangeOverride => _attackRangeOverride;
         public void SetAttackRangeOverride(float meters) { _attackRangeOverride = meters > 0f ? meters : 0f; }
+        // camera-lab 武器灰盒（覆審 r1 M1）：比照搖桿起步，原地下一次移動指令清掉普攻目標與失聯追擊記憶（不改狀態機）。
+        public void ClearCombatTargetInPlace()
+        {
+            if (_locomotion.IsVentFlying) return;
+            Vector3 p = transform.position;
+            ForgetLostTarget();
+            _brain.CommandMove(new GroundPoint(p.x, p.y, p.z));
+            _locomotion.Stop();
+        }
         public float Health => _vitality != null ? _vitality.Health : 100f;
         public float MaxHealth => _vitality != null ? _vitality.MaxHealth : 100f;
         public bool IsAlive => _vitality == null || _vitality.IsAlive;

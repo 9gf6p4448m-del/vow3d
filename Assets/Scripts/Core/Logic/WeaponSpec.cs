@@ -126,6 +126,9 @@ namespace Vow.Core.Logic
             return true;
         }
 
+        // 取消還沒結算的那一掃；冷卻照算（覆審 r1 L1：切視角不得繞過冷卻）。
+        public void CancelPending() { Pending = false; }
+
         public void Reset()
         {
             _readyAt = 0f;

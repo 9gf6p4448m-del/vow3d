@@ -52,6 +52,7 @@ namespace Vow.Core.Logic
     // fallbackEligible=false（呼叫端判定視線被牆擋）的候選不參加「錐外退回最近者」；錐內挑選與 preferred 不受影響。
     // 武器多載 Begin(..., WeaponSpec)（v0.16.0 武器灰盒）：錐半角 ≤ 0＝沒有錐（只剩距離內最近者／preferred）；
     // FallbackToNearest=false＝錐外一律不挑（含 preferred）。既有 6 參數 Begin＝有錐、可退回，行為不變。
+    // 無錐武器（劍）不吃黏性：preferred 一律忽略，永遠取距離內最近（覆審 r1 M3，主對話裁定＝照凍結 W2 字面）。
     public struct AimTargetPicker
     {
         public const float StickyMarginDegrees = 15f;   // 灰盒暫定
@@ -129,7 +130,7 @@ namespace Vow.Core.Logic
                 NearestIndex = index;
             }
             float cos = distance < 1e-6 ? 1f : (float)((dx * _aimX + dz * _aimZ) / distance);
-            if (isPreferred)
+            if (isPreferred && _coneEnabled)
             {
                 PreferredIndex = index;
                 if (_coneEnabled && cos >= _cosLimit)

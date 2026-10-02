@@ -26,8 +26,16 @@ namespace Vow.Input
         public ScreenRegion Attack;
         public ScreenRegion Dash;
         public ScreenRegion Weapon;
+        // 覆審 r1 M2（主對話裁定 A）：三選一天賦盤顯示時 WPN 讓開——不畫、不收路由；關閉即恢復原位。
+        public bool WeaponVisible;
 
         public static LabActionButtonLayout Compute(float screenWidth, float screenHeight, float pixelsPerMillimeter)
+        {
+            return Compute(screenWidth, screenHeight, pixelsPerMillimeter, false);
+        }
+
+        public static LabActionButtonLayout Compute(float screenWidth, float screenHeight, float pixelsPerMillimeter,
+            bool talentPanelVisible)
         {
             ScreenRegion rune = RuneButtonLayout.Compute(screenWidth, screenHeight, pixelsPerMillimeter).Button;
             float diameter = rune.XMax - rune.XMin;
@@ -37,6 +45,7 @@ namespace Vow.Input
             layout.Attack = new ScreenRegion(rune.XMin - gap - diameter, rune.YMin, rune.XMin - gap, rune.YMax);
             layout.Dash = new ScreenRegion(rune.XMin, rune.YMax + gap, rune.XMax, rune.YMax + gap + diameter);
             layout.Weapon = new ScreenRegion(layout.Attack.XMin, layout.Dash.YMin, layout.Attack.XMax, layout.Dash.YMax);
+            layout.WeaponVisible = !talentPanelVisible;
             return layout;
         }
 
@@ -44,7 +53,7 @@ namespace Vow.Input
         {
             if (Attack.Contains(x, y)) return LabActionButton.Attack;
             if (Dash.Contains(x, y)) return LabActionButton.Dash;
-            if (Weapon.Contains(x, y)) return LabActionButton.Weapon;
+            if (WeaponVisible && Weapon.Contains(x, y)) return LabActionButton.Weapon;
             return LabActionButton.None;
         }
     }

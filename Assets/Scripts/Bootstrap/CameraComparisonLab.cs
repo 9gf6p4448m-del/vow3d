@@ -213,7 +213,7 @@ namespace Vow.Bootstrap
                 _input.ContinuousRouter.SetThirdPersonEnabled(false);
                 _hero.SetContinuousMoveSource(null);
                 ApplyWeaponRange();
-                _sweep.Reset();   // 俯視不結算未完成的橫掃
+                _sweep.CancelPending();   // 俯視不結算未完成的橫掃；冷卻照算（覆審 r1 L1）
                 _input.ContinuousRouter.ActionButtonsEnabled = false;
                 if (_runeCaster != null) _runeCaster.SetDragDirectionOverride(null);
                 if (_runeGhost != null) _runeGhost.SetDragDirectionOverride(null);
@@ -249,7 +249,8 @@ namespace Vow.Bootstrap
             if (_ready && (_width != Screen.width || _height != Screen.height || _captureState != _bootstrap.CaptureState
                 || _talentVisible != _bootstrap.TalentPanelVisible))
                 RefreshLayout();
-            if (_ready && IsThirdPerson && _sweep.TryConsumeResolve(Time.time)) ResolveSweep();
+            // 覆審 r1 L2：前搖到點時武器已不是錘、或輸入被鎖（倒地／通風口飛行／對局暫停）→取消這一掃。
+            if (_ready && IsThirdPerson && _sweep.TryConsumeResolve(Time.time) && _weapon.Current.IsSweep && InputPermitted) ResolveSweep();
         }
 
         private void LateUpdate()
@@ -342,7 +343,7 @@ namespace Vow.Bootstrap
                 _input.ContinuousRouter.MoveZone = new ScreenRegion(0f, 0f, _width * 0.42f, _height * 0.55f);
                 _input.ContinuousRouter.JoystickRadiusPixels = 55f * unit;
             }
-            _actionLayout = LabActionButtonLayout.Compute(_width, _height, _input.PixelsPerMillimeter);
+            _actionLayout = LabActionButtonLayout.Compute(_width, _height, _input.PixelsPerMillimeter, _talentVisible);
             _input.ContinuousRouter.ActionButtons = _actionLayout;
             _input.ContinuousRouter.ActionButtonsEnabled = IsThirdPerson && _layoutAvailable && enabled;
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -382,7 +383,10 @@ namespace Vow.Bootstrap
 
         private void CycleWeapon()
         {
+            WeaponSpec previous = _weapon.Current;
             _weapon.Next();
+            // 覆審 r1 M1：切到錘（不走單目標普攻）或從弓切走（射程縮回 5m 會去追舊目標）時，原地清掉普攻目標。
+            if (IsThirdPerson && (_weapon.Current.IsSweep || previous.OverridesAttackRange)) _hero.ClearCombatTargetInPlace();
             WeaponSwitchCount++;
             ApplyWeaponRange();
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -629,9 +633,12 @@ namespace Vow.Bootstrap
             GUI.Label(attack, "ATK", _actionLabel);
             Fill(dash, charges > 0 ? DashColor : EmptyColor);
             GUI.Label(dash, DashLabels[Mathf.Clamp(charges, 0, DashLabels.Length - 1)], _actionLabel);
-            Rect weaponButton = ToGuiRect(_actionLayout.Weapon);
-            Fill(weaponButton, WeaponColor);
-            GUI.Label(weaponButton, WeaponLabels[(int)_weapon.CurrentId], _actionLabel);
+            if (_actionLayout.WeaponVisible)
+            {
+                Rect weaponButton = ToGuiRect(_actionLayout.Weapon);
+                Fill(weaponButton, WeaponColor);
+                GUI.Label(weaponButton, WeaponLabels[(int)_weapon.CurrentId], _actionLabel);
+            }
             // 準星：螢幕中心＝鏡頭前方。
             float s = 10f * unit;
             Fill(new Rect(_width * 0.5f - s, _height * 0.5f - 1f, s * 2f, 2f), Color.white);
