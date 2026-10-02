@@ -40,7 +40,7 @@ namespace Vow.Tests.PlayMode
     }
 
     // 第三人稱戰鬥操作（GDD §貳.4 模式 C）試作凍結驗收 D（與 E 的真場景多指部分）（原試作計畫 docs/CAMERA_LAB_COMBAT_PLAN.md 只在 camera-lab-20261001 分支）。全部走真路由（SendScreenTap／SimulatedHold）。
-    public sealed class CameraLabCombatPlayTests
+    public sealed partial class CameraLabCombatPlayTests
     {
         private CameraComparisonLab _lab;
         private PlayerInputService _input;
@@ -836,7 +836,7 @@ namespace Vow.Tests.PlayMode
             DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
             yield return WarpAndSettle(dummy.transform.position + Vector3.back * 3f);
             Vector3 start = Flat(_hero.transform.position);
-            WeaponId[] expected = { WeaponId.Sword, WeaponId.Bow, WeaponId.Hammer, WeaponId.Standard };
+            WeaponId[] expected = { WeaponId.Sword, WeaponId.Bow, WeaponId.Hammer, WeaponId.Grapple, WeaponId.Standard };
             for (int i = 0; i < expected.Length; i++)
             {
                 TapWeapon();
@@ -845,7 +845,7 @@ namespace Vow.Tests.PlayMode
                 yield return null;
             }
             for (int i = 0; i < 30; i++) yield return null;
-            Assert.AreEqual(4, _lab.WeaponSwitchCount);
+            Assert.AreEqual(5, _lab.WeaponSwitchCount);
             Assert.AreEqual(0, _lab.AimAttackCount, "WPN 不觸發 ATK");
             Assert.IsNull(_hero.CurrentTarget, "WPN 不鎖定木樁");
             Assert.Less((Flat(_hero.transform.position) - start).magnitude, 0.05f, "WPN 不讓英雄移動");
@@ -1240,7 +1240,7 @@ namespace Vow.Tests.PlayMode
             TapAttack();
             Assert.AreEqual(1, _lab.SweepStartCount);
             TapWeapon();
-            Assert.AreEqual(WeaponId.Standard, _lab.CurrentWeapon);
+            Assert.AreEqual(WeaponId.Grapple, _lab.CurrentWeapon);
             yield return WaitSeconds(0.4f);
             Assert.AreEqual(h0, dummy.Health, "前搖中切走武器：這一掃取消");
             Assert.AreEqual(0, _lab.SweepResolveCount);

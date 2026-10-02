@@ -28,7 +28,7 @@ namespace Vow.Bootstrap
         private static readonly Color AttackColor = new Color(0.85f, 0.45f, 0.2f, 0.9f);
         private static readonly Color DashColor = new Color(0.3f, 0.7f, 0.45f, 0.9f);
         // v0.16.0 武器灰盒（GDD §貳.4 模式 C）：WPN 鈕循環切換，標籤＝目前武器（依 WeaponId 序）。
-        private static readonly string[] WeaponLabels = { "STD", "SWORD", "BOW", "HAMMER" };
+        private static readonly string[] WeaponLabels = { "STD", "SWORD", "BOW", "HAMMER", "HOOK" };
         private static readonly Color WeaponColor = new Color(0.45f, 0.4f, 0.75f, 0.9f);
         private WeaponSelection _weapon;
         public WeaponId CurrentWeapon => _weapon.CurrentId;
@@ -39,6 +39,9 @@ namespace Vow.Bootstrap
         public int SweepStartCount { get; private set; }
         public int SweepResolveCount { get; private set; }
         public int LastSweepHits { get; private set; }
+        // 鉤鎖（v0.17.0）：拉自己到目標前 2m，逐幀走 HeroLocomotion.ApplyDisplacement（對牆裁切、縛足歸零）；抵達才接既有普攻。
+        private GrappleHook _grapple;
+        private ICombatTarget _grappleTarget;
         private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
         private const float SightHeight = 1.0f;
         private readonly RaycastHit[] _sightHits = new RaycastHit[16];
@@ -251,6 +254,7 @@ namespace Vow.Bootstrap
                 RefreshLayout();
             // 覆審 r1 L2：前搖到點時武器已不是錘、或輸入被鎖（倒地／通風口飛行／對局暫停）→取消這一掃。
             if (_ready && IsThirdPerson && _sweep.TryConsumeResolve(Time.time) && _weapon.Current.IsSweep && InputPermitted) ResolveSweep();
+            if (_ready && _grapple.Pulling) StepGrapple();
             // 覆審 r3 N1：第三人稱拿錘＝不留單目標普攻。不論目標從哪來（點敵人、冷卻中 TOP 鎖定後切回、切武器、起手），
             // 只要英雄能移動且不在滑步中就原地清掉；滑步／收招中等到可移動那一幀才清，不排入「走回頭」的待執行移動（F2）。
             if (_ready && IsThirdPerson && _weapon.Current.IsSweep) ClearTargetForSweepWeapon();
@@ -378,9 +382,10 @@ namespace Vow.Bootstrap
             if (button == LabActionButton.Attack)
             {
                 if (_weapon.Current.IsSweep) HammerSweep();
+                else if (_weapon.Current.IsGrapple) GrappleAttack();
                 else AimAttack();
             }
-            else if (button == LabActionButton.Dash) ActiveDash();
+            else if (button == LabActionButton.Dash) { if (!_grapple.Pulling) ActiveDash(); }
             else if (button == LabActionButton.Weapon) CycleWeapon();
         }
 
@@ -434,6 +439,56 @@ namespace Vow.Bootstrap
 #endif
         }
 
+        // 鉤鎖：挑準星錐內（±20°、10m、視線無石牆、同一樓地板）的目標，把自己拉到它前方 2m。冷卻內、縛足、
+        // 不能移動（後搖／滑步中）時不鉤；已在 2m 內＝直接接普攻（不吃冷卻）。鉤本身不傷害。
+        private void GrappleAttack()
+        {
+            AimAttackCount++;
+            LastAimTarget = null;
+            if (_grapple.Pulling || _hero.IsRooted || !_hero.StateMachine.CanMove || _hero.Mover.IsDashing) return;
+            CombatTargetRoster roster = _bootstrap.ElementRoster;
+            if (roster == null) return;
+            int picked = ResolveAimTarget(roster, out AimTargetPicker _);
+            if (picked < 0) return;
+            ICombatTarget target = roster.Get(picked);
+            Vector3 h = _hero.transform.position, p = target.TargetTransform.position;
+            if (!_grapple.TryStart(Time.time, _weapon.Current, h.x, h.z, p.x, p.z))
+            {
+                if (!_grapple.IsReady(Time.time)) return;
+                LastAimTarget = target;
+                _input.SubmitCombatTarget(target);
+                return;
+            }
+            LastAimTarget = target;
+            _grappleTarget = target;
+            _hero.ClearCombatTargetInPlace();   // 拉的途中不疊普攻追擊／導航
+        }
+
+        // 每幀一段位移；被牆擋住或縛足（實際位移不到要求的一半）→停在原地、不接普攻。切武器／輸入被鎖／回俯視→取消。冷卻照算。
+        private void StepGrapple()
+        {
+            if (!IsThirdPerson || !InputPermitted || !_weapon.Current.IsGrapple)
+            {
+                _grapple.Cancel();
+                _grappleTarget = null;
+                return;
+            }
+            bool done = _grapple.Step(Time.deltaTime, out float dx, out float dz);
+            Vector3 want = new Vector3(dx, 0f, dz);
+            Vector3 moved = _hero.GetComponent<HeroLocomotion>().ApplyDisplacement(want);
+            moved.y = 0f;
+            if (want.sqrMagnitude > 1e-6f && moved.sqrMagnitude < want.sqrMagnitude * 0.25f)
+            {
+                _grapple.Cancel();
+                _grappleTarget = null;
+                return;
+            }
+            if (!done) return;
+            ICombatTarget target = _grappleTarget;
+            _grappleTarget = null;
+            if (target != null && target.IsAlive) _input.SubmitCombatTarget(target);
+        }
+
         // 與 ElementField.IsElementDamageable 同語意：己方石牆不吃、其餘依 CanBeTargetedBy（同陣營不傷）。
         private static bool IsSweepDamageable(CombatTargetBehaviour target, Faction heroFaction)
         {
@@ -478,6 +533,8 @@ namespace Vow.Bootstrap
                 Vector3 p = candidate.TargetTransform.position;
                 float dx = p.x - origin.x, dz = p.z - origin.z;
                 bool inRange = dx * dx + dz * dz <= aimRange * aimRange;
+                // 鉤鎖：錐內也要視線無石牆、同一樓地板（不穿牆、不跨崖）；預覽與按下共用。
+                if (weapon.IsGrapple && (!HasClearSight(candidate) || !SameFloor(origin, p))) continue;
                 // 只影響「錐外退回最近者」：沒瞄、系統自己挑時，只挑按下去馬上有結果的目標——
                 // 不在石牆後（英雄會突然跑去繞牆），且已在射程內或同一樓地板走得到（崖台→谷底超出射程會走一步就放棄）。
                 bool eligible = inRange && HasClearSight(candidate) && (_hero.IsTargetInAttackRange(candidate) || SameFloor(origin, p));
