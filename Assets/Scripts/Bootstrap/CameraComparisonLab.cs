@@ -42,6 +42,8 @@ namespace Vow.Bootstrap
         // 鉤鎖（v0.17.0）：拉自己到目標前 2m，逐幀走 HeroLocomotion.ApplyDisplacement（對牆裁切、縛足歸零）；抵達才接既有普攻。
         private GrappleHook _grapple;
         private ICombatTarget _grappleTarget;
+        private Vector3 _grappleShortfall;   // 整段累計「要求位移－實際位移」（水平）
+        private const float GrappleBlockedMeters = 0.3f;   // 累計落差超過即算被擋（同 G2 停點容差）
         private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
         private const float SightHeight = 1.0f;
         private readonly RaycastHit[] _sightHits = new RaycastHit[16];
@@ -461,10 +463,12 @@ namespace Vow.Bootstrap
             }
             LastAimTarget = target;
             _grappleTarget = target;
+            _grappleShortfall = Vector3.zero;
             _hero.ClearCombatTargetInPlace();   // 拉的途中不疊普攻追擊／導航
         }
 
-        // 每幀一段位移；被牆擋住或縛足（實際位移不到要求的一半）→停在原地、不接普攻。切武器／輸入被鎖／回俯視→取消。冷卻照算。
+        // 每幀一段位移；被牆擋住或縛足（整段累計實際位移比要求短少超過 0.3m，與幀率無關）→停在原地、不接普攻。
+        // 切武器／輸入被鎖（含倒地）／回俯視→取消。冷卻照算。
         private void StepGrapple()
         {
             if (!IsThirdPerson || !InputPermitted || !_weapon.Current.IsGrapple)
@@ -477,7 +481,8 @@ namespace Vow.Bootstrap
             Vector3 want = new Vector3(dx, 0f, dz);
             Vector3 moved = _hero.GetComponent<HeroLocomotion>().ApplyDisplacement(want);
             moved.y = 0f;
-            if (want.sqrMagnitude > 1e-6f && moved.sqrMagnitude < want.sqrMagnitude * 0.25f)
+            _grappleShortfall += want - moved;
+            if (_grappleShortfall.sqrMagnitude > GrappleBlockedMeters * GrappleBlockedMeters)
             {
                 _grapple.Cancel();
                 _grappleTarget = null;

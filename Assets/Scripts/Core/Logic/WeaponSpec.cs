@@ -211,12 +211,5 @@ namespace Vow.Core.Logic
 
         // 中途取消（被牆擋住、縛足、輸入被鎖、切回俯視）；冷卻照算。
         public void Cancel() { Pulling = false; }
-
-        public void Reset()
-        {
-            _readyAt = 0f;
-            _elapsed = 0f;
-            Pulling = false;
-        }
     }
 }
