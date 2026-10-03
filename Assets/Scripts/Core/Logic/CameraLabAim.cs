@@ -53,8 +53,9 @@ namespace Vow.Core.Logic
     // 武器多載 Begin(..., WeaponSpec)（v0.16.0 武器灰盒）：錐半角 ≤ 0＝沒有錐（只剩距離內最近者，preferred 忽略，見下行）；
     // FallbackToNearest=false＝錐外一律不挑（含 preferred）。既有 6 參數 Begin＝有錐、可退回，行為不變。
     // 無錐武器（劍）不吃黏性：preferred 一律忽略，永遠取距離內最近（覆審 r1 M3，主對話裁定＝照凍結 W2 字面）。
-    // 目標半徑（弓，覆審 bowline r1 H2／凍結檔修訂 R1）：Consider 傳 radiusMeters > 0 時，該候選的錐判定半角＝錐半角＋atan(半徑/距離)
-    // （「線壓到身體就中」）；排序仍看中心夾角。radiusMeters＝0＝原判定（位元相同）。
+    // 目標半徑（弓，覆審 bowline r1 H2／凍結檔修訂 R1、R2 N1）：挑目標與黏性一律用原錐半角（BestIndex／preferred 是否在錐內）；
+    // Consider 傳 radiusMeters > 0 時，另判「身體判定」＝錐半角＋atan(半徑/距離)（「線壓到身體就中」），只在原錐內沒有任何候選時
+    // 才由它挑（中心夾角最小、相同取較近；不吃黏性）＝BodyIndex。Consider 的回傳＝身體判定是否成立。radiusMeters＝0＝原判定（位元相同）。
     public struct AimTargetPicker
     {
         public const float StickyMarginDegrees = 15f;   // 灰盒暫定
@@ -64,12 +65,14 @@ namespace Vow.Core.Logic
         private float _originX, _originZ, _aimX, _aimZ, _cosLimit, _maxDistance;
         private double _halfAngleRadians;
         private float _bestCos, _bestDistance, _nearestDistance, _preferredCos;
+        private float _bodyCos, _bodyDistance;
         private bool _preferredInCone;
         private bool _coneEnabled, _fallbackToNearest;
 
         public int BestIndex { get; private set; }
         public int NearestIndex { get; private set; }
         public int PreferredIndex { get; private set; }   // 距離內的 preferred；-1＝沒有或超出距離
+        public int BodyIndex { get; private set; }        // 身體判定（錐半角＋atan(r/d)）成立者中夾角最小；只在 BestIndex < 0 時用
 
         public int ResolvedIndex
         {
@@ -85,6 +88,7 @@ namespace Vow.Core.Logic
                     }
                     return BestIndex;
                 }
+                if (BodyIndex >= 0) return BodyIndex;
                 if (!_fallbackToNearest) return -1;
                 return PreferredIndex >= 0 ? PreferredIndex : NearestIndex;
             }
@@ -105,7 +109,10 @@ namespace Vow.Core.Logic
             _nearestDistance = float.PositiveInfinity;
             _preferredInCone = false;
             _preferredCos = float.NegativeInfinity;
+            _bodyCos = float.NegativeInfinity;
+            _bodyDistance = float.PositiveInfinity;
             BestIndex = -1;
+            BodyIndex = -1;
             NearestIndex = -1;
             PreferredIndex = -1;
             _coneEnabled = true;
@@ -144,27 +151,38 @@ namespace Vow.Core.Logic
                 NearestIndex = index;
             }
             float cos = distance < 1e-6 ? 1f : (float)((dx * _aimX + dz * _aimZ) / distance);
-            float cosLimit = radiusMeters > 0f && distance > 1e-6
-                ? (float)Math.Cos(Math.Min(Math.PI, _halfAngleRadians + Math.Atan(radiusMeters / distance)))
-                : _cosLimit;
             if (isPreferred && _coneEnabled)
             {
                 PreferredIndex = index;
-                if (cos >= cosLimit)
+                if (cos >= _cosLimit)
                 {
                     _preferredInCone = true;
                     _preferredCos = cos;
                 }
             }
-            if (!_coneEnabled || cos < cosLimit) return false;
-
-            bool better = cos > _bestCos + CosTieEpsilon
-                          || (cos >= _bestCos - CosTieEpsilon && d < _bestDistance);
-            if (better)
+            if (!_coneEnabled) return false;
+            if (cos >= _cosLimit)
             {
-                _bestCos = cos;
-                _bestDistance = d;
-                BestIndex = index;
+                bool better = cos > _bestCos + CosTieEpsilon
+                              || (cos >= _bestCos - CosTieEpsilon && d < _bestDistance);
+                if (better)
+                {
+                    _bestCos = cos;
+                    _bestDistance = d;
+                    BestIndex = index;
+                }
+                return true;
+            }
+            if (radiusMeters <= 0f || distance <= 1e-6) return false;
+            float bodyLimit = (float)Math.Cos(Math.Min(Math.PI, _halfAngleRadians + Math.Atan(radiusMeters / distance)));
+            if (cos < bodyLimit) return false;
+            bool bodyBetter = cos > _bodyCos + CosTieEpsilon
+                              || (cos >= _bodyCos - CosTieEpsilon && d < _bodyDistance);
+            if (bodyBetter)
+            {
+                _bodyCos = cos;
+                _bodyDistance = d;
+                BodyIndex = index;
             }
             return true;
         }

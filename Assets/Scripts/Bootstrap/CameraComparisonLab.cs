@@ -843,7 +843,7 @@ namespace Vow.Bootstrap
             else picked = ResolveAimTarget(roster, out picker, _yaw);
             if (picked < 0) return;
             PreviewTarget = roster.Get(picked);
-            PreviewInCone = picker.BestIndex >= 0;
+            PreviewInCone = picker.BestIndex >= 0 || picker.BodyIndex >= 0;   // 覆審 r2 N1：身體判定命中也算「錐內」（標記色同 R1）
         }
 
         // 按住 ATK 的範圍預覽：形狀＋參數＝WeaponAimPreview（Standard 無）；頂點＝英雄腳下、方向＝準星水平前方。每幀零配置。
