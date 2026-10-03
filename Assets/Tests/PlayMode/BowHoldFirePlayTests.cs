@@ -6,6 +6,7 @@ using UnityEngine.TestTools;
 using Vow.Bootstrap;
 using Vow.Combat;
 using Vow.Core;
+using Vow.Core.Logic;
 using Object = UnityEngine.Object;
 
 namespace Vow.Tests.PlayMode
@@ -30,9 +31,14 @@ namespace Vow.Tests.PlayMode
         {
             yield return LockBowOnDummy();
             DummyTarget dummy = _bowDummy;
+            PressAttack();
+            // 追加 A12：停火從「按住滿快速射擊門檻 0.2s」起算（改的只是時間起點）。門檻前已在跑的前搖可能命中一下，
+            // 故量測基準取在門檻跨過後的下一幀；之後的斷言（每幀不掉血、AimAttackCount 不增加、放開恰一發 108）一字不改。
+            double pressedAt = Time.unscaledTimeAsDouble;
+            while (Time.unscaledTimeAsDouble - pressedAt < BowChargeLogic.QuickShotSeconds) yield return null;
+            yield return null;
             float h0 = dummy.Health;
             int count0 = _lab.AimAttackCount;
-            PressAttack();
             double t0 = Time.unscaledTimeAsDouble;
             float g0 = Time.time;
             // 按住同時滿足：觸控時鐘 ≥ 1.0s（滿蓄）且遊戲時間 ≥ 1.7s（＞2 個攻擊週期，舊行為必然再出手）
@@ -80,11 +86,21 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(h0 - _hero.AttackDamage, dummy.Health, 1e-3f, "快速點擊：8° 在 12° 錐內，受傷 60");
 
             // 已在打的目標再快速點擊一次：照樣鎖定、繼續命中（黏性不因按住中的停火而遺失）
+            // 追加 A12d(iv)：真的放第二根木樁 B 在準星正前方（0°，6m）——沒有黏性的挑選必選 B；
+            // 並等英雄進入前搖（可被打斷的狀態）才點，按下就停火的實作會在這裡清掉目標、遺失黏性。
+            DummyTarget other = SpawnDummyAt(dummy, _lab.YawDegrees, 6f);   // 準星正前方（世界角＝yaw）
+            other.Configure(1000f, other.TargetFaction);
+            float otherH0 = other.Health;
+            yield return null; yield return null;
+            float stateUntil = Time.time + 2f;
+            while (_hero.StateMachine.CurrentState != PlayerState.AttackWindup && Time.time < stateUntil) yield return null;
+            Assert.AreEqual(PlayerState.AttackWindup, _hero.StateMachine.CurrentState, "前提：在前搖中點擊");
             float h1 = dummy.Health;
             yield return HoldAttack(0.1);
             Assert.AreSame(dummy, _hero.CurrentTarget, "再次快速點擊仍鎖定同一木樁");
             yield return WaitForDrop(dummy, h1, 1.5f);
             Assert.AreEqual(h1 - _hero.AttackDamage, dummy.Health, 1e-3f, "再次快速點擊：下一下仍是 60");
+            Assert.AreEqual(otherH0, other.Health, "正前方的 B 不被打（黏性留在原目標）");
         }
 
         [UnityTest] // A11d：其他武器按住 1.0s 期間照舊自動普攻（放開前就掉血）
