@@ -650,6 +650,8 @@ namespace Vow.Core
 
         // 穿透卷（acceptance-pierce-20261003.md）：穿透判定線＝水平線（只取方向的水平分量，不含俯仰），高度＝英雄 pivot＋PierceLineHeightMeters（跟著英雄，
         // 不用世界絕對高度、不朝目標中心斜），線粗＝半徑 PierceLineRadiusMeters 的 SphereCast，長度＝當下射程。
+        // 刻意與 BowArrowFx.ChestHeight（1.3，箭矢起點）分離：1.0 下既有英雄 y=1 的穿透測試（A4、C7(b)、R2_Pierce）與凍結檔 E5／E6 的例子成立；
+        // 1.3 會讓線從 y=1 英雄面前的木樁（碰撞頂 2.0）頭頂越過（修訂 P1 已撤回，見 acceptance-pierce-20261003.md）。
         public const float PierceLineHeightMeters = 1.0f;
         public const float PierceLineRadiusMeters = 0.15f;
 
