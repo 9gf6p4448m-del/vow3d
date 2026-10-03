@@ -40,6 +40,7 @@ namespace Vow.Tests
                 if (button == LabActionButton.Attack) AttackCanceled++;
                 else OtherCanceled++;
             }
+            public void OnActionButtonDragged(LabActionButton button, float dxMillimeters, float dyMillimeters) { }
         }
 
         private static TouchGestureRouter Make(out HoldSink sink, out LabActionButtonLayout layout)

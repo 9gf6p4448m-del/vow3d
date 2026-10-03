@@ -17,6 +17,10 @@ namespace Vow.Input
         // 放開＝手指離開螢幕，heldSeconds＝按下到放開的秒數；作廢＝觸控 Canceled、切模式／切 TOP↔THIRD 等整批作廢，之後不會再送放開。
         void OnActionButtonReleased(LabActionButton button, float heldSeconds);
         void OnActionButtonCanceled(LabActionButton button);
+        // 2026-10-03 手勢操作第一批（弓拖曳瞄準）：從 ATK 鈕起手的拖曳。dx／dy＝手指相對按下點的位移（名目 mm，
+        // 與塑牆拖曳同一把尺；螢幕座標向右／向上為正）。通用通知：router 對 ATK 一律送出，要不要用由武器決定（本批只有弓）。
+        // 只在位置改變時送；放開時若最後位置有變，先送一次再送 Released。作廢後不再送。
+        void OnActionButtonDragged(LabActionButton button, float dxMillimeters, float dyMillimeters);
     }
 
     // ATK／DASH 兩顆圓鈕的螢幕幾何（Unity 螢幕座標：原點左下、像素）。不依賴 UnityEngine，畫面與路由共用這一份。

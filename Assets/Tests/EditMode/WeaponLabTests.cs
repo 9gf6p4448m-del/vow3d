@@ -266,6 +266,7 @@ namespace Vow.Tests
             }
             public void OnActionButtonReleased(LabActionButton button, float heldSeconds) { }
             public void OnActionButtonCanceled(LabActionButton button) { }
+            public void OnActionButtonDragged(LabActionButton button, float dxMillimeters, float dyMillimeters) { }
         }
 
         [Test]

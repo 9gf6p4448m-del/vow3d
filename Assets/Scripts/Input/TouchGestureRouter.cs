@@ -77,6 +77,10 @@ namespace Vow.Input
         private readonly bool[] _lookDragged = new bool[MaxTouches];
         // 2026-10-03 弓蓄力：按住中的 ATK 鈕（只追 ATK）。放開送 Released、作廢送 Canceled，兩者擇一且只送一次。
         private readonly LabActionButton[] _slotHeldAction = new LabActionButton[MaxTouches];
+        // 2026-10-03 手勢操作第一批：ATK 拖曳位移換算成名目 mm 的比例（PlayerInputService 依 Screen.dpi 寫入，與塑牆同一把尺）。
+        // ≤ 0＝尚未設定，退回 GestureMath 的 160dpi 後備值（同 PlayerInputService.FallbackDpi）。
+        public float PixelsPerMillimeter;
+        private const float FallbackDpi = 160f;
         public void SetThirdPersonEnabled(bool enabled)
         {
             if (ThirdPersonEnabled == enabled) return;
@@ -288,6 +292,7 @@ namespace Vow.Input
 
         private void MoveTouch(int slot, float x, float y, double now)
         {
+            EmitHeldActionDrag(slot, x, y);
             switch (_slotRoute[slot])
             {
                 case TouchRoute.ContinuousMove:
@@ -326,6 +331,7 @@ namespace Vow.Input
             LabActionButton held = _slotHeldAction[slot];
             if (held != LabActionButton.None)
             {
+                EmitHeldActionDrag(slot, x, y);   // 放開那一筆的最後位置先送，再送 Released
                 _slotHeldAction[slot] = LabActionButton.None;
                 if (_sink is IActionButtonSink holdSink) holdSink.OnActionButtonReleased(held, (float)(now - _startTime[slot]));
             }
@@ -376,6 +382,20 @@ namespace Vow.Input
             _trackers[slot].Cancel();
             CancelHeldAction(slot);
             _slotUsed[slot] = false;
+        }
+
+        // 從 ATK 鈕起手的拖曳：路由仍是 Rejected（不轉鏡頭、不移動、不點擊），只把相對按下點的位移（名目 mm）送給 sink。
+        // 位置沒變（Stationary）不重送。
+        private void EmitHeldActionDrag(int slot, float x, float y)
+        {
+            LabActionButton held = _slotHeldAction[slot];
+            if (held == LabActionButton.None) return;
+            if (x == _lastX[slot] && y == _lastY[slot]) return;
+            _lastX[slot] = x;
+            _lastY[slot] = y;
+            if (!(_sink is IActionButtonSink dragSink)) return;
+            float ppmm = PixelsPerMillimeter > 0f ? PixelsPerMillimeter : GestureMath.MillimetersToPixels(1f, 0f, FallbackDpi);
+            dragSink.OnActionButtonDragged(held, (x - _originX[slot]) / ppmm, (y - _originY[slot]) / ppmm);
         }
 
         private void CancelHeldAction(int slot)

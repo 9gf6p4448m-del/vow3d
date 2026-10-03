@@ -337,6 +337,7 @@ namespace Vow.Input
             router.ScreenWidth = _lastScreenWidth;
             router.ScreenHeight = _lastScreenHeight;
             router.MinRadiusPixels = _minRadiusPx;
+            router.PixelsPerMillimeter = GestureMath.MillimetersToPixels(1f, dpi, FallbackDpi);   // ATK 拖曳：與塑牆同一把尺
             router.RuneSaturationPixels = GestureMath.MillimetersToPixels(_runeSaturationMillimeters, dpi, FallbackDpi);
             router.RuneTapSlopPixels = _maxRadiusPx; // 7.5mm：與微彈的飽和半徑同一把尺
         }
@@ -397,6 +398,14 @@ namespace Vow.Input
         void IActionButtonSink.OnActionButtonCanceled(LabActionButton button)
         {
             OnLabActionButtonCanceled?.Invoke(button);
+        }
+
+        // 2026-10-03 手勢操作第一批：從 ATK 鈕起手的拖曳位移（名目 mm，相對按下點）。同一條觸控採樣路徑；用不用由武器決定。
+        public event Action<LabActionButton, float, float> OnLabActionButtonDragged;
+
+        void IActionButtonSink.OnActionButtonDragged(LabActionButton button, float dxMillimeters, float dyMillimeters)
+        {
+            OnLabActionButtonDragged?.Invoke(button, dxMillimeters, dyMillimeters);
         }
 
         // 準星選出的目標走與「點中敵人」相同的出口（後續由 DuelInputRouter 做開局／對局過濾）。
