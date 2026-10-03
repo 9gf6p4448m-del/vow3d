@@ -76,6 +76,8 @@ namespace Vow.Bootstrap
         // 弓的普攻傷到直接目標（OnHeroDamageDealt，含蓄力／快速射擊／自動普攻）或錐內無人的空射（BowRelease）各生成一支箭＋出手提示；
         // 命中提示在箭飛到被傷到的目標時才出現。傷害結算時機不變。其他武器、TOP 一律不生箭（D4）；換武器／切 TOP 清掉空中的箭。
         private BowArrowFx _arrowFx;
+        // 覆審 r2 N2：「這一發是不是弓」以起手（前搖開始）時為準——第三人稱＋拿弓才記 true；換武器／切 TOP／停用清掉（D4 同步）。
+        private bool _windupWasBow;
         public BowArrowVisual LastArrowVisual => _arrowFx != null ? _arrowFx.Last : default;
         public GameObject LastArrowObject => _arrowFx != null ? _arrowFx.LastObject : null;
         public GameObject LastReleaseCueObject => _arrowFx != null ? _arrowFx.LastReleaseCueObject : null;
@@ -210,6 +212,7 @@ namespace Vow.Bootstrap
             _input.OnLabActionButtonCanceled += OnActionButtonCanceled;
             _input.OnLabActionButtonDragged += OnActionButtonDragged;
             _hero.OnAttackDamageDealt += OnHeroDamageDealt;
+            _hero.OnAttackWindupStarted += OnHeroWindupStarted;
 #if UNITY_WEBGL && !UNITY_EDITOR
             _input.OnRuneCastReleased += OnRuneReleasedForLog;
 #endif
@@ -232,12 +235,14 @@ namespace Vow.Bootstrap
                     _input.OnLabActionButtonCanceled -= OnActionButtonCanceled;
                     _input.OnLabActionButtonDragged -= OnActionButtonDragged;
                     if (_hero != null) _hero.OnAttackDamageDealt -= OnHeroDamageDealt;
+                    if (_hero != null) _hero.OnAttackWindupStarted -= OnHeroWindupStarted;
 #if UNITY_WEBGL && !UNITY_EDITOR
                     _input.OnRuneCastReleased -= OnRuneReleasedForLog;
 #endif
                 }
             }
             _subscribed = false;
+            _windupWasBow = false;
             if (_arrowFx != null) _arrowFx.HideAll();
         }
 
@@ -269,6 +274,7 @@ namespace Vow.Bootstrap
                 IsThirdPerson = false;
                 CancelAttackHold();
                 if (_arrowFx != null) _arrowFx.HideAll();   // 覆審 r1 H4：切 TOP 清掉弓箭與還沒出現的命中提示
+                _windupWasBow = false;
                 _hero.DisarmChargedShot();   // 俯視不結算已放開、尚未命中的蓄力箭（同錘的 CancelPending）
                 _input.ContinuousRouter.SetThirdPersonEnabled(false);
                 _hero.SetContinuousMoveSource(null);
@@ -555,11 +561,17 @@ namespace Vow.Bootstrap
             _arrowFx.Launch(start, start + new Vector3(ax, 0f, az) * rangeMeters, null, start, Time.time, Time.frameCount);
         }
 
-        // 英雄普攻傷到目標（傷害已結算）：只有第三人稱拿弓才算弓箭（覆審 r1 H4：其他武器、TOP 的傷害永不碰弓的箭與提示）。
+        private void OnHeroWindupStarted()
+        {
+            _windupWasBow = IsThirdPerson && _weapon.CurrentId == WeaponId.Bow;
+        }
+
+        // 英雄普攻傷到目標（傷害已結算）：只有第三人稱拿弓起手的那一下才算弓箭（覆審 r1 H4；r2 N2：以起手時的武器為準，
+        // 不以結算當下——劍前搖中換弓，劍那一下不生箭）。
         // 直接目標＝生成這一發的箭（終點＝身體中心，M2；滿蓄穿透＝沿英雄→目標到射程盡頭）；沿線目標＝併入同一支。
         private void OnHeroDamageDealt(ICombatTarget target, bool alongLine)
         {
-            if (_arrowFx == null || target == null || !IsThirdPerson || _weapon.CurrentId != WeaponId.Bow) return;
+            if (_arrowFx == null || target == null || !IsThirdPerson || !_windupWasBow) return;
             Vector3 body = BowTargetBody.Center(target);
             if (alongLine) { _arrowFx.AddLineVictim(body, Time.frameCount); return; }
             Vector3 hero = _hero.transform.position;
@@ -599,6 +611,7 @@ namespace Vow.Bootstrap
         {
             _hero.DisarmChargedShot();   // 離開弓：已放開、尚未命中的蓄力箭不再結算
             if (_arrowFx != null) _arrowFx.HideAll();   // 覆審 r1 H4：換武器清掉弓箭與還沒出現的命中提示
+            _windupWasBow = false;   // 覆審 r2 N2：換武器前起手的那一下（不論哪把）都不算弓箭
             _weapon.Next();
             // 覆審 r1 M1：切到錘（不走單目標普攻）時原地清掉普攻目標（循環順序下離開弓必定切到錘）。
             if (IsThirdPerson && _weapon.Current.IsSweep) ClearTargetForSweepWeapon();
