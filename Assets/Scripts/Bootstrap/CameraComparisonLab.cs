@@ -66,10 +66,12 @@ namespace Vow.Bootstrap
         // 手勢操作第一批（2026-10-03，vow-toolchain/acceptance-bowaim-20261003.md）：弓按住 ATK 時左右拖曳＝調整出手方向。
         // 按下記 pressYaw＝當下準星 yaw；拖曳只改 offset（BowAimLogic，名目 mm）；出手、標記、預覽錐一律朝 aimYaw＝pressYaw＋offset。
         // 按住期間鏡頭以最大 90°/s 朝 aimYaw 追；放開／取消就停在當下（不回彈）。其他武器收到拖曳一律不理。
-        private float _bowPressYaw, _bowAimOffset;
+        // 按住中鏡頭被「追蹤以外」的來源轉動（右半屏拖鏡頭、LEFT/RIGHT/RESET）＝玩家手動改準星：pressYaw 跟著平移，
+        // 追蹤不會把手動轉的鏡頭拉回去（右半屏拖鏡頭的既有行為不變）。_bowTrackedYaw＝Lab 自己最後寫入的 yaw。
+        private float _bowPressYaw, _bowAimOffset, _bowTrackedYaw;
         private const float MaxCameraTrackStepSeconds = 0.1f;   // 卡頓一幀最多轉 9°，不因長幀瞬間跳轉
         private bool BowAiming => _attackHeld && _weapon.CurrentId == WeaponId.Bow;
-        private float BowAimYaw => BowAimLogic.NormalizeDegrees(_bowPressYaw + _bowAimOffset);
+        private float BowAimYaw => BowAimLogic.NormalizeDegrees(_bowPressYaw + BowAimLogic.DeltaDegrees(_bowTrackedYaw, _yaw) + _bowAimOffset);
         private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
         private const float SightHeight = 1.0f;
         private readonly RaycastHit[] _sightHits = new RaycastHit[16];
@@ -317,8 +319,13 @@ namespace Vow.Bootstrap
             _pitch = Mathf.Clamp(_pitch - router.LookDeltaY * sensitivity, 10f, 50f);
             router.ConsumeLook();
             if (BowAiming && InputPermitted)
+            {
+                _bowPressYaw = BowAimLogic.NormalizeDegrees(_bowPressYaw + BowAimLogic.DeltaDegrees(_bowTrackedYaw, _yaw));   // 收下手動轉動
+                _bowTrackedYaw = _yaw;
                 _yaw = BowAimLogic.StepYawToward(_yaw, BowAimYaw, BowAimLogic.CameraTrackDegreesPerSecond,
                     Mathf.Min(Time.unscaledDeltaTime, MaxCameraTrackStepSeconds));
+                _bowTrackedYaw = _yaw;   // 追蹤自己轉的不算手動
+            }
             PositionThirdPerson();
             RefreshAimPreview();
             RefreshWeaponPreview();
@@ -430,6 +437,7 @@ namespace Vow.Bootstrap
                 _attackHeld = true;
                 _attackPressedAt = Time.unscaledTimeAsDouble;
                 _bowPressYaw = _yaw;   // 每次按下都重新起算：offset 歸零、pressYaw＝當下準星
+                _bowTrackedYaw = _yaw;
                 _bowAimOffset = 0f;
                 if (_weapon.Current.IsSweep) HammerSweep();
                 else if (_weapon.Current.IsGrapple) GrappleAttack();
