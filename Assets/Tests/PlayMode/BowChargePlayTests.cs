@@ -336,11 +336,11 @@ namespace Vow.Tests.PlayMode
                             float range = PreviewRange();
                             Debug.Log("[BOWCHARGE TEST] A8 bow mark=" + marks[m] + " half=" + next.ToString("F3") + " range=" + range.ToString("F3"));
                             Assert.Less(next, half, "弓：半角隨按住時間單調遞減（" + marks[m] + "s）");
-                            Assert.AreEqual(12f + (12f - next) * 0.5f, range, 1e-3f, "弓：射程與半角同一個 p（12+4p、12−8p）");
+                            Assert.AreEqual(12f + (12f - next) * 0.4f, range, 1e-3f, "弓：射程與半角同一個 p（12+4p、12−10p；bowline C8）");
                             Assert.IsTrue(PreviewIndicatorActive(), "弓：蓄力中 indicator 持續顯示");
                             half = next;
                         }
-                        Assert.AreEqual(4f, half, 1e-3f, "弓：滿蓄收到 4°");
+                        Assert.AreEqual(2f, half, 1e-3f, "弓：滿蓄收到 2°（bowline C8：4→2）");
                         Assert.AreEqual(16f, PreviewRange(), 1e-3f, "弓：滿蓄 16m");
                     }
                     else

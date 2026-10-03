@@ -23,10 +23,10 @@ namespace Vow.Tests
         public void A1_BowCharge_TableMatchesFrozenSpec()
         {
             AssertShot(0.1, 12f, 12f, 1f, false);      // < 0.2s：快速射擊，p＝0
-            AssertShot(0.2, 10.4f, 12.8f, 1.16f, false); // 0.2s 起算蓄力：p＝0.2
-            AssertShot(0.5, 8f, 14f, 1.4f, false);      // 線性（平方會是 p＝0.25）
-            AssertShot(1.0, 4f, 16f, 1.8f, true);       // 滿蓄才穿透
-            AssertShot(2.0, 4f, 16f, 1.8f, true);       // clamp 上限
+            AssertShot(0.2, 10f, 12.8f, 1.16f, false);   // 0.2s 起算蓄力：p＝0.2（bowline C8：12−10p）
+            AssertShot(0.5, 7f, 14f, 1.4f, false);      // 線性（平方會是 p＝0.25）（bowline C8：8→7）
+            AssertShot(1.0, 2f, 16f, 1.8f, true);       // 滿蓄才穿透（bowline C8：4→2）
+            AssertShot(2.0, 2f, 16f, 1.8f, true);       // clamp 上限（bowline C8：4→2）
             AssertShot(-0.5, 12f, 12f, 1f, false);      // 負 t＝快速射擊
         }
 
@@ -68,9 +68,9 @@ namespace Vow.Tests
             Assert.AreEqual(WeaponPreviewKind.Cone, bow0.Kind);
             Assert.AreEqual(12f, bow0.HalfAngleDegrees, Tol);
             Assert.AreEqual(12f, bow0.RangeMeters, Tol);
-            Assert.AreEqual(8f, bowHalf.HalfAngleDegrees, Tol);
+            Assert.AreEqual(7f, bowHalf.HalfAngleDegrees, Tol);   // bowline C8：8→7
             Assert.AreEqual(14f, bowHalf.RangeMeters, Tol);
-            Assert.AreEqual(4f, bowFull.HalfAngleDegrees, Tol);
+            Assert.AreEqual(2f, bowFull.HalfAngleDegrees, Tol);   // bowline C8：4→2
             Assert.AreEqual(16f, bowFull.RangeMeters, Tol);
         }
     }
