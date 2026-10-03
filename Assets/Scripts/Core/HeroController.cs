@@ -187,7 +187,10 @@ namespace Vow.Core
         public event Action<ICombatTarget> OnAttackHitResolved;
         // camera-lab 弓箭矢（2026-10-03，acceptance-bowline-20261003.md）：普攻每傷到一個目標（直接目標＋穿透／裂風矢沿線）各通知一次，
         // 在 ReceiveDamage 之後、同一幀同一呼叫內依序送出。只是通知，傷害結算時機與數值不變。
-        public event Action<ICombatTarget> OnAttackDamageDealt;
+        // 第二個參數＝沿線追加目標（滿蓄穿透／裂風矢那一條線）；false＝這次普攻的直接目標（覆審 r1 H1：箭在這一刻生成）。
+        public event Action<ICombatTarget, bool> OnAttackDamageDealt;
+        // 最近一次直接命中若是滿蓄穿透箭＝它的射程（> 0），否則 0；在送出直接目標的 OnAttackDamageDealt 之前寫入（只是記錄）。
+        public float LastHitPierceRangeMeters { get; private set; }
 
         private void Awake()
         {
@@ -601,7 +604,8 @@ namespace Vow.Core
             }
             bool empowered = _pactAttackTalent != PactTalent.None && _pactAttackWindow.Consume(_brain.Clock);
             target.ReceiveDamage(damage, DamageType.Physical, gameObject);
-            OnAttackDamageDealt?.Invoke(target);
+            LastHitPierceRangeMeters = chargedPierce ? chargedRange : 0f;
+            OnAttackDamageDealt?.Invoke(target, false);
             if (chargedPierce)
                 ResolveLinePierce(target, direction, chargedResolver, chargedRange, chargedScale);   // 已含裂風矢那一條線
             else if (empowered && _pactAttackTalent == PactTalent.WindPiercer)
@@ -664,7 +668,7 @@ namespace Vow.Core
                 float damage = _tuning.AttackDamage * (_attackDamageMultiplier != null
                     ? _attackDamageMultiplier(transform.position) : 1f) * damageScale;
                 target.ReceiveDamage(damage, DamageType.Physical, gameObject);
-                OnAttackDamageDealt?.Invoke(target);
+                OnAttackDamageDealt?.Invoke(target, true);
             }
         }
 

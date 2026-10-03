@@ -72,11 +72,15 @@ namespace Vow.Bootstrap
         // 追蹤不會把手動轉的鏡頭拉回去（右半屏拖鏡頭的既有行為不變）。_bowTrackedYaw＝Lab 自己最後寫入的 yaw。
         private float _bowPressYaw, _bowAimOffset, _bowTrackedYaw;
         private const float MaxCameraTrackStepSeconds = 0.1f;   // 卡頓一幀最多轉 9°，不因長幀瞬間跳轉
-        // 弓「蓄滿一條線」＋箭矢可見（2026-10-03，vow-toolchain/acceptance-bowline-20261003.md）：每次弓出手（BowRelease 唯一入口）
-        // 生成一支箭（40 m/s 飛到目標或射程盡頭）＋出手提示；命中提示在箭飛到「真的被傷到的目標」時才出現。傷害結算時機不變。
+        // 弓「蓄滿一條線」＋箭矢可見（2026-10-03，vow-toolchain/acceptance-bowline-20261003.md 與修訂 R1）：箭以「結算」為單位——
+        // 弓的普攻傷到直接目標（OnHeroDamageDealt，含蓄力／快速射擊／自動普攻）或錐內無人的空射（BowRelease）各生成一支箭＋出手提示；
+        // 命中提示在箭飛到被傷到的目標時才出現。傷害結算時機不變。其他武器、TOP 一律不生箭（D4）；換武器／切 TOP 清掉空中的箭。
         private BowArrowFx _arrowFx;
         public BowArrowVisual LastArrowVisual => _arrowFx != null ? _arrowFx.Last : default;
         public GameObject LastArrowObject => _arrowFx != null ? _arrowFx.LastObject : null;
+        public GameObject LastReleaseCueObject => _arrowFx != null ? _arrowFx.LastReleaseCueObject : null;
+        public GameObject LastHitCueObject => _arrowFx != null ? _arrowFx.LastHitCueObject : null;
+        public Vector3 LastHitCuePosition => _arrowFx != null ? _arrowFx.LastHitCuePosition : default;
         public int BowReleaseCueCount => _arrowFx != null ? _arrowFx.ReleaseCueCount : 0;
         public int ArrowHitCueCount => _arrowFx != null ? _arrowFx.HitCueCount : 0;
         private bool BowAiming => _attackHeld && _weapon.CurrentId == WeaponId.Bow;
@@ -264,6 +268,7 @@ namespace Vow.Bootstrap
             {
                 IsThirdPerson = false;
                 CancelAttackHold();
+                if (_arrowFx != null) _arrowFx.HideAll();   // 覆審 r1 H4：切 TOP 清掉弓箭與還沒出現的命中提示
                 _hero.DisarmChargedShot();   // 俯視不結算已放開、尚未命中的蓄力箭（同錘的 CancelPending）
                 _input.ContinuousRouter.SetThirdPersonEnabled(false);
                 _hero.SetContinuousMoveSource(null);
@@ -535,33 +540,40 @@ namespace Vow.Bootstrap
             // 追加 A12b：快速射擊不作廢還沒命中的蓄力箭——同一目標重送＝無事發生；挑到別的目標時由英雄的換目標入口解除。
             if (shot.IsQuick) AimAttack(aimYaw);   // 手勢第一批：快速射擊同樣朝 aimYaw
             else ChargedRelease(shot, heldSeconds, aimYaw);
-            LaunchArrow(LastAimTarget, aimYaw, shot.RangeMeters, shot.Pierce);   // 快速／蓄力／無目標都看得到一支箭
+            // 覆審 r1 H1：挑到目標＝等英雄的普攻真的結算才生箭（OnHeroDamageDealt）；錐內無人＝空射，當下沿 aimYaw 生一支。
+            if (LastAimTarget == null) LaunchMissArrow(aimYaw, shot.RangeMeters);
         }
 
-        // 箭的起點＝英雄胸口；終點＝挑到的目標（滿蓄穿透＝沿英雄→目標方向到射程盡頭；沒挑到＝沿 aimYaw 到射程盡頭）。
-        private void LaunchArrow(ICombatTarget target, float aimYaw, float rangeMeters, bool pierce)
+        private Vector3 ArrowStart => _hero.transform.position + Vector3.up * BowArrowFx.ChestHeight;
+
+        // 空射：起點＝英雄胸口，沿 aimYaw 水平飛到當下射程盡頭。
+        private void LaunchMissArrow(float aimYaw, float rangeMeters)
         {
             if (_arrowFx == null) return;
-            Vector3 hero = _hero.transform.position;
-            Vector3 start = hero + Vector3.up * BowArrowFx.ChestHeight;
-            Transform t = target != null && target.IsAlive ? target.TargetTransform : null;
+            Vector3 start = ArrowStart;
             CameraLabAim.GroundForward(aimYaw, out float ax, out float az);
-            Vector3 aim = new Vector3(ax, 0f, az);
-            Vector3 end;
-            if (t == null) { target = null; end = start + aim * rangeMeters; }
-            else if (pierce)
-            {
-                Vector3 d = t.position - hero;
-                d.y = 0f;
-                end = start + (d.sqrMagnitude > 1e-6f ? d.normalized : aim) * rangeMeters;
-            }
-            else end = t.position;
-            _arrowFx.Launch(start, end, target, Time.time);
+            _arrowFx.Launch(start, start + new Vector3(ax, 0f, az) * rangeMeters, null, start, Time.time, Time.frameCount);
         }
 
-        private void OnHeroDamageDealt(ICombatTarget target)
+        // 英雄普攻傷到目標（傷害已結算）：只有第三人稱拿弓才算弓箭（覆審 r1 H4：其他武器、TOP 的傷害永不碰弓的箭與提示）。
+        // 直接目標＝生成這一發的箭（終點＝身體中心，M2；滿蓄穿透＝沿英雄→目標到射程盡頭）；沿線目標＝併入同一支。
+        private void OnHeroDamageDealt(ICombatTarget target, bool alongLine)
         {
-            if (_arrowFx != null) _arrowFx.NotifyDamage(target, Time.frameCount);
+            if (_arrowFx == null || target == null || !IsThirdPerson || _weapon.CurrentId != WeaponId.Bow) return;
+            Vector3 body = BowTargetBody.Center(target);
+            if (alongLine) { _arrowFx.AddLineVictim(body, Time.frameCount); return; }
+            Vector3 hero = _hero.transform.position;
+            Vector3 start = ArrowStart;
+            Vector3 end = body;
+            float pierceRange = _hero.LastHitPierceRangeMeters;
+            if (pierceRange > 0f)
+            {
+                Vector3 d = body - hero;
+                d.y = 0f;
+                if (d.sqrMagnitude < 1e-6f) { d = _hero.transform.forward; d.y = 0f; }
+                end = start + d.normalized * pierceRange;
+            }
+            _arrowFx.Launch(start, end, target, body, Time.time, Time.frameCount);
         }
 
         private void ChargedRelease(BowShot shot, double heldSeconds, float aimYaw)
@@ -586,6 +598,7 @@ namespace Vow.Bootstrap
         private void CycleWeapon()
         {
             _hero.DisarmChargedShot();   // 離開弓：已放開、尚未命中的蓄力箭不再結算
+            if (_arrowFx != null) _arrowFx.HideAll();   // 覆審 r1 H4：換武器清掉弓箭與還沒出現的命中提示
             _weapon.Next();
             // 覆審 r1 M1：切到錘（不走單目標普攻）時原地清掉普攻目標（循環順序下離開弓必定切到錘）。
             if (IsThirdPerson && _weapon.Current.IsSweep) ClearTargetForSweepWeapon();
@@ -745,7 +758,9 @@ namespace Vow.Bootstrap
                 // 只影響「錐外退回最近者」：沒瞄、系統自己挑時，只挑按下去馬上有結果的目標——
                 // 不在石牆後（英雄會突然跑去繞牆），且已在射程內或同一樓地板走得到（崖台→谷底超出射程會走一步就放棄）。
                 bool eligible = inRange && HasClearSight(candidate) && (_hero.IsTargetInAttackRange(candidate) || SameFloor(origin, p));
-                picker.Consider(i, p.x, p.z, ReferenceEquals(candidate, current), eligible);
+                // 覆審 r1 H2（修訂 R1）：弓的判定半角＝錐半角＋atan(目標半徑/距離)（快速射擊與蓄力同式）；其他武器不變。
+                float radius = weapon.Id == WeaponId.Bow ? BowTargetBody.Radius(candidate) : 0f;
+                picker.Consider(i, p.x, p.z, ReferenceEquals(candidate, current), eligible, radius);
             }
             // 錐內優先；錐內沒有就退回 8m 內最近者，8m 內都沒有才不出手（Standard；其他武器見 WeaponSpec）。
             return picker.ResolvedIndex;

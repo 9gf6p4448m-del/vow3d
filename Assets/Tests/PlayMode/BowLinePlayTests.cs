@@ -62,8 +62,8 @@ namespace Vow.Tests.PlayMode
         private static float ArrowFlatDistance(Vector3 a, Vector3 b) { a.y = 0f; b.y = 0f; return Vector3.Distance(a, b); }
         private static float FlatYaw(Vector3 from, Vector3 to) => Mathf.Repeat(Mathf.Atan2(to.x - from.x, to.z - from.z) * Mathf.Rad2Deg, 360f);
 
-        [UnityTest] // C2：14m 偏 1.5°——快速點擊不中（超 12m）、蓄滿受傷 108；偏 3°——蓄滿不受傷（原 4° 會中）
-        public IEnumerator C2_Bow_FourteenMetres_OnePointFiveDegreesFullChargeHits_ThreeDegreesMisses()
+        [UnityTest] // C2（修訂 R1 H2）：14m 偏 1.5°——快速點擊不中（超 12m）、蓄滿受傷 108；偏 3°——蓄滿中（2°＋atan(0.5/14)≈4.05°）；偏 5°——蓄滿不中
+        public IEnumerator C2_Bow_FourteenMetres_OnePointFiveAndThreeDegreesHit_FiveDegreesMisses()
         {
             yield return SetupBow(14f);
             DummyTarget dummy = _bowDummy;
@@ -87,9 +87,19 @@ namespace Vow.Tests.PlayMode
             yield return null; yield return null;
             float h2 = dummy.Health;
             yield return HoldAttack(1.0);
-            yield return WaitSeconds(1.5f);
+            yield return WaitForDrop(dummy, h2, 2f);
             Debug.Log("[BOWLINE TEST] C2 3deg hit=" + (h2 - dummy.Health).ToString("F4"));
-            Assert.AreEqual(h2, dummy.Health, "偏 3°：蓄滿錐只剩 2°，不受傷（原 4° 規格會中）");
+            Assert.AreEqual(h2 - _hero.AttackDamage * BowChargedDamageMultiplier, dummy.Health, 1e-3f,
+                "偏 3°：判定半角＝2°＋atan(0.5/14)≈4.05° > 3°，蓄滿中、受傷 108（修訂 R1 H2）");
+
+            yield return ResetHeroTarget();
+            _lab.RotateThirdPerson(2f);   // 共偏 5°（橫向約 1.22m，身體外）
+            yield return null; yield return null;
+            float h3 = dummy.Health;
+            yield return HoldAttack(1.0);
+            yield return WaitSeconds(1.5f);
+            Debug.Log("[BOWLINE TEST] C2 5deg hit=" + (h3 - dummy.Health).ToString("F4"));
+            Assert.AreEqual(h3, dummy.Health, "偏 5°：超過 4.05°，蓄滿不受傷");
             AssertBowSelected();
         }
 
@@ -148,27 +158,38 @@ namespace Vow.Tests.PlayMode
             Assert.IsFalse(PreviewIndicatorActive(), "放開後細線收起");
         }
 
-        [UnityTest] // C4：快速／蓄力／無目標出手各更新一次 LastArrowVisual；取消不更新；其他四種武器不更新
-        public IEnumerator C4_Bow_ArrowSpawnsOncePerShot_NotOnCancel_NotForOtherWeapons()
+        [UnityTest] // C4（修訂 R1 H1）：箭以結算為單位——快速／蓄力命中各在傷害那一幀一支、自動普攻每次傷害一支、無目標空射放開當下一支；取消不生；其他四種武器不生
+        public IEnumerator C4_Bow_ArrowSpawnsOncePerSettlement_NotOnCancel_NotForOtherWeapons()
         {
             yield return SetupBow(6f);
+            DummyTarget bowDummy = _bowDummy;
             int s0 = LastArrow().Serial;
 
+            float hq = bowDummy.Health;
             TapAttack();
-            Assert.AreEqual(s0 + 1, LastArrow().Serial, "快速射擊：出手當下就有一支箭");
-            yield return WaitSeconds(1.2f);   // 之後的自動普攻不是出手
-            Assert.AreEqual(s0 + 1, LastArrow().Serial, "快速射擊：只一支（自動普攻不生箭）");
+            Assert.AreEqual(s0, LastArrow().Serial, "快速射擊：放開當下還沒結算，不生箭");
+            yield return WaitForSettlement(bowDummy, hq, s0, ReleaseCues(), "C4 快速");
+            Assert.AreEqual(s0 + 1, LastArrow().Serial, "快速射擊：傷害那一幀一支");
+            int autoDrops = 0;
+            yield return CountDrops(bowDummy, 1.2f, n => autoDrops = n);   // 之後的自動普攻：每次真的傷害各一支
+            Assert.Greater(autoDrops, 0, "測試前提：1.2s 內自動普攻真的又打到");
+            Assert.AreEqual(s0 + 1 + autoDrops, LastArrow().Serial, "自動普攻：每次傷害各一支（箭數＝傷害次數）");
 
             yield return ResetHeroTarget();
+            int s1 = LastArrow().Serial;
+            float hc = bowDummy.Health;
             yield return HoldAttack(0.5);
-            Assert.AreEqual(s0 + 2, LastArrow().Serial, "蓄力出手：一支");
+            Assert.AreEqual(s1, LastArrow().Serial, "蓄力出手：放開當下還沒結算，不生箭");
+            yield return WaitForSettlement(bowDummy, hc, s1, ReleaseCues(), "C4 蓄力");
+            Assert.AreEqual(s1 + 1, LastArrow().Serial, "蓄力出手：一支");
             Assert.IsTrue(LastArrow().Hit, "蓄力出手挑到木樁");
 
             yield return ResetHeroTarget();
             _lab.RotateThirdPerson(180f);
             yield return null; yield return null;
+            int s2 = LastArrow().Serial;
             yield return HoldAttack(0.5);
-            Assert.AreEqual(s0 + 3, LastArrow().Serial, "無目標出手：照樣一支");
+            Assert.AreEqual(s2 + 1, LastArrow().Serial, "無目標出手：照樣一支");
             Assert.IsFalse(LastArrow().Hit, "無目標：不是命中");
 
             PressAttack();
@@ -177,7 +198,7 @@ namespace Vow.Tests.PlayMode
             yield return null;
             ReleaseAttack();
             yield return WaitSeconds(0.5f);
-            Assert.AreEqual(s0 + 3, LastArrow().Serial, "取消（DASH）後放開：不生箭");
+            Assert.AreEqual(s2 + 1, LastArrow().Serial, "取消（DASH）後放開：不生箭");
 
             int[] weapons = { 0, 1, 3, 4 };
             string[] labels = { "Standard", "Sword", "Hammer", "Grapple" };
@@ -208,6 +229,7 @@ namespace Vow.Tests.PlayMode
             DummyTarget dummy = _bowDummy;
             Vector3 hero = _hero.transform.position;
             TapAttack();
+            yield return WaitForArrow(1, 1.5f);   // 修訂 R1 H1：命中箭在傷害結算那一幀才生成
             ArrowInfo hit = LastArrow();
             Debug.Log("[BOWLINE TEST] C5 hit start=" + hit.Start.ToString("F3") + " end=" + hit.End.ToString("F3") + " dummy=" + dummy.transform.position.ToString("F3"));
             Assert.AreEqual(1, hit.Serial, "快速射擊生成一支箭");
@@ -272,6 +294,7 @@ namespace Vow.Tests.PlayMode
         {
             yield return SetupBow(6f);
             TapAttack();
+            yield return WaitForArrow(1, 1.5f);   // 修訂 R1 H1：命中箭在傷害結算那一幀才生成
             ArrowInfo near = LastArrow();
             Assert.AreEqual(1, near.Serial, "有一支箭");
             yield return MeasureFlight(near, ArrowObject());
@@ -307,21 +330,30 @@ namespace Vow.Tests.PlayMode
             DummyTarget dummy = _bowDummy;
             int r0 = ReleaseCues(), c0 = HitCues();
             float h0 = dummy.Health;
+            int sa = LastArrow().Serial;
             TapAttack();
-            Assert.AreEqual(r0 + 1, ReleaseCues(), "(a) 快速射擊：出手提示同幀 +1");
-            Assert.AreEqual(c0, HitCues(), "(a) 出手瞬間命中提示為 0");
+            Assert.AreEqual(r0, ReleaseCues(), "(a) 快速射擊：放開當下還沒結算，沒有出手提示");
+            yield return WaitForSettlement(dummy, h0, sa, r0, "(a)");   // 出手提示與箭在傷害那一幀同幀 +1
+            Assert.AreEqual(c0, HitCues(), "(a) 結算瞬間命中提示為 0");
             yield return TraceHitCue(LastArrow(), ArrowObject(), dummy, h0, c0, "(a)");
+            int sAfter = LastArrow().Serial;
             yield return WaitSeconds(1.2f);
-            Assert.AreEqual(c0 + 1, HitCues(), "(a) 一支箭只提示一次（之後的自動普攻不算）");
+            int laterArrows = LastArrow().Serial - sAfter;
+            _hero.ClearCombatTargetInPlace();   // 停手，讓最後一支自動普攻的箭飛到
+            yield return WaitSeconds(0.5f);
+            laterArrows = LastArrow().Serial - sAfter;
+            Assert.AreEqual(c0 + 1 + laterArrows, HitCues(), "(a) 每支命中箭只提示一次（之後的自動普攻各自一支、各一次）");
 
             // (e) 蓄滿 14m 命中：傷害（≈0.25s）早於箭到（≈0.35s）→提示仍要等箭到
             yield return SetupBow(14f);
             dummy = _bowDummy;
             r0 = ReleaseCues(); c0 = HitCues();
             h0 = dummy.Health;
+            int se = LastArrow().Serial;
             yield return HoldAttack(1.0);
-            Assert.AreEqual(r0 + 1, ReleaseCues(), "(e) 蓄力出手：出手提示同幀 +1");
-            Assert.AreEqual(c0, HitCues(), "(e) 出手瞬間命中提示為 0");
+            Assert.AreEqual(r0, ReleaseCues(), "(e) 蓄力出手：放開當下還沒結算，沒有出手提示");
+            yield return WaitForSettlement(dummy, h0, se, r0, "(e)");
+            Assert.AreEqual(c0, HitCues(), "(e) 結算瞬間命中提示為 0");
             yield return TraceHitCue(LastArrow(), ArrowObject(), dummy, h0, c0, "(e)");
             Assert.Less(_damageFrameA, _arrivalFrame, "(e) 測試前提：傷害先於箭到（量得到「等箭到」）");
             Assert.AreEqual(_arrivalFrame, _cueFrameA, "(e) 提示在箭到的那一幀（不是傷害那一幀）");
@@ -335,9 +367,10 @@ namespace Vow.Tests.PlayMode
             yield return null; yield return null;
             r0 = ReleaseCues(); c0 = HitCues();
             float n0 = near.Health, f0 = far.Health;
+            int sb = LastArrow().Serial;
             yield return HoldAttack(1.0);
-            Assert.AreEqual(r0 + 1, ReleaseCues(), "(b) 出手提示 +1");
-            Assert.AreEqual(c0, HitCues(), "(b) 出手瞬間命中提示為 0");
+            yield return WaitForSettlement(near, n0, sb, r0, "(b)");   // 出手提示 +1（結算那一幀）
+            Assert.AreEqual(c0, HitCues(), "(b) 結算瞬間命中提示為 0");
             ArrowInfo pierce = LastArrow();
             GameObject pierceObj = ArrowObject();
             Assert.IsNotNull(pierceObj, "(b) 要有箭");
@@ -380,6 +413,45 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(r0 + 1, ReleaseCues(), "(d) 取消：沒有出手提示");
             yield return WaitSeconds(1.2f);
             Assert.AreEqual(c0, HitCues(), "(d) 取消：命中提示不增");
+        }
+
+        // 修訂 R1 H1：等到這一發結算——每幀斷言「木樁掉血」與「新箭出現」同一幀發生，且那一幀出手提示恰 +1。
+        private IEnumerator WaitForSettlement(DummyTarget dummy, float h0, int s0, int r0, string label)
+        {
+            float until = Time.time + 2f;
+            while (Time.time < until)
+            {
+                yield return null;
+                bool dropped = dummy.Health < h0;
+                bool arrow = LastArrow().Serial > s0;
+                Assert.AreEqual(dropped, arrow, label + " 箭與傷害同一幀（dropped=" + dropped + " arrow=" + arrow + "）");
+                if (!dropped) { Assert.AreEqual(r0, ReleaseCues(), label + " 還沒結算：沒有出手提示"); continue; }
+                Assert.AreEqual(s0 + 1, LastArrow().Serial, label + " 一次結算一支箭");
+                Assert.AreEqual(r0 + 1, ReleaseCues(), label + " 出手提示與箭同幀 +1");
+                yield break;
+            }
+            Assert.Fail(label + " 2s 內沒有結算");
+        }
+
+        private IEnumerator WaitForArrow(int serial, float seconds)
+        {
+            float until = Time.time + seconds;
+            while (LastArrow().Serial < serial && Time.time < until) yield return null;
+        }
+
+        // seconds 內木樁掉血的次數（每幀比對；一次普攻＝一次掉血）。
+        private static IEnumerator CountDrops(DummyTarget dummy, float seconds, System.Action<int> result)
+        {
+            int drops = 0;
+            float last = dummy.Health;
+            float until = Time.time + seconds;
+            while (Time.time < until)
+            {
+                yield return null;
+                if (dummy.Health < last) drops++;
+                last = dummy.Health;
+            }
+            result(drops);
         }
 
         // 單一目標：每幀記到達幀、掉血幀、提示幀；斷言提示在 max(到達, 掉血) 那一幀、之前一直是 0。

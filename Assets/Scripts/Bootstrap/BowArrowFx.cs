@@ -1,19 +1,21 @@
 using UnityEngine;
+using Vow.Combat;
 using Vow.Core;
 
 namespace Vow.Bootstrap
 {
-    // camera-lab 弓：每次出手一支看得見的箭（2026-10-03，vow-toolchain/acceptance-bowline-20261003.md）。
-    // 起點＝英雄胸口、終點＝挑到的目標（打空＝沿 aimYaw 到當下射程盡頭；滿蓄穿透＝沿英雄→目標方向到射程盡頭）。
-    // 只管「看得見」：傷害仍由英雄普攻結算，時機不變。命中提示＝「這支箭真的傷到的目標」且「箭已飛到它」兩者都成立的那一幀，
-    // 每個被傷到的目標各一次；沒人受傷（打空、被打斷、目標死了）就從不觸發。
+    // camera-lab 弓：每一發「真的結算」一支看得見的箭（2026-10-03，vow-toolchain/acceptance-bowline-20261003.md 與其修訂 R1）。
+    // 結算＝英雄普攻傷到直接目標的那一刻（含蓄力、快速射擊、自動普攻；覆審 r1 H1）或錐內無人的空射（放開當下）。
+    // 被冷卻／前搖吃掉、DASH／換武器／倒地等打斷而沒有結算的放開＝不生箭、不出提示（H3 由建構上消失：沒有傷害就沒有箭）。
+    // 起點＝英雄胸口；終點＝目標身體中心（M2）／滿蓄穿透＝沿英雄→目標到射程盡頭／空射＝沿 aimYaw 到射程盡頭。
+    // 命中提示＝箭飛到「這一發傷到的目標」那一幀，位置＝結算當下快照的身體中心（目標在箭到前死亡仍照常提示，D8）。
     public readonly struct BowArrowVisual
     {
         public readonly int Serial;          // 第幾支（1 起算）；0＝還沒射過
         public readonly Vector3 Start;
         public readonly Vector3 End;
-        public readonly float Speed;         // m/s（遊戲時間）
-        public readonly bool Hit;            // 出手時挑到目標（終點＝該目標）
+        public readonly float Speed;         // m/s（遊戲時間）；近距離為了最短可見飛行時間會低於 40
+        public readonly bool Hit;            // 這一發有傷到目標（終點＝該目標；空射＝false）
         public readonly float SpawnTime;     // Time.time
 
         public BowArrowVisual(int serial, Vector3 start, Vector3 end, float speed, bool hit, float spawnTime)
@@ -27,16 +29,61 @@ namespace Vow.Bootstrap
         }
     }
 
+    // 目標身體（覆審 r1 M2／H2）：中心＝碰撞體中心（優先 enabled 的那個；換算世界座標，碰撞體停用／目標已隱藏也算得出來），
+    // 半徑＝碰撞體水平半徑。沒有碰撞體＝TargetTransform 位置、半徑 0。零配置（TargetColliders 已快取）。
+    internal static class BowTargetBody
+    {
+        private static Collider Pick(CombatTargetBehaviour target)
+        {
+            if (target == null) return null;
+            Collider[] colliders = target.TargetColliders;
+            Collider any = null;
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                Collider c = colliders[i];
+                if (c == null) continue;
+                if (c.enabled) return c;
+                if (any == null) any = c;
+            }
+            return any;
+        }
+
+        public static Vector3 Center(ICombatTarget target)
+        {
+            Collider c = Pick(target as CombatTargetBehaviour);
+            if (c is CapsuleCollider capsule) return capsule.transform.TransformPoint(capsule.center);
+            if (c is BoxCollider box) return box.transform.TransformPoint(box.center);
+            if (c is SphereCollider sphere) return sphere.transform.TransformPoint(sphere.center);
+            if (c != null && c.enabled && c.gameObject.activeInHierarchy) return c.bounds.center;
+            Transform t = target != null ? target.TargetTransform : null;
+            return t != null ? t.position : Vector3.zero;
+        }
+
+        public static float Radius(CombatTargetBehaviour target)
+        {
+            Collider c = Pick(target);
+            if (c == null) return 0f;
+            Vector3 s = c.transform.lossyScale;
+            float horizontalScale = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.z));
+            if (c is CapsuleCollider capsule && capsule.direction == 1) return capsule.radius * horizontalScale;
+            if (c is SphereCollider sphere) return sphere.radius * Mathf.Max(horizontalScale, Mathf.Abs(s.y));
+            if (c is BoxCollider box) return 0.5f * Mathf.Max(box.size.x * Mathf.Abs(s.x), box.size.z * Mathf.Abs(s.z));
+            if (!c.enabled || !c.gameObject.activeInHierarchy) return 0f;
+            Vector3 e = c.bounds.extents;
+            return Mathf.Max(e.x, e.z);
+        }
+    }
+
     // 物件池（箭 4 支、提示閃光 6 個），全部共用場景扇形預警的頂點色材質（WebGL 已在用的同一個），
     // 顏色走 LineRenderer 頂點色，不 new 材質；執行期零配置。
     internal sealed class BowArrowFx
     {
         public const float ArrowSpeed = 40f;          // 暫定
+        public const float MinFlightSeconds = 0.12f;  // 近距離也看得見（覆審 r1 M4／修訂 R1 D7）：速度 = min(40, 距離/0.12)
         public const float ChestHeight = 1.3f;
         public const float LingerSeconds = 0.1f;      // 到達後停留多久才收（規格 ≤ 0.3s）
-        private const float ArrowLength = 0.9f;
-        private const float ArrowWidth = 0.08f;
-        private const float PendingHitSeconds = 1.4f; // 出手後等「真的傷到」的上限（＝普攻週期 0.8＋前搖保險 0.6）
+        public const float ArrowLength = 1.6f;        // 箭身（D7：≥ 1.5m，暫定）
+        public const float ArrowWidth = 0.14f;        // 箭頭端寬（D7：≥ 0.12m，暫定）；尾端 0.4 倍
         private const int ArrowPool = 4;
         private const int MaxVictims = 8;
         private const int CuePool = 6;
@@ -53,19 +100,17 @@ namespace Vow.Bootstrap
         private readonly Vector3[] _start = new Vector3[ArrowPool];
         private readonly Vector3[] _end = new Vector3[ArrowPool];
         private readonly float[] _length = new float[ArrowPool];
+        private readonly float[] _speed = new float[ArrowPool];
         private readonly float[] _traveled = new float[ArrowPool];
         private readonly float[] _age = new float[ArrowPool];
         private readonly float[] _arrivedAge = new float[ArrowPool];   // < 0＝還沒到
         private readonly bool[] _flying = new bool[ArrowPool];          // 視覺體還在
         private readonly int[] _serial = new int[ArrowPool];
-        // 命中提示的等待狀態（與視覺體分開：傷害可能晚於箭到達）
-        private readonly ICombatTarget[] _primary = new ICombatTarget[ArrowPool];
-        private readonly bool[] _pending = new bool[ArrowPool];
-        private readonly bool[] _resolved = new bool[ArrowPool];
-        private readonly int[] _resolvedFrame = new int[ArrowPool];
+        private readonly int[] _launchFrame = new int[ArrowPool];
+        // 這一發傷到的目標（直接目標＋同一次結算的沿線目標）：箭飛到 _victimAt 那一幀在 _victimPos 提示一次。
         private readonly int[] _victimCount = new int[ArrowPool];
-        private readonly ICombatTarget[] _victims = new ICombatTarget[ArrowPool * MaxVictims];
-        private readonly float[] _victimAt = new float[ArrowPool * MaxVictims];   // 箭飛到這段距離＝到達該目標
+        private readonly float[] _victimAt = new float[ArrowPool * MaxVictims];
+        private readonly Vector3[] _victimPos = new Vector3[ArrowPool * MaxVictims];
         private readonly bool[] _victimCued = new bool[ArrowPool * MaxVictims];
 
         private readonly GameObject[] _cueObjects = new GameObject[CuePool];
@@ -84,6 +129,9 @@ namespace Vow.Bootstrap
         public int HitCueCount { get; private set; }
         public BowArrowVisual Last { get; private set; }
         public GameObject LastObject { get; private set; }
+        public GameObject LastReleaseCueObject { get; private set; }
+        public GameObject LastHitCueObject { get; private set; }
+        public Vector3 LastHitCuePosition { get; private set; }
 
         private readonly Transform _camera;
 
@@ -113,7 +161,7 @@ namespace Vow.Bootstrap
         private static LineRenderer CreateLine(Transform parent, string name, Material material, int points)
         {
             GameObject go = new GameObject(name);
-            go.layer = 2;   // Ignore Raycast
+            go.layer = 2;   // Ignore Raycast（主鏡頭 cullingMask 有畫這層，D6 測試核對）
             go.transform.SetParent(parent, false);
             LineRenderer line = go.AddComponent<LineRenderer>();
             line.useWorldSpace = true;
@@ -128,99 +176,67 @@ namespace Vow.Bootstrap
             return line;
         }
 
-        // 出手：生成箭＋出手提示（同一幀）。primary＝挑到的目標（null＝打空）；piercePath＝滿蓄穿透時沿線也算受傷候選。
-        public void Launch(Vector3 start, Vector3 end, ICombatTarget primary, float now)
+        // 一發結算：生成箭＋出手提示（同一幀）。primary＝傷到的直接目標（null＝空射）；primaryAt＝它身體中心的快照（提示位置）。
+        public void Launch(Vector3 start, Vector3 end, ICombatTarget primary, Vector3 primaryAt, float now, int frame)
         {
             int slot = FreeSlot();
             _serialCounter++;
             _start[slot] = start;
             _end[slot] = end;
-            _length[slot] = Vector3.Distance(start, end);
+            float length = Vector3.Distance(start, end);
+            _length[slot] = length;
+            _speed[slot] = length > 1e-4f ? Mathf.Min(ArrowSpeed, length / MinFlightSeconds) : ArrowSpeed;
             _traveled[slot] = 0f;
             _age[slot] = 0f;
             _arrivedAge[slot] = -1f;
             _flying[slot] = true;
             _serial[slot] = _serialCounter;
-            _primary[slot] = primary;
-            _pending[slot] = primary != null;
-            _resolved[slot] = false;
-            _resolvedFrame[slot] = -1;
+            _launchFrame[slot] = frame;
             _victimCount[slot] = 0;
+            if (primary != null) AddVictim(slot, primaryAt, true);
             DrawArrow(slot);
             if (!_arrowObjects[slot].activeSelf) _arrowObjects[slot].SetActive(true);
-            Last = new BowArrowVisual(_serialCounter, start, end, ArrowSpeed, primary != null, now);
+            Last = new BowArrowVisual(_serialCounter, start, end, _speed[slot], primary != null, now);
             LastObject = _arrowObjects[slot];
             ReleaseCueCount++;
-            SpawnCue(start, ReleaseCueColor, ReleaseCueSeconds, ReleaseCueSize);
+            LastReleaseCueObject = SpawnCue(start, ReleaseCueColor, ReleaseCueSeconds, ReleaseCueSize);
         }
 
-        // 英雄普攻傷到一個目標（直接目標先、同一呼叫內的穿透沿線目標隨後）。
-        public void NotifyDamage(ICombatTarget target, int frame)
+        // 同一次結算的沿線目標（滿蓄穿透／裂風矢）：併入這一幀剛生成、有直接目標的那一支。找不到就不提示。
+        public void AddLineVictim(Vector3 bodyCentre, int frame)
         {
-            if (target == null) return;
-            // 同一幀、同一次結算的沿線目標：併入剛結算的那一支。
-            for (int s = 0; s < ArrowPool; s++)
-                if (_pending[s] && _resolved[s] && _resolvedFrame[s] == frame && !ReferenceEquals(target, _primary[s]))
-                {
-                    AddVictim(s, target);
-                    return;
-                }
-            // 直接目標：最早射出、還沒結算、目標相同的那一支（先射的先到）。
             int best = -1;
             for (int s = 0; s < ArrowPool; s++)
-            {
-                if (!_pending[s] || _resolved[s] || !ReferenceEquals(target, _primary[s])) continue;
-                if (best < 0 || _serial[s] < _serial[best]) best = s;
-            }
-            if (best < 0) return;
-            _resolved[best] = true;
-            _resolvedFrame[best] = frame;
-            AddVictim(best, target);
+                if (_flying[s] && _launchFrame[s] == frame && _victimCount[s] > 0 && (best < 0 || _serial[s] > _serial[best])) best = s;
+            if (best >= 0) AddVictim(best, bodyCentre, false);
         }
 
-        private void AddVictim(int slot, ICombatTarget target)
+        // 直接目標＝箭飛到終點那一幀提示（同 f9b4133：滿蓄穿透時終點在射程盡頭）；沿線目標＝飛到它的投影距離那一幀。
+        private void AddVictim(int slot, Vector3 bodyCentre, bool primary)
         {
             int n = _victimCount[slot];
             if (n >= MaxVictims) return;
             int k = slot * MaxVictims + n;
-            _victims[k] = target;
+            Vector3 path = _end[slot] - _start[slot];
+            float sq = path.sqrMagnitude;
+            float f = sq > 1e-6f ? Mathf.Clamp01(Vector3.Dot(bodyCentre - _start[slot], path) / sq) : 1f;
+            _victimAt[k] = primary ? _length[slot] : f * _length[slot];
+            _victimPos[k] = bodyCentre;
             _victimCued[k] = false;
-            float at = _length[slot];
-            Transform t = target.TargetTransform;
-            if (t != null && !ReferenceEquals(target, _primary[slot]))
-            {
-                Vector3 path = _end[slot] - _start[slot];
-                float sq = path.sqrMagnitude;
-                float f = sq > 1e-6f ? Mathf.Clamp01(Vector3.Dot(t.position - _start[slot], path) / sq) : 1f;
-                at = f * _length[slot];
-            }
-            _victimAt[k] = at;
             _victimCount[slot] = n + 1;
-            TryCue(slot, false);   // 箭早已飛過（傷害晚到）→當幀就提示；收尾留給 Tick（同一呼叫後面還有沿線目標）
         }
 
         public void Tick(float dt)
         {
             for (int s = 0; s < ArrowPool; s++)
             {
-                if (!_flying[s] && !_pending[s]) continue;
+                if (!_flying[s]) continue;
                 _age[s] += dt;
-                _traveled[s] = Mathf.Min(_length[s], _traveled[s] + ArrowSpeed * dt);
-                if (_flying[s])
-                {
-                    if (_arrivedAge[s] < 0f && _traveled[s] >= _length[s]) _arrivedAge[s] = _age[s];
-                    if (_arrivedAge[s] >= 0f && _age[s] - _arrivedAge[s] >= LingerSeconds)
-                    {
-                        _flying[s] = false;
-                        _arrowObjects[s].SetActive(false);
-                    }
-                    else DrawArrow(s);
-                }
-                if (_pending[s])
-                {
-                    TryCue(s, true);
-                    if (!_resolved[s] && _age[s] > PendingHitSeconds) ClearPending(s);   // 一直沒人受傷＝打空
-                }
+                _traveled[s] = Mathf.Min(_length[s], _traveled[s] + _speed[s] * dt);
+                CueArrived(s);
+                if (_arrivedAge[s] < 0f && _traveled[s] >= _length[s]) _arrivedAge[s] = _age[s];
+                if (_arrivedAge[s] >= 0f && _age[s] - _arrivedAge[s] >= LingerSeconds) Hide(s);
+                else DrawArrow(s);
             }
             for (int i = 0; i < CuePool; i++)
             {
@@ -235,43 +251,36 @@ namespace Vow.Bootstrap
             }
         }
 
-        private void TryCue(int slot, bool allowClear)
+        private void CueArrived(int slot)
         {
-            if (!_resolved[slot]) return;
-            bool allDone = true;
             for (int v = 0; v < _victimCount[slot]; v++)
             {
                 int k = slot * MaxVictims + v;
-                if (_victimCued[k]) continue;
-                if (_traveled[slot] + 1e-4f < _victimAt[k]) { allDone = false; continue; }
+                if (_victimCued[k] || _traveled[slot] + 1e-4f < _victimAt[k]) continue;
                 _victimCued[k] = true;
                 HitCueCount++;
-                Transform t = _victims[k].TargetTransform;
-                Vector3 at = t != null ? t.position : _end[slot];
-                SpawnCue(at, HitCueColor, HitCueSeconds, HitCueSize);
+                LastHitCuePosition = _victimPos[k];
+                LastHitCueObject = SpawnCue(_victimPos[k], HitCueColor, HitCueSeconds, HitCueSize);
             }
-            if (allowClear && allDone && _traveled[slot] >= _length[slot]) ClearPending(slot);
         }
 
-        private void ClearPending(int slot)
+        private void Hide(int slot)
         {
-            _pending[slot] = false;
-            _primary[slot] = null;
-            for (int v = 0; v < MaxVictims; v++) _victims[slot * MaxVictims + v] = null;
+            _flying[slot] = false;
             _victimCount[slot] = 0;
+            if (_arrowObjects[slot] != null) _arrowObjects[slot].SetActive(false);
         }
 
-        // 沒有空位就收最舊的一支（視覺與等待一起丟掉）。
+        // 沒有空位就收最舊的一支（視覺與未提示的命中一起丟掉）。
         private int FreeSlot()
         {
             int oldest = 0;
             for (int s = 0; s < ArrowPool; s++)
             {
-                if (!_flying[s] && !_pending[s]) return s;
+                if (!_flying[s]) return s;
                 if (_serial[s] < _serial[oldest]) oldest = s;
             }
-            ClearPending(oldest);
-            _flying[oldest] = false;
+            Hide(oldest);
             return oldest;
         }
 
@@ -284,7 +293,7 @@ namespace Vow.Bootstrap
             _arrowLines[s].SetPositions(_arrowPoints);
         }
 
-        private void SpawnCue(Vector3 center, Color color, float life, float size)
+        private GameObject SpawnCue(Vector3 center, Color color, float life, float size)
         {
             int i = _nextCue;
             _nextCue = (_nextCue + 1) % CuePool;
@@ -295,6 +304,7 @@ namespace Vow.Bootstrap
             _cueColor[i] = color;
             DrawCue(i);
             if (!_cueObjects[i].activeSelf) _cueObjects[i].SetActive(true);
+            return _cueObjects[i];
         }
 
         // 四芒星（面向鏡頭）：由小放大、淡出。
@@ -320,14 +330,10 @@ namespace Vow.Bootstrap
             line.endColor = color;
         }
 
+        // 換武器／切 TOP／停用（覆審 r1 H4／修訂 R1 D4）：空中的箭與還沒出現的命中提示一併清掉。
         public void HideAll()
         {
-            for (int s = 0; s < ArrowPool; s++)
-            {
-                _flying[s] = false;
-                ClearPending(s);
-                if (_arrowObjects[s] != null) _arrowObjects[s].SetActive(false);
-            }
+            for (int s = 0; s < ArrowPool; s++) Hide(s);
             for (int i = 0; i < CuePool; i++)
             {
                 _cueLife[i] = 0f;
