@@ -63,6 +63,13 @@ namespace Vow.Bootstrap
         // _bowHoldTarget＝按下時正在打的目標：按住中當黏性偏好（快速點擊與現行一致）、取消後恢復自動普攻、放開沒挑到目標時接回。
         private ICombatTarget _bowHoldTarget;
         private bool _bowResumePending;
+        // 手勢操作第一批（2026-10-03，vow-toolchain/acceptance-bowaim-20261003.md）：弓按住 ATK 時左右拖曳＝調整出手方向。
+        // 按下記 pressYaw＝當下準星 yaw；拖曳只改 offset（BowAimLogic，名目 mm）；出手、標記、預覽錐一律朝 aimYaw＝pressYaw＋offset。
+        // 按住期間鏡頭以最大 90°/s 朝 aimYaw 追；放開／取消就停在當下（不回彈）。其他武器收到拖曳一律不理。
+        private float _bowPressYaw, _bowAimOffset;
+        private const float MaxCameraTrackStepSeconds = 0.1f;   // 卡頓一幀最多轉 9°，不因長幀瞬間跳轉
+        private bool BowAiming => _attackHeld && _weapon.CurrentId == WeaponId.Bow;
+        private float BowAimYaw => BowAimLogic.NormalizeDegrees(_bowPressYaw + _bowAimOffset);
         private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
         private const float SightHeight = 1.0f;
         private readonly RaycastHit[] _sightHits = new RaycastHit[16];
@@ -185,6 +192,7 @@ namespace Vow.Bootstrap
             _input.OnLabActionButton += OnActionButton;
             _input.OnLabActionButtonReleased += OnActionButtonReleased;
             _input.OnLabActionButtonCanceled += OnActionButtonCanceled;
+            _input.OnLabActionButtonDragged += OnActionButtonDragged;
 #if UNITY_WEBGL && !UNITY_EDITOR
             _input.OnRuneCastReleased += OnRuneReleasedForLog;
 #endif
@@ -205,6 +213,7 @@ namespace Vow.Bootstrap
                     _input.OnLabActionButton -= OnActionButton;
                     _input.OnLabActionButtonReleased -= OnActionButtonReleased;
                     _input.OnLabActionButtonCanceled -= OnActionButtonCanceled;
+                    _input.OnLabActionButtonDragged -= OnActionButtonDragged;
 #if UNITY_WEBGL && !UNITY_EDITOR
                     _input.OnRuneCastReleased -= OnRuneReleasedForLog;
 #endif
@@ -307,6 +316,9 @@ namespace Vow.Bootstrap
             _yaw = Mathf.Repeat(_yaw + router.LookDeltaX * sensitivity, 360f);
             _pitch = Mathf.Clamp(_pitch - router.LookDeltaY * sensitivity, 10f, 50f);
             router.ConsumeLook();
+            if (BowAiming && InputPermitted)
+                _yaw = BowAimLogic.StepYawToward(_yaw, BowAimYaw, BowAimLogic.CameraTrackDegreesPerSecond,
+                    Mathf.Min(Time.unscaledDeltaTime, MaxCameraTrackStepSeconds));
             PositionThirdPerson();
             RefreshAimPreview();
             RefreshWeaponPreview();
@@ -417,6 +429,8 @@ namespace Vow.Bootstrap
             {
                 _attackHeld = true;
                 _attackPressedAt = Time.unscaledTimeAsDouble;
+                _bowPressYaw = _yaw;   // 每次按下都重新起算：offset 歸零、pressYaw＝當下準星
+                _bowAimOffset = 0f;
                 if (_weapon.Current.IsSweep) HammerSweep();
                 else if (_weapon.Current.IsGrapple) GrappleAttack();
                 else if (_weapon.CurrentId == WeaponId.Bow)   // 弓：按下只開始蓄力，放開才出手（OnActionButtonReleased）
@@ -426,7 +440,7 @@ namespace Vow.Bootstrap
                     if (current != null || !_bowResumePending) _bowHoldTarget = current;
                     _bowResumePending = false;
                 }
-                else AimAttack();
+                else AimAttack(_yaw);
                 RefreshWeaponPreview();
             }
             else if (button == LabActionButton.Dash) { CancelAttackHold(); if (!_grapple.Pulling) ActiveDash(); }
@@ -438,9 +452,10 @@ namespace Vow.Bootstrap
         {
             if (button != LabActionButton.Attack || !_attackHeld) return;
             bool bow = _weapon.CurrentId == WeaponId.Bow;
+            float aimYaw = BowAimYaw;
             EndAttackHold();
             if (!bow || !_ready || !IsThirdPerson || !InputPermitted) { _bowHoldTarget = null; return; }
-            BowRelease(heldSeconds);
+            BowRelease(heldSeconds, aimYaw);
             // 追加 A11：放開沒挑到目標（錐內無人）＝按住前在打的目標接回自動普攻（同現行弓「錐內無人不改目標」）。
             if (LastAimTarget == null && _bowHoldTarget != null) _bowResumePending = true;
             else _bowHoldTarget = null;
@@ -449,6 +464,13 @@ namespace Vow.Bootstrap
         private void OnActionButtonCanceled(LabActionButton button)
         {
             if (button == LabActionButton.Attack) CancelAttackHold();
+        }
+
+        // 從 ATK 起手的拖曳：只有弓、而且按住中才吃（水平位移→出手偏角；垂直本批不用）。作廢後的拖曳一律不理。
+        private void OnActionButtonDragged(LabActionButton button, float dxMillimeters, float dyMillimeters)
+        {
+            if (button != LabActionButton.Attack || !BowAiming || !_ready || !IsThirdPerson) return;
+            _bowAimOffset = BowAimLogic.OffsetDegrees(dxMillimeters);
         }
 
         // 作廢按住（DASH／WPN／切 TOP／觸控 Canceled）：弓的話之後恢復自動普攻（追加 A11b）。
@@ -484,14 +506,14 @@ namespace Vow.Bootstrap
 
         // 弓放開：t < 0.2s＝快速射擊，與 05f97b9 的按下即出手同一條 AimAttack（錐 12°、12m、倍率 1.0、不穿透）；
         // 其餘依 BowChargeLogic 收窄錐、延伸射程、加倍率（滿蓄穿透），交給英雄下一次對該目標的普攻結算。錐內沒人也算一次出手。
-        private void BowRelease(double heldSeconds)
+        private void BowRelease(double heldSeconds, float aimYaw)
         {
             BowShotCount++;
             BowShot shot = BowChargeLogic.Resolve(heldSeconds);
             // 追加 A12b：快速射擊不作廢還沒命中的蓄力箭——同一目標重送＝無事發生；挑到別的目標時由英雄的換目標入口解除。
             if (shot.IsQuick)
             {
-                AimAttack();
+                AimAttack(aimYaw);   // 手勢第一批：快速射擊同樣朝 aimYaw
                 return;
             }
             _hero.DisarmChargedShot();   // 新的蓄力箭取代上一支還沒命中的：一次蓄力只算一支
@@ -499,7 +521,7 @@ namespace Vow.Bootstrap
             LastAimTarget = null;
             CombatTargetRoster roster = _bootstrap.ElementRoster;
             if (roster == null) return;
-            int picked = ResolveAimTarget(roster, out AimTargetPicker _, shot.ConeHalfAngleDegrees, shot.RangeMeters);
+            int picked = ResolveAimTarget(roster, out AimTargetPicker _, aimYaw, shot.ConeHalfAngleDegrees, shot.RangeMeters);
 #if UNITY_WEBGL && !UNITY_EDITOR
             Debug.Log("[CAMERA LAB] BOW held=" + heldSeconds.ToString("F2") + " p=" + shot.Progress.ToString("F2")
                 + " target=" + (picked >= 0 ? roster.GetBehaviour(picked).name : "none"));
@@ -572,7 +594,7 @@ namespace Vow.Bootstrap
             if (_grapple.Pulling) return;
             CombatTargetRoster roster = _bootstrap.ElementRoster;
             if (roster == null) return;
-            int picked = ResolveAimTarget(roster, out AimTargetPicker _);
+            int picked = ResolveAimTarget(roster, out AimTargetPicker _, _yaw);
             if (picked < 0) return;
             ICombatTarget target = roster.Get(picked);
             bool inAttackRange = _hero.IsTargetInAttackRange(target);
@@ -644,11 +666,12 @@ namespace Vow.Bootstrap
         // ATK 與按前預覽共用同一個挑選：標記畫在哪，按下去就打誰。
         // preferred＝英雄正在打的目標（黏性，見 AimTargetPicker）。
         // coneHalfAngleOverride／aimRangeOverride ≥ 0：弓蓄力改寫錐半角與距離（< 0＝沿用武器，原路徑不變）。
-        private int ResolveAimTarget(CombatTargetRoster roster, out AimTargetPicker picker,
+        // yawDegrees＝準星方向：一般＝鏡頭 _yaw；弓按住拖曳時＝aimYaw（手勢第一批）。
+        private int ResolveAimTarget(CombatTargetRoster roster, out AimTargetPicker picker, float yawDegrees,
             float coneHalfAngleOverride = -1f, float aimRangeOverride = -1f)
         {
             Vector3 origin = _hero.transform.position;
-            CameraLabAim.GroundForward(_yaw, out float ax, out float az);
+            CameraLabAim.GroundForward(yawDegrees, out float ax, out float az);
             picker = default;
             WeaponSpec weapon = _weapon.Current;   // Standard＝CameraLabAim 常數，行為同 v0.15
             if (coneHalfAngleOverride >= 0f) picker.Begin(origin.x, origin.z, ax, az, weapon, coneHalfAngleOverride, aimRangeOverride);
@@ -718,13 +741,13 @@ namespace Vow.Bootstrap
             return true;
         }
 
-        private void AimAttack()
+        private void AimAttack(float yawDegrees)
         {
             AimAttackCount++;
             LastAimTarget = null;
             CombatTargetRoster roster = _bootstrap.ElementRoster;
             if (roster == null) return;
-            int picked = ResolveAimTarget(roster, out AimTargetPicker picker);
+            int picked = ResolveAimTarget(roster, out AimTargetPicker picker, yawDegrees);
             if (picked < 0) return;
             LastAimTarget = roster.Get(picked);
             _input.SubmitCombatTarget(LastAimTarget);
@@ -747,12 +770,12 @@ namespace Vow.Bootstrap
             int picked;
             AimTargetPicker picker;
             // 覆審 r1 M2：弓蓄力中，標記用蓄力後的錐／射程挑（＝現在放開會打的目標）。
-            if (_attackHeld && _weapon.CurrentId == WeaponId.Bow)
+            if (BowAiming)
             {
                 BowShot shot = BowChargeLogic.Resolve(Time.unscaledTimeAsDouble - _attackPressedAt);
-                picked = ResolveAimTarget(roster, out picker, shot.ConeHalfAngleDegrees, shot.RangeMeters);
+                picked = ResolveAimTarget(roster, out picker, BowAimYaw, shot.ConeHalfAngleDegrees, shot.RangeMeters);
             }
-            else picked = ResolveAimTarget(roster, out picker);
+            else picked = ResolveAimTarget(roster, out picker, _yaw);
             if (picked < 0) return;
             PreviewTarget = roster.Get(picked);
             PreviewInCone = picker.BestIndex >= 0;
@@ -778,7 +801,7 @@ namespace Vow.Bootstrap
             }
             Vector3 apex = _hero.transform.position;
             apex.y += PreviewGroundOffset;
-            CameraLabAim.GroundForward(_yaw, out float ax, out float az);
+            CameraLabAim.GroundForward(BowAiming ? BowAimYaw : _yaw, out float ax, out float az);   // 弓：預覽錐跟手指（aimYaw），不跟鏡頭
             float baseDegrees = Mathf.Atan2(ax, az) * Mathf.Rad2Deg;
             float full = preview.FullAngleDegrees;
             float range = preview.RangeMeters;
