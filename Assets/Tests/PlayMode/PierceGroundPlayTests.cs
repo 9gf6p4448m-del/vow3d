@@ -271,6 +271,112 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(1, releases, "出手提示 1");
             Assert.AreEqual(2, cues, "命中提示：被傷的兩個目標各一次共 2");
         }
+
+        // ── 修訂 P3（覆審 review-pierce-r1）──
+
+        // 碰撞體表面到穿透線軸（英雄 pivot＋1.0m、沿 dir 水平、長 16m；凍結檔規格值，不讀產品常數）的最短距離。
+        private float PierceClearance(Component target, Vector3 dir)
+        {
+            Collider col = target.GetComponent<Collider>();
+            Vector3 origin = _hero.transform.position + Vector3.up * 1.0f;
+            float best = float.PositiveInfinity;
+            for (float t = 0f; t <= 16f; t += 0.01f)
+            {
+                Vector3 p = origin + dir * t;
+                float d = Vector3.Distance(p, col.ClosestPoint(p));
+                if (d < best) best = d;
+            }
+            return best;
+        }
+
+        [UnityTest] // E12（H1）：英雄站地面、準星 0°，A 在 3m／方位 9°（另一組 6°）由身體判定挑為直接目標；C 在英雄→A 延長線 10m（箭視覺正中穿過 C）→C 受 108
+        public IEnumerator Pierce_E12_BodyPickedOffAxis_LineFollowsDirectTarget_CPierced()
+        {
+            float[] bearings = { 9f, 6f };
+            for (int k = 0; k < bearings.Length; k++)
+            {
+                yield return SetupBowGround(3f);
+                DummyTarget a = _bowDummy;
+                Vector3 h = _hero.transform.position;
+                float r = bearings[k] * Mathf.Deg2Rad;
+                Vector3 dir = new Vector3(Mathf.Sin(r), 0f, Mathf.Cos(r));
+                a.transform.position = new Vector3(h.x + dir.x * 3f, a.transform.position.y, h.z + dir.z * 3f);
+                Physics.SyncTransforms();
+                DummyTarget c = SpawnSecondStake(a, dir.x * 10f, dir.z * 10f);
+                yield return null;
+                Assert.AreEqual(_pierceSpawnY, _hero.transform.position.y, 1e-3f, "前提：英雄在真實出生高度");
+                Assert.AreEqual(0f, _lab.YawDegrees, 1e-3f, "前提：準星朝 0°");
+                float a0 = a.Health, c0 = c.Health;
+                yield return HoldAttack(1.0);
+                object picked = _lab.LastAimTarget;
+                yield return WaitForDrop(a, a0, 2f);
+                float dA = a0 - a.Health;
+                _hero.ClearCombatTargetInPlace();
+                yield return WaitSeconds(0.6f);
+                float dC = c0 - c.Health;
+                ArrowInfo arrow = LastArrow();
+                Vector3 ad = Flat(arrow.End - arrow.Start);
+                float arrowBearing = Mathf.Atan2(ad.x, ad.z) * Mathf.Rad2Deg;
+                Vector3 cf = Flat(c.transform.position - arrow.Start);
+                float cToArrow = ad.sqrMagnitude > 1e-6f ? Vector3.Cross(ad.normalized, cf).magnitude : -1f;
+                PierceLog("E12 bearing=" + bearings[k] + " heroY=" + h.y.ToString("F3") + " picked=" + (ReferenceEquals(picked, a) ? "A" : picked == null ? "none" : "other")
+                    + " dmgA=" + dA.ToString("F2") + " dmgC=" + dC.ToString("F2") + " arrowBearing=" + arrowBearing.ToString("F2")
+                    + " C_toArrowLine=" + cToArrow.ToString("F3") + " C_toAimLine=" + (dir.x * 10f).ToString("F3"));
+                float full = _hero.AttackDamage * BowChargedDamageMultiplier;
+                Assert.AreSame(a, picked, "前提：A 由身體判定挑為直接目標（偏離準星 " + bearings[k] + "°）");
+                Assert.AreEqual(full, dA, 1e-3f, "A 受 108");
+                Assert.AreEqual(bearings[k], arrowBearing, 0.5f, "前提：箭視覺沿英雄→A");
+                Assert.AreEqual(full, dC, 1e-3f, "箭視覺正中穿過 C：判定線也要沿英雄→直接目標，C 受 108");
+                Object.Destroy(c.gameObject);
+            }
+        }
+
+        [UnityTest] // E13（M2 鎖線半徑）：英雄站地面，第二木樁 10m、碰撞體表面離線軸 0.14m→中；0.16m→不中
+        public IEnumerator Pierce_E13_LineRadius_Clearance014Hit_016Miss()
+        {
+            float[] clearances = { 0.14f, 0.16f };
+            for (int i = 0; i < clearances.Length; i++)
+            {
+                yield return SetupBowGround(6f);
+                DummyTarget first = _bowDummy;
+                CapsuleCollider cap = first.GetComponent<CapsuleCollider>();
+                float bodyR = cap.radius * Mathf.Max(first.transform.lossyScale.x, first.transform.lossyScale.z);
+                DummyTarget second = SpawnSecondStake(first, bodyR + clearances[i], 10f);
+                yield return null;
+                float measured = PierceClearance(second, Vector3.forward);
+                PierceLog("E13 target=" + clearances[i] + " measured=" + measured.ToString("F4") + " heroY=" + _hero.transform.position.y.ToString("F3") + " secondBoundsY=" + BoundsY(second));
+                Assert.AreEqual(clearances[i], measured, 0.005f, "前提：第二木樁表面離線軸 " + clearances[i] + "m");
+                yield return FullChargeAndMeasure(first, second);
+                PierceLog("E13 clearance=" + clearances[i] + " first=" + _pierceD1.ToString("F4") + " second=" + _pierceD2.ToString("F4"));
+                float full = _hero.AttackDamage * BowChargedDamageMultiplier;
+                Assert.AreEqual(full, _pierceD1, 1e-3f, "木樁 1 受 108");
+                if (i == 0) Assert.AreEqual(full, _pierceD2, 1e-3f, "clearance 0.14 < 半徑 0.15：中 108");
+                else Assert.AreEqual(0f, _pierceD2, "clearance 0.16 > 半徑 0.15：不中");
+            }
+        }
+
+        [UnityTest] // E14（M2 鎖線高度）：英雄站地面，第二目標正對線上、碰撞盒底部高 1.10m→中；1.20m→不中（線高 1.0＋半徑 0.15＝1.15）
+        public IEnumerator Pierce_E14_LineHeight_Bottom110Hit_120Miss()
+        {
+            float[] bottoms = { 1.10f, 1.20f };
+            for (int i = 0; i < bottoms.Length; i++)
+            {
+                yield return SetupBowGround(6f);
+                DummyTarget first = _bowDummy;
+                float halfH = first.GetComponent<Collider>().bounds.extents.y;
+                DummyTarget second = SpawnSecondStake(first, 0f, 10f, _hero.transform.position.y + bottoms[i] + halfH);
+                yield return null;
+                float bottomRel = second.GetComponent<Collider>().bounds.min.y - _hero.transform.position.y;
+                PierceLog("E14 target=" + bottoms[i] + " bottomRel=" + bottomRel.ToString("F4") + " heroY=" + _hero.transform.position.y.ToString("F3") + " secondBoundsY=" + BoundsY(second));
+                Assert.AreEqual(bottoms[i], bottomRel, 0.005f, "前提：第二目標碰撞盒底部高 " + bottoms[i] + "m");
+                yield return FullChargeAndMeasure(first, second);
+                PierceLog("E14 bottom=" + bottoms[i] + " first=" + _pierceD1.ToString("F4") + " second=" + _pierceD2.ToString("F4"));
+                float full = _hero.AttackDamage * BowChargedDamageMultiplier;
+                Assert.AreEqual(full, _pierceD1, 1e-3f, "木樁 1 受 108");
+                if (i == 0) Assert.AreEqual(full, _pierceD2, 1e-3f, "底部 1.10 < 1.15：中 108");
+                else Assert.AreEqual(0f, _pierceD2, "底部 1.20 > 1.15：不中");
+            }
+        }
     }
 }
 #endif
