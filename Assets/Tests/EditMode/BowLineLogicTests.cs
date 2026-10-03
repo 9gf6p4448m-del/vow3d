@@ -44,5 +44,28 @@ namespace Vow.Tests
             Assert.AreEqual("Sector", WeaponAimPreview.For(WeaponId.Hammer, 2.0).Kind.ToString(), "錘不受影響");
             Assert.AreEqual("None", WeaponAimPreview.For(WeaponId.Standard, 2.0).Kind.ToString(), "Standard 不受影響");
         }
+
+        // 修訂 R1 H2：弓錐 2°、目標半徑 0.5，「瞄點離中心 lateral 公尺、距離 d」時是否在錐內（＝半角＋atan(r/d)）。
+        private static bool InBowCone(float halfDegrees, float d, float lateral, float radius)
+        {
+            AimTargetPicker picker = default;
+            picker.Begin(0f, 0f, 0f, 1f, WeaponSpec.Bow, halfDegrees, 16f);
+            return picker.Consider(0, lateral, (float)System.Math.Sqrt(d * d - lateral * lateral), false, true, radius);
+        }
+
+        [Test] // H2（純邏輯）：判定半角＝錐半角＋atan(半徑/距離)；radius 0＝原判定
+        public void H2_BowCone_AddsTargetRadiusAngle()
+        {
+            float t3 = 14f * (float)System.Math.Sin(3.0 * System.Math.PI / 180.0);
+            float t5 = 14f * (float)System.Math.Sin(5.0 * System.Math.PI / 180.0);
+            Assert.IsTrue(InBowCone(2f, 14f, t3, 0.5f), "14m 偏 3°：2°＋2.05°≈4.05° > 3° → 中");
+            Assert.IsFalse(InBowCone(2f, 14f, t5, 0.5f), "14m 偏 5° → 不中");
+            Assert.IsTrue(InBowCone(2f, 3f, 0.30f, 0.5f), "3m 離中心 0.30m（身體內）→ 中");
+            Assert.IsTrue(InBowCone(2f, 6f, 0.30f, 0.5f), "6m 離中心 0.30m → 中");
+            Assert.IsFalse(InBowCone(2f, 3f, 0.80f, 0.5f), "3m 離中心 0.80m（身體外）→ 不中");
+            Assert.IsFalse(InBowCone(2f, 6f, 0.80f, 0.5f), "6m 離中心 0.80m → 不中");
+            Assert.IsFalse(InBowCone(2f, 14f, t3, 0f), "半徑 0＝原判定：3° > 2° 不中");
+            Assert.IsTrue(InBowCone(12f, 6f, 6f * (float)System.Math.Sin(16.0 * System.Math.PI / 180.0), 0.5f), "快速射擊同式：12°＋4.76° > 16° → 中");
+        }
     }
 }

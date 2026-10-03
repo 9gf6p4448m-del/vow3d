@@ -53,6 +53,8 @@ namespace Vow.Core.Logic
     // 武器多載 Begin(..., WeaponSpec)（v0.16.0 武器灰盒）：錐半角 ≤ 0＝沒有錐（只剩距離內最近者，preferred 忽略，見下行）；
     // FallbackToNearest=false＝錐外一律不挑（含 preferred）。既有 6 參數 Begin＝有錐、可退回，行為不變。
     // 無錐武器（劍）不吃黏性：preferred 一律忽略，永遠取距離內最近（覆審 r1 M3，主對話裁定＝照凍結 W2 字面）。
+    // 目標半徑（弓，覆審 bowline r1 H2／凍結檔修訂 R1）：Consider 傳 radiusMeters > 0 時，該候選的錐判定半角＝錐半角＋atan(半徑/距離)
+    // （「線壓到身體就中」）；排序仍看中心夾角。radiusMeters＝0＝原判定（位元相同）。
     public struct AimTargetPicker
     {
         public const float StickyMarginDegrees = 15f;   // 灰盒暫定
@@ -60,6 +62,7 @@ namespace Vow.Core.Logic
         private const float CosTieEpsilon = 1e-4f;
 
         private float _originX, _originZ, _aimX, _aimZ, _cosLimit, _maxDistance;
+        private double _halfAngleRadians;
         private float _bestCos, _bestDistance, _nearestDistance, _preferredCos;
         private bool _preferredInCone;
         private bool _coneEnabled, _fallbackToNearest;
@@ -94,7 +97,8 @@ namespace Vow.Core.Logic
             _originZ = originZ;
             _aimX = length > 1e-9 ? (float)(aimX / length) : 0f;
             _aimZ = length > 1e-9 ? (float)(aimZ / length) : 0f;
-            _cosLimit = (float)Math.Cos(coneHalfAngleDegrees * Math.PI / 180.0);
+            _halfAngleRadians = coneHalfAngleDegrees * Math.PI / 180.0;
+            _cosLimit = (float)Math.Cos(_halfAngleRadians);
             _maxDistance = maxDistance;
             _bestCos = float.NegativeInfinity;
             _bestDistance = float.PositiveInfinity;
@@ -125,7 +129,8 @@ namespace Vow.Core.Logic
         }
 
         // 回傳這個候選是否落在準星錐內（不論是否成為最佳）。
-        public bool Consider(int index, float targetX, float targetZ, bool isPreferred = false, bool fallbackEligible = true)
+        public bool Consider(int index, float targetX, float targetZ, bool isPreferred = false, bool fallbackEligible = true,
+            float radiusMeters = 0f)
         {
             if (_aimX == 0f && _aimZ == 0f) return false;
             float dx = targetX - _originX;
@@ -139,16 +144,19 @@ namespace Vow.Core.Logic
                 NearestIndex = index;
             }
             float cos = distance < 1e-6 ? 1f : (float)((dx * _aimX + dz * _aimZ) / distance);
+            float cosLimit = radiusMeters > 0f && distance > 1e-6
+                ? (float)Math.Cos(Math.Min(Math.PI, _halfAngleRadians + Math.Atan(radiusMeters / distance)))
+                : _cosLimit;
             if (isPreferred && _coneEnabled)
             {
                 PreferredIndex = index;
-                if (cos >= _cosLimit)
+                if (cos >= cosLimit)
                 {
                     _preferredInCone = true;
                     _preferredCos = cos;
                 }
             }
-            if (!_coneEnabled || cos < _cosLimit) return false;
+            if (!_coneEnabled || cos < cosLimit) return false;
 
             bool better = cos > _bestCos + CosTieEpsilon
                           || (cos >= _bestCos - CosTieEpsilon && d < _bestDistance);
