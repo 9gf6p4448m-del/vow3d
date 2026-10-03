@@ -14,11 +14,13 @@ namespace Vow.Tests.PlayMode
     public sealed partial class CameraLabCombatPlayTests
     {
         // ── N1：近處正在打的 A 不得因身體半徑搶走精準瞄 B 的蓄滿箭（覆審探針 Q9 前三組）──
-        [UnityTest] // R2-N1：A 3m/10°、3m/6°、6m/6°，B 10m 準星正對，蓄滿 1.0s → B 受 108、A 不受傷
+        [UnityTest] // R2-N1（穿透卷修訂 P2 改寫）：A 3m/10°、3m/6°、6m/6°＋6m/8°（A 在線外），B 10m 準星正對，蓄滿 1.0s →
+                    // 直接目標＝B、B 受 108；A 的身體在穿透線（英雄＋1.0m、沿準星水平、半徑 0.15）內＝A 也受 108（穿透是預期），線外＝A 不受傷
         public IEnumerator R2_N1_FullChargeAtFarB_NearStickyADoesNotSteal()
         {
-            float[] nearD = { 3f, 3f, 6f };
-            float[] sepDeg = { 10f, 6f, 6f };
+            float[] nearD = { 3f, 3f, 6f, 6f };
+            float[] sepDeg = { 10f, 6f, 6f, 8f };
+            bool sawInside = false, sawOutside = false;
             for (int i = 0; i < nearD.Length; i++)
             {
                 yield return SetupBow(nearD[i]);
@@ -34,6 +36,7 @@ namespace Vow.Tests.PlayMode
                 Assert.AreSame(a, _hero.CurrentTarget, "測試前提：A 是當前目標（黏性偏好）");
                 _lab.RotateThirdPerson(sepDeg[i]);
                 yield return null; yield return null;
+                float clearance = N1BodyClearanceFromPierceLine(a, sepDeg[i]);
                 float a0 = a.Health, b0 = b.Health;
                 yield return HoldAttack(1.0);
                 object picked = _lab.LastAimTarget;
@@ -41,12 +44,43 @@ namespace Vow.Tests.PlayMode
                 yield return WaitSeconds(0.3f);
                 string who = picked == null ? "none" : ReferenceEquals(picked, a) ? "A" : ReferenceEquals(picked, b) ? "B" : "other";
                 Debug.Log("[BOWLINE R2] N1 nearA=" + nearD[i] + "m sep=" + sepDeg[i] + "deg picked=" + who
-                    + " dmgA=" + (a0 - a.Health).ToString("F4") + " dmgB=" + (b0 - b.Health).ToString("F4"));
+                    + " dmgA=" + (a0 - a.Health).ToString("F4") + " dmgB=" + (b0 - b.Health).ToString("F4")
+                    + " bodyClearance=" + clearance.ToString("F3") + " axisDist=" + (clearance + 0.5f).ToString("F3"));
                 Assert.AreSame(b, picked, "A " + nearD[i] + "m/" + sepDeg[i] + "°：蓄滿精準瞄 B 應挑 B（黏性不得用加寬半角）");
-                Assert.AreEqual(b0 - _hero.AttackDamage * BowChargedDamageMultiplier, b.Health, 1e-3f, "B 受蓄滿 108");
-                Assert.AreEqual(a0, a.Health, "A 不因這一發受傷");
+                float full = _hero.AttackDamage * BowChargedDamageMultiplier;
+                Assert.AreEqual(b0 - full, b.Health, 1e-3f, "B 受蓄滿 108");
+                // 修訂 P2：A 身體離穿透線軸 ≤0.15−0.03（線內）＝穿透也中 108；≥0.15＋0.03（軸距 ≥0.68）＝不受傷；中間帶不出題。
+                Assert.IsTrue(clearance <= 0.12f || clearance >= 0.18f, "測試前提：A 不在線半徑邊界帶（clearance=" + clearance.ToString("F3") + "）");
+                if (clearance <= 0.12f)
+                {
+                    sawInside = true;
+                    Assert.AreEqual(a0 - full, a.Health, 1e-3f, "A 身體在穿透線內：同一發穿透也受 108（直接目標仍是 B）");
+                }
+                else
+                {
+                    sawOutside = true;
+                    Assert.AreEqual(a0, a.Health, "A 身體離穿透線 ≥0.65m：A 不因這一發受傷");
+                }
                 Object.Destroy(b.gameObject);
             }
+            Assert.IsTrue(sawInside && sawOutside, "測試前提：線內、線外兩種情境都有（inside=" + sawInside + " outside=" + sawOutside + "）");
+        }
+
+        // A 的碰撞體表面到穿透線軸的最短距離（線＝英雄 pivot＋1.0m、沿 bearingDeg 的水平方向、長 16m；凍結檔 acceptance-pierce-20261003.md 規格值）。
+        private float N1BodyClearanceFromPierceLine(DummyTarget a, float bearingDeg)
+        {
+            Collider col = a.GetComponent<Collider>();
+            float r = bearingDeg * Mathf.Deg2Rad;
+            Vector3 dir = new Vector3(Mathf.Sin(r), 0f, Mathf.Cos(r));
+            Vector3 origin = _hero.transform.position + Vector3.up * 1.0f;
+            float best = float.PositiveInfinity;
+            for (float t = 0f; t <= 16f; t += 0.01f)
+            {
+                Vector3 p = origin + dir * t;
+                float d = Vector3.Distance(p, col.ClosestPoint(p));
+                if (d < best) best = d;
+            }
+            return best;
         }
 
         // ── N2：箭／提示的「是不是弓」以起手時的武器為準 ──
