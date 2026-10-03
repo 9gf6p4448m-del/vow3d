@@ -824,6 +824,53 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(wallHealthBefore, wallHealthAfter, 0.01f, "未覆寫射程 5m：後方 8m 敵牆不受傷（對照組）");
         }
 
+        // 穿透卷 E7（vow-toolchain/acceptance-pierce-20261003.md）：裂風矢同上方 R2 的啟動方式（真天賦、真滑步、真普攻、射程 12m），
+        // 英雄站地面、直接目標＝正前 4m 的敵牆（中心高出英雄腳底 1m）；後方 8m 第二面敵牆也要吃一次普攻傷害。
+        // 舊碼射線朝直接目標中心往上斜（4m 升 1m），到 8m 已高過 2m 牆頂＝0 傷。只引用基底 67691e0 也有的成員。
+        [UnityTest]
+        public IEnumerator Pierce_E7_WindPiercer_GroundHero_DirectTargetCentreAboveFeet_StillPiercesWallBehind()
+        {
+            yield return Setup();
+            EnterLobbyAndStart();
+            _bootstrap.SeedCaptureScoresForTest(500, 0);
+            yield return null;
+            TapTalentOption(0); // Tier 1 SwiftStep.
+            TapTalentOption(0); // Tier 2 WindPiercer.
+            ScriptedInput input = new ScriptedInput();
+            _hero.Initialize(input, null, Camera.main);
+            _opponent.SetHitstopFrozen(true);
+            _hero.SetAttackRangeOverride(12f);
+
+            Assert.IsTrue(_hero.Mover.TryExecuteCadenceDash(Vector3.back));
+            int frames = 0;
+            while (_hero.Mover.IsDashing && frames++ < 16) yield return null;
+            Assert.IsFalse(_hero.Mover.IsDashing);
+            _opponent.transform.position = _hero.transform.position + Vector3.right * 6f;   // 對手移出這條線
+            RuneWall near = _bootstrap.EnemyWalls.SpawnFrom(_hero.transform.position, Vector3.forward);
+            RuneWall far = _bootstrap.EnemyWalls.SpawnFrom(_hero.transform.position, Vector3.forward);
+            Assert.IsNotNull(near);
+            Assert.IsNotNull(far);
+            Assert.AreNotSame(near, far);
+            Vector3 flatOffset = far.transform.position - _hero.transform.position;
+            flatOffset.y = 0f;
+            far.transform.position += Vector3.forward * (8f - flatOffset.magnitude);
+            Physics.SyncTransforms();
+            float heroY = _hero.transform.position.y;
+            Bounds fb = far.GetComponent<Collider>().bounds;
+            Debug.Log("[PIERCE TEST] E7 heroY=" + heroY.ToString("F3") + " nearPivotY=" + near.transform.position.y.ToString("F3")
+                + " farBoundsY=[" + fb.min.y.ToString("F2") + "," + fb.max.y.ToString("F2") + "] farFlat="
+                + Vector3.Distance(new Vector3(far.transform.position.x, 0f, far.transform.position.z), new Vector3(_hero.transform.position.x, 0f, _hero.transform.position.z)).ToString("F2"));
+            Assert.Greater(near.transform.position.y - heroY, 0.5f, "前提：直接目標中心高於英雄腳底（英雄站地面）");
+            float beforeNear = near.Health;
+            float beforeFar = far.Health;
+            input.TapTarget(near);
+            frames = 0;
+            while (near.Health >= beforeNear && frames++ < 90) yield return null;
+            Debug.Log("[PIERCE TEST] E7 near=" + (beforeNear - near.Health).ToString("F2") + " far=" + (beforeFar - far.Health).ToString("F2"));
+            Assert.AreEqual(beforeNear - 60f, near.Health, 0.01f, "直接目標須真的命中，否則射線沒被行使");
+            Assert.AreEqual(beforeFar - 60f, far.Health, 0.01f, "英雄站地面：裂風矢水平線也要打到後方 8m 敵牆一次");
+        }
+
         private IEnumerator WindPierceEightMetreWall(float rangeOverride, System.Action<float, float> report)
         {
             yield return Setup();
