@@ -318,6 +318,111 @@ namespace Vow.Tests.PlayMode
             }
         }
 
+        private const float AimTestDragFor20Degrees = 8.5f;   // (8.5 − 2) / 13 × 40 = 20°
+
+        // 鏡頭朝 +Z，場景木樁在英雄前方 6m、偏右 degrees；選好弓。
+        private IEnumerator SetupBowAtBearing(float degrees)
+        {
+            yield return Load();
+            _bowDummy = Object.FindObjectOfType<DummyTarget>();
+            _bowDummy.Configure(1000f, _bowDummy.TargetFaction);
+            float r = degrees * Mathf.Deg2Rad;
+            yield return WarpAndSettle(_bowDummy.transform.position - new Vector3(Mathf.Sin(r), 0f, Mathf.Cos(r)) * 6f);
+            Vector3 d = _bowDummy.transform.position - _hero.transform.position;
+            Assert.AreEqual(degrees, Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, 0.5f, "場景前提：木樁方位");
+            Assert.AreEqual(0f, _lab.YawDegrees, "場景前提：鏡頭朝 +Z");
+            SelectWeaponByTaps(2);
+            AssertBowSelected();
+            yield return null; yield return null;
+        }
+
+        // B12 共用：按住弓拖 +20°、等鏡頭追上，再以 manualTurn（右半屏第二根手指或 RotateThirdPerson）手動轉 +25°/+30°；
+        // 斷言鏡頭往右、0.5s 內不被拉回（不低於該值 −1°），放開（按住 > 1.0s，滿蓄 4° 錐）時出手方向＝新 pressYaw＋offset。
+        private IEnumerator HoldDragThenManualTurn(float manualDegrees, bool useSecondFinger, string label)
+        {
+            float target = 20f + manualDegrees;
+            yield return SetupBowAtBearing(target);
+            DummyTarget dummy = _bowDummy;
+            float h0 = dummy.Health;
+            double t0 = Time.unscaledTimeAsDouble;
+            PressAttack();
+            yield return null;
+            DragAttackMillimetres(AimTestDragFor20Degrees);
+            while (Time.unscaledTimeAsDouble - t0 < 0.4) yield return null;
+            Assert.AreEqual(20f, _lab.YawDegrees, AimTestYawTolerance, label + "：前提，鏡頭已追到 +20°");
+            if (useSecondFinger)
+            {
+                Vector2 look = new Vector2(Screen.width * 0.62f, Screen.height * 0.62f);
+                Assert.IsFalse(_lab.ActionButtonLayout.Attack.Contains(look.x, look.y), "第二根手指不在 ATK 上");
+                float pixels = manualDegrees * Mathf.Clamp(_input.PixelsPerMillimeter, 3f, 25f) / 2.5f;   // Lab 的右半屏靈敏度
+                _input.BeginSimulatedHold(1, look.x, look.y);
+                yield return null;
+                _input.MoveSimulatedHold(1, look.x + pixels, look.y);
+            }
+            else _lab.RotateThirdPerson(manualDegrees);
+            yield return null; yield return null;
+            float turned = _lab.YawDegrees;
+            Debug.Log("[BOWAIM TEST] B12 " + label + " afterManual=" + turned.ToString("F3"));
+            Assert.AreEqual(target, turned, AimTestYawTolerance, label + "：鏡頭往右轉到 20+" + manualDegrees);
+            double m0 = Time.unscaledTimeAsDouble;
+            float minYaw = turned, maxYaw = turned;
+            while (Time.unscaledTimeAsDouble - m0 < 0.5)
+            {
+                yield return null;
+                float yaw = _lab.YawDegrees;
+                minYaw = Mathf.Min(minYaw, yaw);
+                maxYaw = Mathf.Max(maxYaw, yaw);
+                Assert.GreaterOrEqual(yaw, target - 1f, label + "：手動轉的鏡頭不被追蹤拉回");
+                Assert.LessOrEqual(yaw, target + 1f, label + "：鏡頭也不往反方向多轉");
+            }
+            Assert.AreEqual(0f, YawDiff(PreviewYawDegrees(), target), AimTestYawTolerance, label + "：預覽方向＝新 pressYaw＋offset");
+            if (useSecondFinger) _input.EndSimulatedHold(1);
+            while (Time.unscaledTimeAsDouble - t0 < 1.05) yield return null;
+            ReleaseAttack();
+            yield return WaitForDrop(dummy, h0, 2f);
+            Debug.Log("[BOWAIM TEST] B12 " + label + " min=" + minYaw.ToString("F3") + " max=" + maxYaw.ToString("F3")
+                + " hit=" + (h0 - dummy.Health).ToString("F4"));
+            Assert.AreEqual(h0 - _hero.AttackDamage * BowChargedDamageMultiplier, dummy.Health, 1e-3f,
+                label + "：出手方向＝新 pressYaw＋offset（" + target + "° 的木樁吃滿蓄 108）");
+        }
+
+        [UnityTest] // B12（覆審 r1 H2）：按住弓拖 +20°，第二根手指拖右半屏讓鏡頭轉 +25°→不被拉回、出手朝 45°
+        public IEnumerator B12a_Bow_SecondFingerLookDuringHold_CameraNotPulledBack_AimShifts()
+        {
+            yield return HoldDragThenManualTurn(25f, true, "右半屏第二根手指 +25°");
+        }
+
+        [UnityTest] // B12（覆審 r1 H2）：按住弓拖 +20°，RotateThirdPerson(+30)→不被拉回、出手朝 50°
+        public IEnumerator B12b_Bow_RotateButtonDuringHold_CameraNotPulledBack_AimShifts()
+        {
+            yield return HoldDragThenManualTurn(30f, false, "RotateThirdPerson +30°");
+        }
+
+        [UnityTest] // B13（覆審 r1 M2）：單幀 dt 尖峰（主執行緒卡 0.5s）時，鏡頭追蹤該幀轉動 ≤ 90°/s×0.1s＋容差
+        public IEnumerator B13_Bow_DeltaTimeSpike_CameraStepCappedAtTenthSecond()
+        {
+            yield return Load();
+            SelectWeaponByTaps(2);
+            AssertBowSelected();
+            yield return null;
+            PressAttack();
+            yield return null;
+            DragAttackMillimetres(AimTestDragFull);
+            yield return null;
+            System.Threading.Thread.Sleep(500);   // 本幀卡住 0.5s：下一幀的 unscaledDeltaTime ≈ 0.5s
+            yield return null;
+            float spikeDt = Time.unscaledDeltaTime;
+            float before = _lab.YawDegrees;          // 尖峰幀的 LateUpdate 還沒跑
+            yield return null;
+            float step = YawDiff(before, _lab.YawDegrees);
+            Debug.Log("[BOWAIM TEST] B13 spikeDt=" + spikeDt.ToString("F3") + " before=" + before.ToString("F3") + " step=" + step.ToString("F3"));
+            Assert.GreaterOrEqual(spikeDt, 0.3f, "測試前提：真的有一幀 dt 尖峰");
+            Assert.Greater(YawDiff(before, 40f), 15f, "測試前提：尖峰前鏡頭離 aimYaw 還很遠（不受剩餘角度限制）");
+            Assert.LessOrEqual(step, 90f * 0.1f + 0.01f, "dt 尖峰那一幀最多轉 9°（單幀 0.1s 上限），不得瞬間跳轉");
+            Assert.Greater(step, 8f, "尖峰那一幀仍照 0.1s 上限追（不是停住）");
+            ReleaseAttack();
+        }
+
         // B9'（凍結檔修訂段：TOP 模式不受本批影響）：TOP（俯視）沒有 ATK 鈕——按在 ATK 位置不會有任何 ATK 事件、沒有預覽，也不轉鏡頭。
         [UnityTest]
         public IEnumerator B9p_TopModeUnaffected_NoAttackButton_DragDoesNotRotateCamera()
