@@ -98,6 +98,33 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(330f, _lab.YawDegrees, AimTestYawTolerance, "B3(c) 鏡頭跟到 −30°（＝330°）");
         }
 
+        [UnityTest] // B3d（凍結檔修訂段加嚴）：拖 offset +30° 後按住共 0.25s（已蓄力、鏡頭還沒追上）放開→受傷 60×(1+0.8×0.25)＝72
+        // 拖曳放在按下後約 0.15s：鏡頭到放開時只追了約 0.1s（≈9°），與 30° 的木樁差距大於 p＝0.25 的錐半角 10°——
+        // 「蓄力箭朝當下鏡頭 yaw」的壞實作（突變 b3b）會打空。若在按下下一幀就拖，鏡頭 0.25s 已追到約 22°（差 8° < 10°），分不出來。
+        // 放開時間受幀粒度影響，不可能剛好 0.25s：預期傷害以觸控時鐘實測的按住秒數代入同一條規格式（held 限在 [0.25, 0.27]，即 72～72.96）。
+        public IEnumerator B3d_Bow_ChargedReleaseBeforeCameraCatchesUp_UsesAimYaw()
+        {
+            yield return SetupBowThirtyRight();
+            DummyTarget dummy = _bowDummy;
+            float h0 = dummy.Health;
+            double t0 = Time.unscaledTimeAsDouble;
+            PressAttack();
+            while (Time.unscaledTimeAsDouble - t0 < 0.15) yield return null;
+            DragAttackMillimetres(AimTestDragFor30Degrees);
+            while (Time.unscaledTimeAsDouble - t0 < 0.25) yield return null;
+            double held = Time.unscaledTimeAsDouble - t0;   // 與模擬手指的 Began／Ended 同一個時鐘、同一幀
+            float cameraAtRelease = _lab.YawDegrees;
+            ReleaseAttack();
+            Assert.GreaterOrEqual(held, 0.25, "測試前提：按住滿 0.25s（已蓄力）");
+            Assert.Less(held, 0.27, "測試前提：按住不超過 0.27s");
+            Assert.Greater(YawDiff(cameraAtRelease, 30f), 12f, "測試前提：放開時鏡頭還沒追上（與木樁差距 > 錐半角 10°＋餘裕）");
+            yield return WaitForDrop(dummy, h0, 2f);
+            float expected = _hero.AttackDamage * (1f + 0.8f * (float)held);
+            Debug.Log("[BOWAIM TEST] B3d held=" + held.ToString("F4") + " camera=" + cameraAtRelease.ToString("F3")
+                + " hit=" + (h0 - dummy.Health).ToString("F4") + " expected=" + expected.ToString("F4"));
+            Assert.AreEqual(h0 - expected, dummy.Health, 1e-3f, "B3d 蓄力箭朝 aimYaw（不是當下鏡頭）：木樁受傷 60×(1+0.8p)≈72");
+        }
+
         [UnityTest] // B4：拖到 offset +30° 後 0.15s 內放開（快速射擊）→偏右 30° 的木樁受傷 60
         public IEnumerator B4_Bow_QuickShotAfterDrag_UsesAimYaw()
         {
@@ -291,9 +318,9 @@ namespace Vow.Tests.PlayMode
             }
         }
 
-        // B9 事實查核（不是 B9 通過證據）：TOP（俯視）沒有 ATK 鈕——按在 ATK 位置不會有任何 ATK 事件，也不轉鏡頭。
+        // B9'（凍結檔修訂段：TOP 模式不受本批影響）：TOP（俯視）沒有 ATK 鈕——按在 ATK 位置不會有任何 ATK 事件、沒有預覽，也不轉鏡頭。
         [UnityTest]
-        public IEnumerator B9_FactCheck_TopModeHasNoAttackButton_DragDoesNotRotateCamera()
+        public IEnumerator B9p_TopModeUnaffected_NoAttackButton_DragDoesNotRotateCamera()
         {
             yield return Load();
             SelectWeaponByTaps(2);
