@@ -41,6 +41,17 @@ namespace Vow.Tests.PlayMode
             Assert.AreNotEqual("Hidden/InternalErrorShader", r.sharedMaterial.shader.name, label + "：不是洋紅錯誤 shader");
             Assert.IsTrue(r.sharedMaterial.shader.isSupported, label + "：shader 可用");
             Assert.AreNotEqual(0, Camera.main.cullingMask & (1 << go.layer), label + "：主鏡頭有畫這一層");
+            // 修訂 R2 M3（只加不改）：材質色 alpha > 0；用 Lab 自己的鏡頭核對圖層與視錐。
+            Material m = r.sharedMaterial;
+            Color tint = m.HasProperty("_Color") ? m.GetColor("_Color") : m.color;
+            Assert.Greater(tint.a, 0f, label + "：材質色 alpha > 0");
+            Vow.Bootstrap.CameraComparisonLab lab = Object.FindObjectOfType<Vow.Bootstrap.CameraComparisonLab>();
+            Camera labCamera = lab != null
+                ? typeof(Vow.Bootstrap.CameraComparisonLab).GetField("_camera", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(lab) as Camera
+                : null;
+            Assert.IsNotNull(labCamera, label + "：Lab 鏡頭存在");
+            Assert.AreNotEqual(0, labCamera.cullingMask & (1 << go.layer), label + "：Lab 鏡頭有畫這一層");
+            Assert.IsTrue(GeometryUtility.TestPlanesAABB(GeometryUtility.CalculateFrustumPlanes(labCamera), r.bounds), label + "：在 Lab 鏡頭視錐內");
             if (r is LineRenderer line)
             {
                 Assert.Greater(DrawnWidth(line), 0f, label + "：線寬 > 0");
