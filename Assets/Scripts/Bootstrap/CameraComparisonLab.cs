@@ -603,9 +603,7 @@ namespace Vow.Bootstrap
             if (picked < 0) return;
             ICombatTarget target = roster.Get(picked);
             LastAimTarget = target;
-            CameraLabAim.GroundForward(aimYaw, out float lx, out float lz);   // 穿透卷：滿蓄穿透線與 aimYaw 同向（水平）
-            _hero.ArmChargedShot(target, shot.RangeMeters, shot.DamageMultiplier, shot.Pierce, _bootstrap.TargetRegistry,
-                new Vector3(lx, 0f, lz));
+            _hero.ArmChargedShot(target, shot.RangeMeters, shot.DamageMultiplier, shot.Pierce, _bootstrap.TargetRegistry);
             _input.SubmitCombatTarget(target);
         }
 

@@ -99,7 +99,6 @@ namespace Vow.Core
         private float _chargedShotRange, _chargedShotDamageScale;
         private bool _chargedShotPierce;
         private ICombatTargetResolver _chargedShotResolver;
-        private Vector3 _chargedShotLineDirection;   // 穿透卷：滿蓄穿透線的水平方向（aimYaw）；零＝沿英雄→直接目標的水平方向
         // 覆審 r1 H1：預備只活到「這一箭」——大腦接上目標後一旦換掉／清掉目標（搖桿、點別人、失去視野、倒地）即解除；
         // 還沒接上（後搖中排隊、輸入延遲）最多等一個攻擊週期＋前搖保險時限；目標死亡即解除。
         private bool _chargedShotEngaged;
@@ -108,9 +107,8 @@ namespace Vow.Core
         private bool IsChargedShotEngaged => _chargedShotTarget != null && _brain != null
             && ReferenceEquals(_brain.CurrentTarget, _chargedShotTarget);
         public void ArmChargedShot(ICombatTarget target, float rangeMeters, float damageScale, bool pierce,
-            ICombatTargetResolver pierceResolver, Vector3 lineDirection = default)
+            ICombatTargetResolver pierceResolver)
         {
-            _chargedShotLineDirection = lineDirection;
             _chargedShotTarget = target;
             _chargedShotRange = rangeMeters;
             _chargedShotDamageScale = damageScale;
@@ -595,10 +593,8 @@ namespace Vow.Core
             bool chargedPierce = false;
             float chargedRange = 0f, chargedScale = 1f;
             ICombatTargetResolver chargedResolver = null;
-            Vector3 chargedLine = Vector3.zero;
             if (charged)
             {
-                chargedLine = _chargedShotLineDirection;
                 chargedRange = _chargedShotRange;
                 chargedScale = _chargedShotDamageScale;
                 chargedPierce = _chargedShotPierce;
@@ -611,8 +607,7 @@ namespace Vow.Core
             LastHitPierceRangeMeters = chargedPierce ? chargedRange : 0f;
             OnAttackDamageDealt?.Invoke(target, false);
             if (chargedPierce)
-                ResolveLinePierce(target, chargedLine.sqrMagnitude > 1e-6f ? chargedLine : direction,
-                    chargedResolver, chargedRange, chargedScale);   // 已含裂風矢那一條線
+                ResolveLinePierce(target, direction, chargedResolver, chargedRange, chargedScale);   // 已含裂風矢那一條線
             else if (empowered && _pactAttackTalent == PactTalent.WindPiercer)
             {
                 if (charged) ResolveLinePierce(target, direction, _attackTargetResolver, chargedRange, 1f);   // 覆審 r1 L4
@@ -655,7 +650,7 @@ namespace Vow.Core
         public const float PierceLineHeightMeters = 1.0f;
         public const float PierceLineRadiusMeters = 0.15f;
 
-        // 裂風矢與滿蓄弓箭共用：沿 direction 的水平方向（滿蓄弓＝aimYaw；裂風矢＝英雄→直接目標）、射程內的水平粗線，
+        // 裂風矢與滿蓄弓箭共用：沿英雄→直接目標的水平方向（修訂 P3：與弓箭視覺同一條；沒有直接目標＝空射，不結算傷害、沒有穿透）、射程內的水平粗線，
         // 每個可傷目標（不含直接目標、己方石牆、同陣營）各吃一次。
         private void ResolveLinePierce(ICombatTarget directTarget, Vector3 direction, ICombatTargetResolver resolver,
             float rangeMeters, float damageScale)
