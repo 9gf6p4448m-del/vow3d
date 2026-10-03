@@ -648,9 +648,9 @@ namespace Vow.Core
             ResolveLinePierce(directTarget, direction, _attackTargetResolver, EffectiveAttackRange, 1f);
         }
 
-        // 穿透卷（acceptance-pierce-20261003.md）：穿透判定線＝水平線（只取方向的水平分量，不含俯仰），高度＝英雄 pivot＋PierceLineHeightMeters（跟著英雄，
-        // 不用世界絕對高度、不朝目標中心斜），線粗＝半徑 PierceLineRadiusMeters 的 SphereCast，長度＝當下射程。
-        public const float PierceLineHeightMeters = 1.0f;
+        // 穿透卷（acceptance-pierce-20261003.md 含修訂 P1）：穿透判定線＝水平線（只取方向的水平分量，不含俯仰），高度＝英雄 pivot＋ChestHeightMeters
+        // （跟著英雄，不用世界絕對高度、不朝目標中心斜；與弓箭起點 BowArrowFx.ChestHeight 同一常數），線粗＝半徑 PierceLineRadiusMeters 的 SphereCast，長度＝當下射程。
+        public const float ChestHeightMeters = 1.3f;
         public const float PierceLineRadiusMeters = 0.15f;
 
         // 裂風矢與滿蓄弓箭共用：沿 direction 的水平方向（滿蓄弓＝aimYaw；裂風矢＝英雄→直接目標）、射程內的水平粗線，
@@ -660,7 +660,7 @@ namespace Vow.Core
         {
             direction.y = 0f;
             if (resolver == null || direction.sqrMagnitude < 1e-6f) return;
-            Vector3 origin = transform.position + Vector3.up * PierceLineHeightMeters;
+            Vector3 origin = transform.position + Vector3.up * ChestHeightMeters;
             int count = Physics.SphereCastNonAlloc(origin, PierceLineRadiusMeters, direction.normalized, _pierceHits, rangeMeters,
                                                    Physics.AllLayers, QueryTriggerInteraction.Ignore);
             if (count >= _pierceHits.Length)

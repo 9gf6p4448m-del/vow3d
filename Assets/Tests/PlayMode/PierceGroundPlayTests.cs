@@ -142,18 +142,18 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(full, _pierceD2, 1e-3f, "pivot 在腳底的對手在線上：受 108");
         }
 
-        [UnityTest] // E5：高處目標——碰撞盒最低點高於線＋0.15m（底部 y=1.3）→不被穿透；碰撞盒涵蓋線高度（底部 0.8）→被穿透
+        [UnityTest] // E5（修訂 P1）：高處目標——碰撞盒最低點高於線＋0.15m（線 1.3，底部 y=1.6）→不被穿透；底部 ≤1.3 且頂部 ≥1.3（底部 0.8）→被穿透
         public IEnumerator Pierce_E5_HighTargetAboveLineMissed_CoveringTargetPierced()
         {
-            // (a) 木樁 1 也在高處（pivot 2.3，碰撞 1.3～3.3）6m，第二木樁 pivot 2.3 在 10m：直接目標照中，第二個不中。
-            yield return SetupBowGround(6f, float.NaN, 2.3f);
+            // (a) 木樁 1 也在高處（pivot 2.6，碰撞 1.6～3.6）6m，第二木樁 pivot 2.6 在 10m：直接目標照中，第二個不中。
+            yield return SetupBowGround(6f, float.NaN, 2.6f);
             DummyTarget first = _bowDummy;
-            DummyTarget second = SpawnSecondStake(first, 0f, 10f, 2.3f);
+            DummyTarget second = SpawnSecondStake(first, 0f, 10f, 2.6f);
             yield return null;
             Collider c2 = second.GetComponent<Collider>();
             PierceLog("E5a heroY=" + _hero.transform.position.y.ToString("F3") + " firstBoundsY=" + BoundsY(first) + " secondBoundsY=" + BoundsY(second));
             Assert.AreEqual(_pierceSpawnY, _hero.transform.position.y, 1e-3f, "前提：英雄在真實出生高度");
-            Assert.GreaterOrEqual(c2.bounds.min.y - _hero.transform.position.y, 1.3f - 1e-3f, "前提：第二目標碰撞盒底部 ≥ 英雄腳底＋1.3m");
+            Assert.GreaterOrEqual(c2.bounds.min.y - _hero.transform.position.y, 1.6f - 1e-3f, "前提：第二目標碰撞盒底部 ≥ 英雄腳底＋1.6m（高於線 1.3＋0.15）");
             yield return FullChargeAndMeasure(first, second);
             PierceLog("E5a first=" + _pierceD1.ToString("F4") + " second=" + _pierceD2.ToString("F4"));
             float full = _hero.AttackDamage * BowChargedDamageMultiplier;
@@ -166,13 +166,16 @@ namespace Vow.Tests.PlayMode
             second = SpawnSecondStake(first, 0f, 10f, 1.8f);
             yield return null;
             PierceLog("E5b heroY=" + _hero.transform.position.y.ToString("F3") + " secondBoundsY=" + BoundsY(second));
+            Collider c2b = second.GetComponent<Collider>();
+            Assert.LessOrEqual(c2b.bounds.min.y - _hero.transform.position.y, 1.3f, "前提：(b) 第二目標底部 ≤ 腳底＋1.3m");
+            Assert.GreaterOrEqual(c2b.bounds.max.y - _hero.transform.position.y, 1.3f, "前提：(b) 第二目標頂部 ≥ 腳底＋1.3m（涵蓋線高度）");
             yield return FullChargeAndMeasure(first, second);
             PierceLog("E5b first=" + _pierceD1.ToString("F4") + " second=" + _pierceD2.ToString("F4"));
             Assert.AreEqual(full, _pierceD1, 1e-3f, "(b) 木樁 1 受 108");
             Assert.AreEqual(full, _pierceD2, 1e-3f, "(b) 碰撞盒涵蓋線高度：被穿透 108");
         }
 
-        [UnityTest] // E6：英雄站在腳底 y=2 的平台上，水平線跟著英雄（y=3）；同平台上 6m／10m 兩木樁（pivot y=3）都中
+        [UnityTest] // E6（修訂 P1）：英雄站在腳底 y=2 的平台上，水平線跟著英雄（y=3.3）；同平台上 6m／10m 兩木樁（pivot y=3，碰撞 2～4）都中
         public IEnumerator Pierce_E6_HeroOnPlatform_LineFollowsHero_PiercesSamePlatformStake()
         {
             yield return Load();

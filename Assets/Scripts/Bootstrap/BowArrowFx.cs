@@ -100,7 +100,7 @@ namespace Vow.Bootstrap
     {
         public const float ArrowSpeed = 40f;          // 暫定
         public const float MinFlightSeconds = 0.12f;  // 近距離也看得見（覆審 r1 M4／修訂 R1 D7）：速度 = min(40, 距離/0.12)
-        public const float ChestHeight = 1.3f;
+        public const float ChestHeight = HeroController.ChestHeightMeters;   // 穿透卷修訂 P1：箭起點與穿透判定線同一常數（值只寫在 Core 一處）
         public const float LingerSeconds = 0.1f;      // 到達後停留多久才收（規格 ≤ 0.3s）
         public const float ArrowLength = 1.6f;        // 箭身（D7：≥ 1.5m，暫定）
         public const float ArrowWidth = 0.14f;        // 箭頭端寬（D7：≥ 0.12m，暫定）；尾端 0.4 倍
