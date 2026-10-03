@@ -30,9 +30,13 @@ namespace Vow.Bootstrap
     }
 
     // 目標身體（覆審 r1 M2／H2）：中心＝碰撞體中心（優先 enabled 的那個；換算世界座標，碰撞體停用／目標已隱藏也算得出來），
-    // 半徑＝碰撞體水平半徑。沒有碰撞體＝TargetTransform 位置、半徑 0。零配置（TargetColliders 已快取）。
+    // 半徑＝碰撞體水平半徑；BoxCollider＝三個半軸（含縮放與旋轉）投影到「水平、垂直於英雄→目標視線」方向的半寬（覆審 r2 N3，朝向相關）；
+    // 一律上限 MaxRadiusMeters。沒有碰撞體＝TargetTransform 位置、半徑 0。零配置（TargetColliders 已快取）。
     internal static class BowTargetBody
     {
+        public const float MaxRadiusMeters = 1.0f;   // 修訂 R2 N3
+
+
         private static Collider Pick(CombatTargetBehaviour target)
         {
             if (target == null) return null;
@@ -59,7 +63,13 @@ namespace Vow.Bootstrap
             return t != null ? t.position : Vector3.zero;
         }
 
-        public static float Radius(CombatTargetBehaviour target)
+        // (sightX, sightZ)＝英雄→目標中心的水平向量（不必正規化）。
+        public static float Radius(CombatTargetBehaviour target, float sightX, float sightZ)
+        {
+            return Mathf.Min(RawRadius(target, sightX, sightZ), MaxRadiusMeters);
+        }
+
+        private static float RawRadius(CombatTargetBehaviour target, float sightX, float sightZ)
         {
             Collider c = Pick(target);
             if (c == null) return 0f;
@@ -67,7 +77,17 @@ namespace Vow.Bootstrap
             float horizontalScale = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.z));
             if (c is CapsuleCollider capsule && capsule.direction == 1) return capsule.radius * horizontalScale;
             if (c is SphereCollider sphere) return sphere.radius * Mathf.Max(horizontalScale, Mathf.Abs(s.y));
-            if (c is BoxCollider box) return 0.5f * Mathf.Max(box.size.x * Mathf.Abs(s.x), box.size.z * Mathf.Abs(s.z));
+            if (c is BoxCollider box)
+            {
+                float length = Mathf.Sqrt(sightX * sightX + sightZ * sightZ);
+                float px = length > 1e-6f ? -sightZ / length : 1f;   // 水平、垂直於視線
+                float pz = length > 1e-6f ? sightX / length : 0f;
+                Transform t = box.transform;
+                Vector3 hx = t.TransformVector(box.size.x * 0.5f, 0f, 0f);
+                Vector3 hy = t.TransformVector(0f, box.size.y * 0.5f, 0f);
+                Vector3 hz = t.TransformVector(0f, 0f, box.size.z * 0.5f);
+                return Mathf.Abs(hx.x * px + hx.z * pz) + Mathf.Abs(hy.x * px + hy.z * pz) + Mathf.Abs(hz.x * px + hz.z * pz);
+            }
             if (!c.enabled || !c.gameObject.activeInHierarchy) return 0f;
             Vector3 e = c.bounds.extents;
             return Mathf.Max(e.x, e.z);

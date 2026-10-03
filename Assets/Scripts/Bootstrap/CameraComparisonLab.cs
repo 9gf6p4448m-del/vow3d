@@ -772,7 +772,8 @@ namespace Vow.Bootstrap
                 // 不在石牆後（英雄會突然跑去繞牆），且已在射程內或同一樓地板走得到（崖台→谷底超出射程會走一步就放棄）。
                 bool eligible = inRange && HasClearSight(candidate) && (_hero.IsTargetInAttackRange(candidate) || SameFloor(origin, p));
                 // 覆審 r1 H2（修訂 R1）：弓的判定半角＝錐半角＋atan(目標半徑/距離)（快速射擊與蓄力同式）；其他武器不變。
-                float radius = weapon.Id == WeaponId.Bow ? BowTargetBody.Radius(candidate) : 0f;
+                // 覆審 r2 N3：半徑＝碰撞盒垂直於視線的投影半寬（上限 1.0m）；身體判定只在原錐內沒人時才用（N1，AimTargetPicker）。
+                float radius = weapon.Id == WeaponId.Bow ? BowTargetBody.Radius(candidate, dx, dz) : 0f;
                 picker.Consider(i, p.x, p.z, ReferenceEquals(candidate, current), eligible, radius);
             }
             // 錐內優先；錐內沒有就退回 8m 內最近者，8m 內都沒有才不出手（Standard；其他武器見 WeaponSpec）。
