@@ -32,9 +32,12 @@ namespace Vow.Core.Logic
         public const float RangeExtensionMeters = 4f;    // 12m → 16m
         public const float DamageBonus = 0.8f;           // 1.0 → 1.8
 
+        // 按住已越過快速射擊門檻＝進入蓄力（追加 A12：弓「蓄力時停火」也從這一刻起算，與快速射擊同一個門檻）。
+        public static bool IsCharging(double heldSeconds) => heldSeconds >= QuickShotSeconds;
+
         public static float Progress(double heldSeconds)
         {
-            if (!(heldSeconds >= QuickShotSeconds)) return 0f;   // 含負值與 NaN：一律快速射擊
+            if (!IsCharging(heldSeconds)) return 0f;   // 含負值與 NaN：一律快速射擊
             double p = heldSeconds / FullChargeSeconds;
             return p >= 1.0 ? 1f : (float)p;
         }

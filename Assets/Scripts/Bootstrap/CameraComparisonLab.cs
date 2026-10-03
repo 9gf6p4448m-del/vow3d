@@ -287,7 +287,8 @@ namespace Vow.Bootstrap
             // 只要英雄能移動且不在滑步中就原地清掉；滑步／收招中等到可移動那一幀才清，不排入「走回頭」的待執行移動（F2）。
             if (_ready && IsThirdPerson && _weapon.Current.IsSweep) ClearTargetForSweepWeapon();
             // 追加 A11：弓蓄力中停火——不留普攻目標（前搖可打斷時原地清掉、不命中；後搖中等到可移動那一幀）。
-            if (_ready && IsThirdPerson && _attackHeld && _weapon.CurrentId == WeaponId.Bow) ClearTargetForSweepWeapon();
+            if (_ready && IsThirdPerson && _attackHeld && _weapon.CurrentId == WeaponId.Bow
+                && BowChargeLogic.IsCharging(Time.unscaledTimeAsDouble - _attackPressedAt)) ClearTargetForSweepWeapon();
             else if (_ready && _bowResumePending) ResumeBowHoldTarget();
         }
 
@@ -420,7 +421,9 @@ namespace Vow.Bootstrap
                 else if (_weapon.Current.IsGrapple) GrappleAttack();
                 else if (_weapon.CurrentId == WeaponId.Bow)   // 弓：按下只開始蓄力，放開才出手（OnActionButtonReleased）
                 {
-                    _bowHoldTarget = _hero.CurrentTarget;
+                    // 覆審 r3 MEDIUM-1：取消後還在等接回（滑步中）又按住→目標已被停火清掉，沿用原目標，不覆寫成 null。
+                    ICombatTarget current = _hero.CurrentTarget;
+                    if (current != null || !_bowResumePending) _bowHoldTarget = current;
                     _bowResumePending = false;
                 }
                 else AimAttack();
@@ -484,13 +487,14 @@ namespace Vow.Bootstrap
         private void BowRelease(double heldSeconds)
         {
             BowShotCount++;
-            _hero.DisarmChargedShot();   // 上一支還沒命中的蓄力箭作廢：一次放開只算一支
             BowShot shot = BowChargeLogic.Resolve(heldSeconds);
+            // 追加 A12b：快速射擊不作廢還沒命中的蓄力箭——同一目標重送＝無事發生；挑到別的目標時由英雄的換目標入口解除。
             if (shot.IsQuick)
             {
                 AimAttack();
                 return;
             }
+            _hero.DisarmChargedShot();   // 新的蓄力箭取代上一支還沒命中的：一次蓄力只算一支
             AimAttackCount++;
             LastAimTarget = null;
             CombatTargetRoster roster = _bootstrap.ElementRoster;
@@ -651,7 +655,7 @@ namespace Vow.Bootstrap
             else picker.Begin(origin.x, origin.z, ax, az, weapon);
             float aimRange = aimRangeOverride >= 0f ? aimRangeOverride : weapon.AimRangeMeters;
             ICombatTarget current = _hero.CurrentTarget;
-            if (current == null) current = _bowHoldTarget;   // 追加 A11：弓按住中已停火，黏性仍以按下前在打的目標為準
+            if (current == null && weapon.Id == WeaponId.Bow) current = _bowHoldTarget;   // 追加 A11：弓按住中已停火，黏性仍以按下前在打的目標為準（只限弓，覆審 r3 LOW-1）
             for (int i = 0; i < roster.Count; i++)
             {
                 CombatTargetBehaviour candidate = roster.GetBehaviour(i);
@@ -758,7 +762,13 @@ namespace Vow.Bootstrap
         private void RefreshWeaponPreview()
         {
             if (!_attackHeld) return;
-            if (!IsThirdPerson || !InputPermitted) { EndAttackHold(); return; }
+            if (!IsThirdPerson || !InputPermitted)
+            {
+                EndAttackHold();
+                _bowHoldTarget = null;   // 覆審 r3 LOW-1：輸入被鎖（倒地／通風口）結束的按住不接回，也不留給其他武器當黏性
+                _bowResumePending = false;
+                return;
+            }
             WeaponAimPreview preview = WeaponAimPreview.For(_weapon.CurrentId, Time.unscaledTimeAsDouble - _attackPressedAt);
             ActivePreview = preview;
             if (preview.Kind == WeaponPreviewKind.None || _previewLine == null)
