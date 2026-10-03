@@ -54,6 +54,8 @@ namespace Vow.Bootstrap
         public bool IsAttackHeld => _attackHeld;
         private const int PreviewArcSegments = 32;
         private const float PreviewGroundOffset = 0.05f;
+        private const float PreviewOutlineWidth = 0.12f;
+        private const float PreviewLineWidth = 0.1f;   // 蓄滿細線：寬 ≤ 0.15m（acceptance-bowline C3）
         private static readonly Color PreviewColor = new Color(0.55f, 0.9f, 1f, 0.9f);
         private readonly Vector3[] _previewPoints = new Vector3[PreviewArcSegments + 3];
         private GameObject _previewObject;
@@ -70,6 +72,13 @@ namespace Vow.Bootstrap
         // 追蹤不會把手動轉的鏡頭拉回去（右半屏拖鏡頭的既有行為不變）。_bowTrackedYaw＝Lab 自己最後寫入的 yaw。
         private float _bowPressYaw, _bowAimOffset, _bowTrackedYaw;
         private const float MaxCameraTrackStepSeconds = 0.1f;   // 卡頓一幀最多轉 9°，不因長幀瞬間跳轉
+        // 弓「蓄滿一條線」＋箭矢可見（2026-10-03，vow-toolchain/acceptance-bowline-20261003.md）：每次弓出手（BowRelease 唯一入口）
+        // 生成一支箭（40 m/s 飛到目標或射程盡頭）＋出手提示；命中提示在箭飛到「真的被傷到的目標」時才出現。傷害結算時機不變。
+        private BowArrowFx _arrowFx;
+        public BowArrowVisual LastArrowVisual => _arrowFx != null ? _arrowFx.Last : default;
+        public GameObject LastArrowObject => _arrowFx != null ? _arrowFx.LastObject : null;
+        public int BowReleaseCueCount => _arrowFx != null ? _arrowFx.ReleaseCueCount : 0;
+        public int ArrowHitCueCount => _arrowFx != null ? _arrowFx.HitCueCount : 0;
         private bool BowAiming => _attackHeld && _weapon.CurrentId == WeaponId.Bow;
         private float BowAimYaw => BowAimLogic.NormalizeDegrees(_bowPressYaw + BowAimLogic.DeltaDegrees(_bowTrackedYaw, _yaw) + _bowAimOffset);
         private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
@@ -175,6 +184,7 @@ namespace Vow.Bootstrap
             _runeGhost = Object.FindObjectOfType<RuneGhostPreview>();
             _aimGround = AimGround; // 委派只在這裡建一次，執行期零配置
             CreatePreviewIndicator();
+            _arrowFx = new BowArrowFx(_previewLine != null ? _previewLine.sharedMaterial : null, _camera.transform);
             _ready = true;
             Subscribe();
             RefreshLayout();
@@ -195,6 +205,7 @@ namespace Vow.Bootstrap
             _input.OnLabActionButtonReleased += OnActionButtonReleased;
             _input.OnLabActionButtonCanceled += OnActionButtonCanceled;
             _input.OnLabActionButtonDragged += OnActionButtonDragged;
+            _hero.OnAttackDamageDealt += OnHeroDamageDealt;
 #if UNITY_WEBGL && !UNITY_EDITOR
             _input.OnRuneCastReleased += OnRuneReleasedForLog;
 #endif
@@ -216,12 +227,14 @@ namespace Vow.Bootstrap
                     _input.OnLabActionButtonReleased -= OnActionButtonReleased;
                     _input.OnLabActionButtonCanceled -= OnActionButtonCanceled;
                     _input.OnLabActionButtonDragged -= OnActionButtonDragged;
+                    if (_hero != null) _hero.OnAttackDamageDealt -= OnHeroDamageDealt;
 #if UNITY_WEBGL && !UNITY_EDITOR
                     _input.OnRuneCastReleased -= OnRuneReleasedForLog;
 #endif
                 }
             }
             _subscribed = false;
+            if (_arrowFx != null) _arrowFx.HideAll();
         }
 
         public void SetThirdPerson(bool thirdPerson)
@@ -288,6 +301,7 @@ namespace Vow.Bootstrap
 
         private void Update()
         {
+            if (_ready) _arrowFx.Tick(Time.deltaTime);   // 遊戲時間；早於英雄 Update，同一幀的傷害通知在 NotifyDamage 當下判定
             if (_ready && (_width != Screen.width || _height != Screen.height || _captureState != _bootstrap.CaptureState
                 || _talentVisible != _bootstrap.TalentPanelVisible))
                 RefreshLayout();
@@ -519,11 +533,39 @@ namespace Vow.Bootstrap
             BowShotCount++;
             BowShot shot = BowChargeLogic.Resolve(heldSeconds);
             // 追加 A12b：快速射擊不作廢還沒命中的蓄力箭——同一目標重送＝無事發生；挑到別的目標時由英雄的換目標入口解除。
-            if (shot.IsQuick)
+            if (shot.IsQuick) AimAttack(aimYaw);   // 手勢第一批：快速射擊同樣朝 aimYaw
+            else ChargedRelease(shot, heldSeconds, aimYaw);
+            LaunchArrow(LastAimTarget, aimYaw, shot.RangeMeters, shot.Pierce);   // 快速／蓄力／無目標都看得到一支箭
+        }
+
+        // 箭的起點＝英雄胸口；終點＝挑到的目標（滿蓄穿透＝沿英雄→目標方向到射程盡頭；沒挑到＝沿 aimYaw 到射程盡頭）。
+        private void LaunchArrow(ICombatTarget target, float aimYaw, float rangeMeters, bool pierce)
+        {
+            if (_arrowFx == null) return;
+            Vector3 hero = _hero.transform.position;
+            Vector3 start = hero + Vector3.up * BowArrowFx.ChestHeight;
+            Transform t = target != null && target.IsAlive ? target.TargetTransform : null;
+            CameraLabAim.GroundForward(aimYaw, out float ax, out float az);
+            Vector3 aim = new Vector3(ax, 0f, az);
+            Vector3 end;
+            if (t == null) { target = null; end = start + aim * rangeMeters; }
+            else if (pierce)
             {
-                AimAttack(aimYaw);   // 手勢第一批：快速射擊同樣朝 aimYaw
-                return;
+                Vector3 d = t.position - hero;
+                d.y = 0f;
+                end = start + (d.sqrMagnitude > 1e-6f ? d.normalized : aim) * rangeMeters;
             }
+            else end = t.position;
+            _arrowFx.Launch(start, end, target, Time.time);
+        }
+
+        private void OnHeroDamageDealt(ICombatTarget target)
+        {
+            if (_arrowFx != null) _arrowFx.NotifyDamage(target, Time.frameCount);
+        }
+
+        private void ChargedRelease(BowShot shot, double heldSeconds, float aimYaw)
+        {
             _hero.DisarmChargedShot();   // 新的蓄力箭取代上一支還沒命中的：一次蓄力只算一支
             AimAttackCount++;
             LastAimTarget = null;
@@ -807,12 +849,25 @@ namespace Vow.Bootstrap
                 if (_previewObject != null && _previewObject.activeSelf) _previewObject.SetActive(false);
                 return;
             }
+            _previewLine.widthMultiplier = preview.Kind == WeaponPreviewKind.Line ? PreviewLineWidth : PreviewOutlineWidth;
             Vector3 apex = _hero.transform.position;
             apex.y += PreviewGroundOffset;
             CameraLabAim.GroundForward(BowAiming ? BowAimYaw : _yaw, out float ax, out float az);   // 弓：預覽錐跟手指（aimYaw），不跟鏡頭
             float baseDegrees = Mathf.Atan2(ax, az) * Mathf.Rad2Deg;
             float full = preview.FullAngleDegrees;
             float range = preview.RangeMeters;
+            if (preview.Kind == WeaponPreviewKind.Line)
+            {
+                // 弓蓄到 p ≥ 0.9：沿 aimYaw 一條細線到當下射程（同一組點全部共線，點數不變）。
+                for (int i = 0; i < _previewPoints.Length; i++)
+                {
+                    float d = range * i / (_previewPoints.Length - 1);
+                    _previewPoints[i] = new Vector3(apex.x + ax * d, apex.y, apex.z + az * d);
+                }
+                _previewLine.SetPositions(_previewPoints);
+                if (!_previewObject.activeSelf) _previewObject.SetActive(true);
+                return;
+            }
             _previewPoints[0] = apex;
             for (int i = 0; i <= PreviewArcSegments; i++)
             {
@@ -842,7 +897,7 @@ namespace Vow.Bootstrap
             _previewLine.loop = false;
             _previewLine.alignment = LineAlignment.TransformZ;
             _previewLine.numCapVertices = 0;
-            _previewLine.widthMultiplier = 0.12f;
+            _previewLine.widthMultiplier = PreviewOutlineWidth;
             _previewLine.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             _previewLine.receiveShadows = false;
             _previewLine.startColor = PreviewColor;
