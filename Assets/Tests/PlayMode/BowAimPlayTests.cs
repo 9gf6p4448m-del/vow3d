@@ -380,6 +380,22 @@ namespace Vow.Tests.PlayMode
             while (Time.unscaledTimeAsDouble - t0 < 1.05) yield return null;
             ReleaseAttack();
             yield return WaitForDrop(dummy, h0, 2f);
+            if (dummy.Health == h0)
+            {
+                Debug.Log("[BOWAIM FAILURE READBACK] B12 " + label
+                    + " releaseEntered=" + (_lab.BowShotCount > 0)
+                    + " BowShotCount=" + _lab.BowShotCount + " AimAttackCount=" + _lab.AimAttackCount
+                    + " LastAimTarget=" + (_lab.LastAimTarget == null ? "none"
+                        : _lab.LastAimTarget.TargetTransform == null ? "no-transform" : _lab.LastAimTarget.TargetTransform.name)
+                    + " LastAimTargetIsDummy=" + ReferenceEquals(_lab.LastAimTarget, dummy)
+                    + " CurrentTarget=" + (_hero.CurrentTarget == null ? "none"
+                        : _hero.CurrentTarget.TargetTransform == null ? "no-transform" : _hero.CurrentTarget.TargetTransform.name)
+                    + " CurrentTargetIsDummy=" + ReferenceEquals(_hero.CurrentTarget, dummy)
+                    + " state=" + _hero.StateMachine.CurrentState + " HasChargedShot=" + _hero.HasChargedShot
+                    + " heroPosition=" + _hero.transform.position.ToString("F4")
+                    + " dummyPosition=" + dummy.transform.position.ToString("F4")
+                    + " CanEngageDummy=" + _hero.CanEngage(dummy));
+            }
             Debug.Log("[BOWAIM TEST] B12 " + label + " min=" + minYaw.ToString("F3") + " max=" + maxYaw.ToString("F3")
                 + " hit=" + (h0 - dummy.Health).ToString("F4"));
             Assert.AreEqual(h0 - _hero.AttackDamage * BowChargedDamageMultiplier, dummy.Health, 1e-3f,

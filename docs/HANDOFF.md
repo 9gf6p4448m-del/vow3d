@@ -1,19 +1,20 @@
 ---
-description: "接手 VOW：bowmove-20261005 正在驗證 v0.21.0 第三人稱弓移動射擊；線上仍為 v0.20.1。先讀本檔最新段及同層 vow-toolchain/bowmove-report-20261005.md，不把舊版歷史當現況。"
+description: "接手 VOW：v0.21.0 第三人稱弓移動射擊已更新試玩網頁；完整PlayMode410過／1既有C03敗，手機原生手感未驗證。先讀本檔最新段及同層vow-toolchain/bowmove-report-20261005.md。"
 ---
 
 # VOW 誓約 — Codex 接手紀錄（2026-10-05 更新）
 
-## 最新：v0.21.0 弓移動射擊（驗證中、尚未部署）
+## 最新：v0.21.0 弓移動射擊（網頁已更新、手機手感待試玩）
 
 - 使用者手機回饋後同意「移動不中斷，蓄力與放箭都能邊走邊做」。範圍只限 THIRD＋Bow，保留現有輔助瞄準、步速、傷害、射程、穿透、冷卻；下一把錘尚未開工。
 - 現役 worktree `C:/Users/shung/.gemini/antigravity/scratch/vow-integrate`，分支 `bowmove-20261005`，可回退基底 `b54090c`。主 repo `vow` 的既存未提交 GDD／PLAYER_EXPERIENCE_BLUEPRINT 未動；不自動併 main。
 - 實作：弓搖桿與攻擊三階段並行；鬆桿保留待發新箭，但已結算舊攻擊不自動追射程外或失去視野的目標；明確新攻擊仍可接管。TOP／其他武器保留原流程。
 - 只取代舊 `BowChargeRegressionPlayTests.H1a` 的「搖桿取消弓箭」相反玩法；其餘既有斷言未改。凍結條件及 M5 生命週期釐清在同層 `vow-toolchain/acceptance-bowmove-20261005.md`。
 - 已實跑 `bowmove-green6.xml`：11 passed／0 failed／0 skipped，含移動前搖/出手/收招、60/108實傷、換向、停步、新排隊箭、迷霧記憶、生命週期與冷卻。舊碼位移0、取消傷害及鬆桿後1.375m追擊的紅燈原始結果均保留。第三輪有限來源覆審 `review-bowmove-final-20261005.md` 無未解 findings。
-- 已實跑：M7五組故障全部由行為斷言抓到，逐組還原後通過；最終verify為392過／1既有略／0敗，RESULT: ALL PASS；完整EditMode為385過／8既有略／0敗。完整PlayMode因程序中斷未產生XML，已重啟，輸出bowmove-full-play-resume.xml。未完成：完整PlayMode／WebGL建置與畫面驗證／推送部署。既有C03失敗需照實列出，不把它寫成全綠。證據見同層 `vow-toolchain/bowmove-report-20261005.md`。
-- 線上版本仍為 v0.20.1，來源 `b54090c`、gh-pages `a0312c3`（本輪未部署）。手機原生手感待使用者試玩。
+- 已實跑：M7五組故障全部抓到並還原；verify392過／1既有略／0敗，RESULT: ALL PASS；EditMode385過／8既有略／0敗。完整第二輪PlayMode411個唯一案例、410過／1既有C03敗／0略／0inconclusive、exit2；C03 frame1預期48實0，與基底失敗名稱與訊息相同，整套未全綠。本次9個移動案例、H1a、B12a/b皆過。證據見同層 `vow-toolchain/bowmove-report-20261005.md`。
+- WebGL隔離建置樹 `D:/vow-bowmove-preview`，來源b7c3b9a、exit0；log實報10.7MB／256秒／0.21.0。線上v0.21.0／build 2026-10-05 14:51 UTC · b7c3b9a，gh-pages `13a2f6f88c73db1d886001256494aa9ebc728458`（2026-10-05 23:26:28 +08），23:35 HTTP200實讀新時間戳。手機原生雙指手感未驗證，下一步使用者試玩；看到舊版先關分頁重開或強制重新整理。
 
+- 首輪完整回歸411／409過／2敗（既有C03＋B12b零傷），原因尚未證實，原XML保留。原B12b單跑1/1；B12a/b兩版各3輪12/12；加原A8前序兩版各3輪18/18，原斷言未改。僅在已失敗後加16行唯讀日誌，有限覆審APPROVE；第二輪B12b實傷108。獨立排程 `VOW-BowMove-R2-20261005` 已結束並建置，status `LOCAL_RESULTS_READY_NOT_DEPLOYED` 是部署前wrapper狀態；實際送達看以上gh-pages/HTTP紀錄，勿由舊status誤判未部署。
 ## 以下為 v0.14.0 與更早的歷史紀錄
 
 ## v0.14.0 已建置部署（D04–D06 使用者已勾選通過）
