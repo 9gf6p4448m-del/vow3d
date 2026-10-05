@@ -1,5 +1,5 @@
 ---
-description: "接手 VOW：v0.21.0 第三人稱弓移動射擊已更新試玩網頁；完整PlayMode410過／1既有C03敗，手機原生手感未驗證。先讀本檔最新段及同層vow-toolchain/bowmove-report-20261005.md。"
+description: "/handoff VOW — v0.21.0弓移動射擊已送達；PlayMode410過／1既有C03敗，手機手感待試玩。先讀最新段及同層vow-toolchain/bowmove-release-20261005.md。"
 ---
 
 # VOW 誓約 — Codex 接手紀錄（2026-10-05 更新）
@@ -15,6 +15,14 @@ description: "接手 VOW：v0.21.0 第三人稱弓移動射擊已更新試玩網
 - WebGL隔離建置樹 `D:/vow-bowmove-preview`，來源b7c3b9a、exit0；log實報10.7MB／256秒／0.21.0。線上v0.21.0／build 2026-10-05 14:51 UTC · b7c3b9a，gh-pages `13a2f6f88c73db1d886001256494aa9ebc728458`（2026-10-05 23:26:28 +08），23:35 HTTP200實讀新時間戳。手機原生雙指手感未驗證，下一步使用者試玩；看到舊版先關分頁重開或強制重新整理。
 
 - 首輪完整回歸411／409過／2敗（既有C03＋B12b零傷），原因尚未證實，原XML保留。原B12b單跑1/1；B12a/b兩版各3輪12/12；加原A8前序兩版各3輪18/18，原斷言未改。僅在已失敗後加16行唯讀日誌，有限覆審APPROVE；第二輪B12b實傷108。獨立排程 `VOW-BowMove-R2-20261005` 已結束並建置，status `LOCAL_RESULTS_READY_NOT_DEPLOYED` 是部署前wrapper狀態；實際送達看以上gh-pages/HTTP紀錄，勿由舊status誤判未部署。
+### 2026-10-05 收工存檔
+
+- 喚醒語：`/handoff VOW`。先讀同層 `vow-toolchain/bowmove-release-20261005.md`（改動清單、指令原文、實際輸出及送達），再按需要讀完整report；勿重跑已取得證據的長測。
+- 收工前核對 `git status --short` 空、`git rev-list --left-right --count HEAD...origin/bowmove-20261005` 輸出0／0；遠端來源f943e9c、gh-pages13a2f6f一致。本次收工後續提交只更新這份交接，不改產品或重新建置。
+- 四個BowMove/BowRotate一次性Windows任務皆Ready；實查沒有Unity Editor或本次8741本機伺服器程序。任務、暫存與失敗證據全部保留，不刪檔。
+- 下一步依序：手機試玩THIRD＋Bow移動蓄力/放箭 → 依實際回饋決定是否再調 → 才考慮錘。新玩法/數值須使用者裁定，不因「繼續」自行開錘批次。
+- 已知未驗證：手機原生雙指手感；首輪B12b零傷原因；既有C03失敗。verify與EditMode既有略過保留，不能稱整套全綠。
+
 ## 以下為 v0.14.0 與更早的歷史紀錄
 
 ## v0.14.0 已建置部署（D04–D06 使用者已勾選通過）
