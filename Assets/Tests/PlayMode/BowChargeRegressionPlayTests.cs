@@ -80,23 +80,15 @@ namespace Vow.Tests.PlayMode
             Assert.AreEqual(1000f, _bowDummy.Health, "前提：蓄力箭還沒命中");
         }
 
-        [UnityTest] // H1(a)：滿蓄放開→前搖內推搖桿打斷→1s 後右半屏點同一目標→一般普攻
-        public IEnumerator H1a_Bow_ChargedShotInterruptedByJoystick_LaterWorldTapIsNormalAttack()
+        [UnityTest] // 2026-10-05 使用者批准移動射擊：取代舊 H1a「推搖桿必須取消」；其他取消條件不變。
+        public IEnumerator H1a_Bow_ChargedShotContinuesThroughJoystick_WithMovementAndFullDamage()
         {
             yield return ReleaseFullChargeAtFourteen();
-            Vector2 stick = new Vector2(Screen.width * .15f, Screen.height * .2f);
-            _input.BeginSimulatedHold(1, stick.x, stick.y);
-            _input.MoveSimulatedHold(1, stick.x + _input.ContinuousRouter.JoystickRadiusPixels, stick.y);
-            for (int i = 0; i < 3; i++) yield return null;
+            int cues = _lab.BowReleaseCueCount;
+            BeginBowMove(Vector2.right);
+            yield return BowMoveUntilHit(Vector3.right, 1000f, 108f, cues);
             _input.EndSimulatedHold(1);
-            Assert.IsNull(_hero.CurrentTarget, "前提：搖桿打斷前搖、清掉目標");
-            Assert.AreEqual(1000f, _bowDummy.Health, "前提：被打斷的蓄力箭沒命中");
-            yield return WaitSeconds(1f);
-            yield return WarpAndSettle(_h1Stand);
-            yield return WorldTapDummy(_bowDummy);
-            Assert.AreSame(_bowDummy, _hero.CurrentTarget, "前提：世界點擊點到木樁");
-            yield return MeasureFirstHit(_bowDummy, _h1Behind, 4f);
-            AssertNormalFirstHit("搖桿打斷");
+            Assert.AreSame(_bowDummy, _hero.CurrentTarget, "搖桿不清掉該發鎖定目標");
         }
 
         [UnityTest] // H1(b)：滿蓄放開→前搖內切 WPN（弓→錘）→切回弓→點同一目標→一般普攻

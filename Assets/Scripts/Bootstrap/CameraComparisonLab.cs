@@ -737,6 +737,7 @@ namespace Vow.Bootstrap
         {
             WeaponSpec weapon = _weapon.Current;
             _hero.SetAttackRangeOverride(IsThirdPerson && weapon.OverridesAttackRange ? weapon.AttackRangeMeters : 0f);
+            _hero.SetMovingAttackEnabled(IsThirdPerson && weapon.Id == WeaponId.Bow);
         }
 
         // ATK 與按前預覽共用同一個挑選：標記畫在哪，按下去就打誰。

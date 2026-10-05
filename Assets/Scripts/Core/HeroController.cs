@@ -24,8 +24,21 @@ namespace Vow.Core
         private bool _continuousStarted, _continuousRequested;
         private Func<int> _continuousIntent;
         private int _lastContinuousIntent;
+        private bool _movingAttackEnabled;
+        private bool _stopMovingAttackChase;
+        private bool _movingAttackAwaitingHit;
+        // Camera-lab 第三人稱弓專用：步行與攻擊節奏並行，其他模式預設維持移動打斷前搖。
+        public void SetMovingAttackEnabled(bool enabled)
+        {
+            _movingAttackEnabled = enabled;
+            if (!enabled) _stopMovingAttackChase = _movingAttackAwaitingHit = false;
+        }
+        private bool CanWalkDuringAttack => _movingAttackEnabled && _continuousMove != null
+            && (_brain.State == PlayerState.AttackWindup || _brain.State == PlayerState.AttackRelease
+                || _brain.State == PlayerState.AttackRecovery);
         public void SetContinuousMoveSource(Func<Vector3> source, Func<int> intent = null)
         {
+            _stopMovingAttackChase = _movingAttackAwaitingHit = false;
             _continuousMove = source;
             _continuousIntent = intent;
             _lastContinuousIntent = intent != null ? intent() : 0;
@@ -139,6 +152,7 @@ namespace Vow.Core
         public void ClearCombatTargetInPlace()
         {
             if (_locomotion.IsVentFlying) return;
+            _movingAttackAwaitingHit = false;
             DisarmChargedShot();
             Vector3 p = transform.position;
             ForgetLostTarget();
@@ -254,6 +268,7 @@ namespace Vow.Core
 
         public void CancelCombatForDuel()
         {
+            _stopMovingAttackChase = _movingAttackAwaitingHit = false;
             DisarmChargedShot();
             _pactAttackWindow.Clear();
             _brain.ResetForRound();
@@ -359,18 +374,23 @@ namespace Vow.Core
             int intent = _continuousIntent != null ? _continuousIntent() : 0;
             if (intent != _lastContinuousIntent) { _continuousRequested = pushing; _lastContinuousIntent = intent; }
             if (!pushing) _continuousRequested = false;
-            if (pushing && _continuousRequested && _stateMachine.CanMove)
+            if (pushing && _continuousRequested && (_stateMachine.CanMove || CanWalkDuringAttack))
             {
+                _stopMovingAttackChase = false;
                 Vector3 p = transform.position;
                 ForgetLostTarget();
-                DisarmChargedShot();
-                _brain.CommandMove(new GroundPoint(p.x, p.y, p.z));
+                if (!_movingAttackEnabled)
+                {
+                    DisarmChargedShot();
+                    _brain.CommandMove(new GroundPoint(p.x, p.y, p.z));
+                }
                 _locomotion.Stop();
                 _continuousStarted = true;
                 _continuousRequested = false;
             }
             if (!pushing && _continuousStarted)
             {
+                _stopMovingAttackChase = _movingAttackEnabled;
                 _locomotion.Stop();
                 _continuousStarted = false;
             }
@@ -379,13 +399,23 @@ namespace Vow.Core
             bool freeDashing = _mover.IsDashing && _brain.State != PlayerState.CadenceDashing && !_locomotion.IsVentFlying;
             if (!freeDashing)
             {
-                if (pushing && _continuousStarted && (_brain.State == PlayerState.Idle || _brain.State == PlayerState.Moving))
+                if (pushing && _continuousStarted && (_brain.State == PlayerState.Idle || _brain.State == PlayerState.Moving || CanWalkDuringAttack))
+                {
                     _locomotion.StepContinuous(continuous, dt);
+                    // 腳依搖桿走，出手仍面向輔助瞄準選中的目標；不把行走方向當成穿透／箭矢方向。
+                    if (CanWalkDuringAttack && _brain.CurrentTarget != null) FaceTarget(_brain.CurrentTarget);
+                }
                 else _locomotion.Step(dt);
             }
             _mover.Step(dt);
             _brain.Tick(dt);
             TickLostTargetMemory();
+            // 鬆搖桿後仍讓已起手的箭與收招自然結束；若射程回復後大腦改追人，同幀撤導航，避免下一幀自行走。
+            // 視野記憶也可能在清掉 combat target 後重新發起導航，因此在它之後一併處理。
+            // 不 ResetForRound、不提前關目押窗口，因此攻擊週期不變。新目標／新搖桿意圖才重新接管。
+            if (_stopMovingAttackChase && !_movingAttackAwaitingHit
+                && _brain.State == PlayerState.Moving)
+                ClearCombatTargetInPlace();
             TickChargedShot();
         }
 
@@ -490,6 +520,7 @@ namespace Vow.Core
         private void HandleMoveSelected(Vector3 destination)
         {
             if (_locomotion.IsVentFlying) return;
+            _stopMovingAttackChase = _movingAttackAwaitingHit = false;
             ForgetLostTarget();
             DisarmChargedShot();
             _brain.CommandMove(new GroundPoint(destination.x, destination.y, destination.z));
@@ -499,10 +530,12 @@ namespace Vow.Core
         {
             if (_locomotion.IsVentFlying) return;
             if (!CanEngage(target)) return;   // 批 4：收斂成單一判準（陣營＋蒸氣遮蔽）
+            _stopMovingAttackChase = false;
+            _movingAttackAwaitingHit = _movingAttackEnabled;
             ForgetLostTarget();
             if (!ReferenceEquals(target, _chargedShotTarget)) DisarmChargedShot();   // 弓放開送出的就是預備目標本身
             // 目標tap接手導航；仍按著但沒新操作的搖桿不搶走追擊。
-            _continuousStarted = _continuousRequested = false;
+            if (!_movingAttackEnabled) _continuousStarted = _continuousRequested = false;
             _brain.CommandAttack(target);
             // 覆審 r2：同一幀就被打斷（放開＋DASH）也要算「接上過」，下一幀每幀防線才會解除。
             if (_chargedShotTarget != null && ReferenceEquals(_brain.CurrentTarget, _chargedShotTarget)) _chargedShotEngaged = true;
@@ -714,6 +747,7 @@ namespace Vow.Core
 
         private void HandleHitResolved(ICombatTarget target)
         {
+            _movingAttackAwaitingHit = false;
             OnAttackHitResolved?.Invoke(target);
         }
 

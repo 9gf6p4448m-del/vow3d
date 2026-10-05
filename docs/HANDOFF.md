@@ -1,10 +1,22 @@
 ---
-description: "接手 VOW：v0.14.0 已部署（gh-pages 4443510，來源 290ee2b）；D04–D06 使用者已於 2026-10-01 目視三張截圖逐項勾選通過、camera-lab 線上頁被覆蓋使用者裁定不復原（選 B）。先讀本檔與驗收指南 §25。"
+description: "接手 VOW：bowmove-20261005 正在驗證 v0.21.0 第三人稱弓移動射擊；線上仍為 v0.20.1。先讀本檔最新段及同層 vow-toolchain/bowmove-report-20261005.md，不把舊版歷史當現況。"
 ---
 
-# VOW 誓約 — Codex 接手紀錄（2026-10-01 更新）
+# VOW 誓約 — Codex 接手紀錄（2026-10-05 更新）
 
-## 目前工作：v0.14.0 已建置部署（D04–D06 使用者已勾選通過）
+## 最新：v0.21.0 弓移動射擊（驗證中、尚未部署）
+
+- 使用者手機回饋後同意「移動不中斷，蓄力與放箭都能邊走邊做」。範圍只限 THIRD＋Bow，保留現有輔助瞄準、步速、傷害、射程、穿透、冷卻；下一把錘尚未開工。
+- 現役 worktree `C:/Users/shung/.gemini/antigravity/scratch/vow-integrate`，分支 `bowmove-20261005`，可回退基底 `b54090c`。主 repo `vow` 的既存未提交 GDD／PLAYER_EXPERIENCE_BLUEPRINT 未動；不自動併 main。
+- 實作：弓搖桿與攻擊三階段並行；鬆桿保留待發新箭，但已結算舊攻擊不自動追射程外或失去視野的目標；明確新攻擊仍可接管。TOP／其他武器保留原流程。
+- 只取代舊 `BowChargeRegressionPlayTests.H1a` 的「搖桿取消弓箭」相反玩法；其餘既有斷言未改。凍結條件及 M5 生命週期釐清在同層 `vow-toolchain/acceptance-bowmove-20261005.md`。
+- 已實跑 `bowmove-green6.xml`：11 passed／0 failed／0 skipped，含移動前搖/出手/收招、60/108實傷、換向、停步、新排隊箭、迷霧記憶、生命週期與冷卻。舊碼位移0、取消傷害及鬆桿後1.375m追擊的紅燈原始結果均保留。第三輪有限來源覆審 `review-bowmove-final-20261005.md` 無未解 findings。
+- 已實跑：M7五組故障全部由行為斷言抓到，逐組還原後通過；最終verify為392過／1既有略／0敗，RESULT: ALL PASS；完整EditMode為385過／8既有略／0敗。完整PlayMode因程序中斷未產生XML，已重啟，輸出bowmove-full-play-resume.xml。未完成：完整PlayMode／WebGL建置與畫面驗證／推送部署。既有C03失敗需照實列出，不把它寫成全綠。證據見同層 `vow-toolchain/bowmove-report-20261005.md`。
+- 線上版本仍為 v0.20.1，來源 `b54090c`、gh-pages `a0312c3`（本輪未部署）。手機原生手感待使用者試玩。
+
+## 以下為 v0.14.0 與更早的歷史紀錄
+
+## v0.14.0 已建置部署（D04–D06 使用者已勾選通過）
 
 ### ★ D 建置部署（2026-10-01 17:20 +08:00；取代下方「D 狀態」的待建置敘述）★
 
