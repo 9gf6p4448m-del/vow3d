@@ -92,9 +92,9 @@ namespace Vow.Core.Logic
                     BowShot shot = BowChargeLogic.Resolve(heldSeconds);
                     return new WeaponAimPreview(shot.Progress >= BowChargeLogic.LinePreviewProgress ? WeaponPreviewKind.Line : WeaponPreviewKind.Cone,
                         shot.ConeHalfAngleDegrees, shot.RangeMeters);
-                case WeaponId.Hammer:
-                    return new WeaponAimPreview(WeaponPreviewKind.Sector, WeaponSpec.Hammer.SweepFullAngleDegrees * 0.5f,
-                        WeaponSpec.Hammer.SweepRangeMeters);
+                case WeaponId.Hammer:   // 錘蓄力重擊（2026-10-06）：扇形隨蓄力放大到蓄滿 130°／4.5m
+                    HammerStrike strike = HammerChargeLogic.Resolve(heldSeconds);
+                    return new WeaponAimPreview(WeaponPreviewKind.Sector, strike.FullAngleDegrees * 0.5f, strike.RangeMeters);
                 case WeaponId.Grapple:
                     return new WeaponAimPreview(WeaponPreviewKind.Cone, WeaponSpec.Grapple.ConeHalfAngleDegrees,
                         WeaponSpec.Grapple.AimRangeMeters);

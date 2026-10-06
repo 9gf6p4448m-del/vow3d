@@ -54,8 +54,9 @@ namespace Vow.Tests
 
             WeaponAimPreview hammer = WeaponAimPreview.For(WeaponId.Hammer, 1.0);
             Assert.AreEqual(WeaponPreviewKind.Sector, hammer.Kind);
-            Assert.AreEqual(100f, hammer.FullAngleDegrees, Tol);
-            Assert.AreEqual(3.5f, hammer.RangeMeters, Tol);
+            // 錘蓄力重擊修訂一（acceptance-hammer-20261006.md，使用者 2026-10-06 同意取代）：1.0s＝p 1/1.2，全角 100+30p、半徑 3.5+p。
+            Assert.AreEqual(100f + 30f / 1.2f, hammer.FullAngleDegrees, Tol);
+            Assert.AreEqual(3.5f + 1f / 1.2f, hammer.RangeMeters, Tol);
 
             WeaponAimPreview grapple = WeaponAimPreview.For(WeaponId.Grapple, 1.0);
             Assert.AreEqual(WeaponPreviewKind.Cone, grapple.Kind);

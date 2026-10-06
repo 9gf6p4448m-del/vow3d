@@ -261,6 +261,7 @@ namespace Vow.Tests.PlayMode
                 double t0 = Time.unscaledTimeAsDouble;
                 float holdHit = -1f;
                 bool released = false;
+                double heldAtRelease = 0.0;
                 float until = Time.time + 4f;
                 while (Time.time < until && (holdHit < 0f || !released))
                 {
@@ -269,6 +270,7 @@ namespace Vow.Tests.PlayMode
                     if (!released && Time.unscaledTimeAsDouble - t0 >= 1.0)
                     {
                         int before = _lab.AimAttackCount;
+                        heldAtRelease = Time.unscaledTimeAsDouble - t0;
                         ReleaseAttack();
                         released = true;
                         Assert.AreEqual(before, _lab.AimAttackCount, label + "：放開不再出手");
@@ -276,14 +278,20 @@ namespace Vow.Tests.PlayMode
                 }
                 Debug.Log("[BOWCHARGE TEST] A7 " + label + " tap=" + tapHit.ToString("F3") + " hold=" + holdHit.ToString("F3"));
                 Assert.IsTrue(released, label + "：有按滿 1.0s 再放開");
-                Assert.AreEqual(tapHit, holdHit, 1e-3f, label + "：按住 1.0s 的傷害與點擊相同（沒有蓄力效果）");
+                if (weapons[w] == 3)
+                {
+                    // 錘蓄力重擊修訂一（acceptance-hammer-20261006.md，使用者 2026-10-06 同意取代）：按住 1.0s＝p 對應倍率 1+0.6p（p＝t/1.2）。
+                    float p = Mathf.Min((float)(heldAtRelease / 1.2), 1f);
+                    Assert.AreEqual(tapHit * (1f + 0.6f * p), holdHit, 0.05f, label + "：按住 1.0s 放開＝1+0.6p 倍（p=" + p + "）");
+                }
+                else Assert.AreEqual(tapHit, holdHit, 1e-3f, label + "：按住 1.0s 的傷害與點擊相同（沒有蓄力效果）");
 
                 // 覆審 r1 M3：放開之後那一發也要量——放開不得把下一發升級（倍率／穿透）。
                 float hr = dummy.Health;
                 if (weapons[w] == 3)
                 {
                     yield return WaitSeconds(1f);
-                    Assert.AreEqual(hr, dummy.Health, 1e-3f, label + "：放開後不再出手（錘只在按下時橫掃，與點擊相同）");
+                    Assert.AreEqual(hr, dummy.Health, 1e-3f, label + "：放開後不再出手（錘只在放開時橫掃一次）");
                 }
                 else
                 {

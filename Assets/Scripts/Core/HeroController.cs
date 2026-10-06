@@ -322,6 +322,12 @@ namespace Vow.Core
         public float RageSpeedMultiplier => _rageMultiplier;
         public void SetRageSpeedMultiplier(float multiplier) { _rageMultiplier = multiplier; }
 
+        // camera-lab 錘蓄力重擊（2026-10-06）：武器造成的步速倍率（蓄力中 0.6、放開後前搖＋收招 0），同樣在 TickQuicksand 合成。
+        // 只有 CameraComparisonLab 第三人稱拿錘時寫入；其餘一律 1f＝原路徑不變。
+        private float _weaponMoveMultiplier = 1f;
+        public float WeaponMoveSpeedMultiplier => _weaponMoveMultiplier;
+        public void SetWeaponMoveSpeedMultiplier(float multiplier) { _weaponMoveMultiplier = multiplier; }
+
         // v0.10.0（V0100_SANCTUARY_PLAN.md E3～E5）：聖所受傷百分比（85～100），在 TakeDuelDamage 內套用。
         // 由組裝根每幀依 CaptureMatchLogic 寫入；非 Active（Off／Lobby／Ended）與開局點擊當幀一律是 100。單挑恆為 100。
         private int _damageTakenPercent = 100;
@@ -482,7 +488,7 @@ namespace Vow.Core
 
             _quicksand.Tick(dt, zoneId);
             _locomotion.SetMovementLocked(_quicksand.IsRooted);
-            _locomotion.SetSpeedMultiplier(_quicksand.SpeedMultiplier * _rageMultiplier);
+            _locomotion.SetSpeedMultiplier(_quicksand.SpeedMultiplier * _rageMultiplier * _weaponMoveMultiplier);
 
             bool isRootedNow = _quicksand.IsRooted;
             if (isRootedNow && !_wasRooted) OnRootedStarted?.Invoke();

@@ -39,6 +39,12 @@ namespace Vow.Bootstrap
         public int SweepStartCount { get; private set; }
         public int SweepResolveCount { get; private set; }
         public int LastSweepHits { get; private set; }
+        // 錘蓄力重擊（2026-10-06，vow-toolchain/acceptance-hammer-20261006.md 含修訂一）：按下只蓄力（步速 ×0.6），放開才起手；
+        // 這一擊的全角／半徑／倍率／冷卻＝HammerChargeLogic.Resolve(按住秒數)。放開後前搖＋收招原地鎖步（步速 ×0）。
+        private HammerStrike _sweepStrike;
+        private bool _hammerLocked;
+        private float _hammerLockUntil;
+        public HammerStrike LastHammerStrike => _sweepStrike;
         // 鉤鎖（v0.17.0）：拉自己到目標前 2m，逐幀走 HeroLocomotion.ApplyDisplacement（對牆裁切、縛足歸零）；抵達才接既有普攻。
         private GrappleHook _grapple;
         private ICombatTarget _grappleTarget;
@@ -280,6 +286,8 @@ namespace Vow.Bootstrap
                 _hero.SetContinuousMoveSource(null);
                 ApplyWeaponRange();
                 _sweep.CancelPending();   // 俯視不結算未完成的橫掃；冷卻照算（覆審 r1 L1）
+                _hammerLocked = false;
+                _hero.SetWeaponMoveSpeedMultiplier(1f);   // 錘蓄力／鎖步只在第三人稱生效
                 _input.ContinuousRouter.ActionButtonsEnabled = false;
                 if (_runeCaster != null) _runeCaster.SetDragDirectionOverride(null);
                 if (_runeGhost != null) _runeGhost.SetDragDirectionOverride(null);
@@ -317,7 +325,10 @@ namespace Vow.Bootstrap
                 || _talentVisible != _bootstrap.TalentPanelVisible))
                 RefreshLayout();
             // 覆審 r1 L2：前搖到點時武器已不是錘、或輸入被鎖（倒地／通風口飛行／對局暫停）→取消這一掃。
+            // 錘蓄力重擊 A6：前搖中只要輸入被鎖過一幀（倒地／通風口飛行／對局暫停）或已不是錘就取消，解鎖後也不補結算。
+            if (_ready && IsThirdPerson && _sweep.Pending && (!InputPermitted || !_weapon.Current.IsSweep)) CancelHammerSweep();
             if (_ready && IsThirdPerson && _sweep.TryConsumeResolve(Time.time) && _weapon.Current.IsSweep && InputPermitted) ResolveSweep();
+            if (_ready) ApplyHammerMoveSpeed();
             if (_ready && _grapple.Pulling) StepGrapple();
             // 覆審 r3 N1：第三人稱拿錘＝不留單目標普攻。不論目標從哪來（點敵人、冷卻中 TOP 鎖定後切回、切武器、起手），
             // 只要英雄能移動且不在滑步中就原地清掉；滑步／收招中等到可移動那一幀才清，不排入「走回頭」的待執行移動（F2）。
@@ -464,7 +475,7 @@ namespace Vow.Bootstrap
                 _bowPressYaw = _yaw;   // 每次按下都重新起算：offset 歸零、pressYaw＝當下準星
                 _bowTrackedYaw = _yaw;
                 _bowAimOffset = 0f;
-                if (_weapon.Current.IsSweep) HammerSweep();
+                if (_weapon.Current.IsSweep) HammerPress();   // 錘：按下只開始蓄力，放開才出手（OnActionButtonReleased）
                 else if (_weapon.Current.IsGrapple) GrappleAttack();
                 else if (_weapon.CurrentId == WeaponId.Bow)   // 弓：按下只開始蓄力，放開才出手（OnActionButtonReleased）
                 {
@@ -485,8 +496,15 @@ namespace Vow.Bootstrap
         {
             if (button != LabActionButton.Attack || !_attackHeld) return;
             bool bow = _weapon.CurrentId == WeaponId.Bow;
+            bool hammer = _weapon.Current.IsSweep;
             float aimYaw = BowAimYaw;
             EndAttackHold();
+            if (hammer)
+            {
+                _bowHoldTarget = null;
+                if (_ready && IsThirdPerson && InputPermitted) HammerRelease(heldSeconds);
+                return;
+            }
             if (!bow || !_ready || !IsThirdPerson || !InputPermitted) { _bowHoldTarget = null; return; }
             BowRelease(heldSeconds, aimYaw);
             // 追加 A11：放開沒挑到目標（錐內無人）＝按住前在打的目標接回自動普攻（同現行弓「錐內無人不改目標」）。
@@ -622,29 +640,66 @@ namespace Vow.Bootstrap
 #endif
         }
 
-        // 錘：按 ATK 就朝準星水平前方起手（錐內沒人也出手，使用者 2026-10-02 簽准）；冷卻內再按不起手。
-        private void HammerSweep()
+        // 錘按下：只開始蓄力（ATK 計數仍以按下為準），不起手、不進冷卻。
+        private void HammerPress()
         {
             AimAttackCount++;
             LastAimTarget = null;
-            WeaponSpec hammer = _weapon.Current;
-            if (!_sweep.TryStart(Time.time, hammer.SweepCooldownSeconds, hammer.SweepWindupSeconds)) return;
+            ClearTargetForSweepWeapon();
+        }
+
+        // 錘放開：朝準星水平前方起手（錐內沒人也出手，使用者 2026-10-02 簽准）；冷卻內放開不起手。
+        // 未滿 0.2s＝現行橫掃；其餘依 HammerChargeLogic 放大範圍／倍率／冷卻（2026-10-06）。起手後前搖＋收招原地鎖步。
+        private void HammerRelease(double heldSeconds)
+        {
+            HammerStrike strike = HammerChargeLogic.Resolve(heldSeconds);
+            if (!_sweep.TryStart(Time.time, strike.CooldownSeconds, strike.WindupSeconds)) return;
+            _sweepStrike = strike;
             SweepStartCount++;
             // 覆審 r2 F1：以起手為準清掉普攻目標——不論目標從哪個入口來（含 TOP 鎖定後切回 THIRD），錘下都不疊普攻。
             ClearTargetForSweepWeapon();
             CameraLabAim.GroundForward(_yaw, out _sweepDirX, out _sweepDirZ);
+            _hammerLocked = true;
+            _hammerLockUntil = Time.time + strike.WindupSeconds + WeaponSpec.HammerRecoverySeconds;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            Debug.Log("[CAMERA LAB] HAMMER held=" + heldSeconds.ToString("F2") + " p=" + strike.Progress.ToString("F2"));
+#endif
         }
 
-        // 前搖結束：以英雄當下位置為頂點、起手時的準星方向為軸，扇形內每個可傷目標各吃一次 AttackDamage。
+        // 取消還沒結算的那一掃（冷卻照算）並解除鎖步。
+        private void CancelHammerSweep()
+        {
+            _sweep.CancelPending();
+            _hammerLocked = false;
+        }
+
+        // 錘的步速倍率：放開後前搖＋收招＝0（原地）、蓄力中＝0.6、其餘 1。只在第三人稱拿錘且可輸入時非 1。
+        private void ApplyHammerMoveSpeed()
+        {
+            float scale = 1f;
+            if (IsThirdPerson && _weapon.Current.IsSweep && InputPermitted)
+            {
+                if (_hammerLocked && Time.time < _hammerLockUntil) scale = 0f;
+                else
+                {
+                    _hammerLocked = false;
+                    if (_attackHeld) scale = WeaponSpec.HammerChargeMoveSpeedMultiplier;
+                }
+            }
+            else _hammerLocked = false;
+            if (_hero.WeaponMoveSpeedMultiplier != scale) _hero.SetWeaponMoveSpeedMultiplier(scale);
+        }
+
+        // 前搖結束：以英雄當下位置為頂點、起手時的準星方向為軸，這一擊的扇形內每個可傷目標各吃一次 AttackDamage×倍率。
         private void ResolveSweep()
         {
             SweepResolveCount++;
             LastSweepHits = 0;
             CombatTargetRoster roster = _bootstrap.ElementRoster;
             if (roster == null || !_hero.IsAlive) return;
-            WeaponSpec hammer = WeaponSpec.Hammer;
+            HammerStrike hammer = _sweepStrike;
             Vector3 apex = _hero.transform.position;
-            float damage = _hero.AttackDamage;
+            float damage = _hero.AttackDamage * hammer.DamageMultiplier;
             Faction faction = _hero.HeroFaction;
             for (int i = 0; i < roster.Count; i++)
             {

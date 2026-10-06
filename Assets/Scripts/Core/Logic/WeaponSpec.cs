@@ -74,6 +74,18 @@ namespace Vow.Core.Logic
         public static readonly WeaponSpec Hammer = new WeaponSpec(WeaponId.Hammer,
             0f, 0f, 0f, false, false, true, 100f, 3.5f, 0.8f, 0.25f);
 
+        // 錘蓄力重擊（使用者 2026-10-06 簽准，vow-toolchain/acceptance-hammer-20261006.md 含修訂一）——以下數值全部暫定、試玩即改。
+        // 按住 ATK 蓄力、放開才出手；未滿快速門檻＝上面的現行橫掃（100°／3.5m／前搖 0.25s／1 倍／冷卻 0.8s）。
+        // p＝按住秒數 / 蓄滿秒數（clamp 0～1），全角、半徑、傷害倍率、冷卻皆由現行值線性插到下列蓄滿值（HammerChargeLogic）。
+        public const double HammerQuickSweepSeconds = 0.2;              // 暫定、試玩即改（同弓快速門檻）
+        public const double HammerFullChargeSeconds = 1.2;              // 暫定、試玩即改
+        public const float HammerChargedSweepFullAngleDegrees = 130f;   // 暫定、試玩即改（全角）
+        public const float HammerChargedSweepRangeMeters = 4.5f;        // 暫定、試玩即改
+        public const float HammerChargedDamageMultiplier = 1.6f;        // 暫定、試玩即改（每個命中目標 × 英雄普攻傷害）
+        public const float HammerChargedCooldownSeconds = 1.2f;         // 暫定、試玩即改（蓄滿出手後；中間值 0.8＋0.4p）
+        public const float HammerChargeMoveSpeedMultiplier = 0.6f;      // 暫定、試玩即改（蓄力中步速 60%）
+        public const float HammerRecoverySeconds = 0.15f;               // 暫定、試玩即改（放開後前搖＋收招原地鎖步；同 CombatTuning.RecoverySeconds）
+
         // 鉤鎖（使用者 2026-10-02 簽准，暫定）：準星 ±20°、10m 窄錐（錐外不挑），且須視線無石牆、同一樓地板；
         // 按 ATK 把自己拉到目標前 2m（約 0.2s，逐幀走 HeroLocomotion.ApplyDisplacement 對牆裁切），抵達後接既有普攻。冷卻 4s。
         public static readonly WeaponSpec Grapple = new WeaponSpec(WeaponId.Grapple,
@@ -118,6 +130,13 @@ namespace Vow.Core.Logic
         {
             return ElementGeometry.IsInsideSector(px, pz, apexX, apexZ, dirX, dirZ,
                 weapon.SweepRangeMeters, weapon.SweepFullAngleDegrees);
+        }
+
+        // 錘蓄力重擊：範圍依這一擊（HammerStrike）的全角與半徑。
+        public static bool Contains(in HammerStrike strike, float apexX, float apexZ, float dirX, float dirZ, float px, float pz)
+        {
+            return ElementGeometry.IsInsideSector(px, pz, apexX, apexZ, dirX, dirZ,
+                strike.RangeMeters, strike.FullAngleDegrees);
         }
     }
 
