@@ -274,6 +274,7 @@ namespace Vow.Tests.PlayMode
             for (int w = 0; w < weapons.Length; w++)
             {
                 float[] hit = new float[2];
+                double[] heldAtRelease = new double[2];
                 string[] picked = new string[2];
                 for (int pass = 0; pass < 2; pass++)
                 {
@@ -299,6 +300,7 @@ namespace Vow.Tests.PlayMode
                         Assert.AreEqual(0f, _lab.YawDegrees, 1e-3f, label + "：按住期間鏡頭 yaw 不變");
                         if (weapons[w] != 0) Assert.AreEqual(0f, YawDiff(PreviewYawDegrees(), 0f), AimTestYawTolerance, label + "：預覽方向＝鏡頭前方");
                     }
+                    heldAtRelease[pass] = Time.unscaledTimeAsDouble - t0;
                     ReleaseAttack();
                     float until = Time.time + 2f;
                     while (firstHit < 0f && Time.time < until)
@@ -313,7 +315,17 @@ namespace Vow.Tests.PlayMode
                 Debug.Log("[BOWAIM TEST] B8 " + labels[w] + " noDrag=" + hit[0].ToString("F3") + "/" + picked[0]
                     + " drag=" + hit[1].ToString("F3") + "/" + picked[1]);
                 Assert.Greater(hit[0], 0f, labels[w] + "：不拖要真的命中（對照組）");
-                Assert.AreEqual(hit[0], hit[1], 1e-3f, labels[w] + "：拖曳與不拖的出手結果相同");
+                if (weapons[w] == 3)
+                {
+                    // 錘蓄力重擊修訂二（acceptance-hammer-20261006.md，使用者 2026-10-06 同意取代）：每趟各自比對 1+0.6p（p＝該趟按住秒數/1.2）。
+                    for (int pass = 0; pass < 2; pass++)
+                    {
+                        float p = Mathf.Min((float)(heldAtRelease[pass] / 1.2), 1f);
+                        Assert.AreEqual(_hero.AttackDamage * (1f + 0.6f * p), hit[pass], 0.05f,
+                            labels[w] + (pass == 0 ? " 不拖" : " 拖 15mm") + "：傷害＝1+0.6p 倍（p=" + p + "）");
+                    }
+                }
+                else Assert.AreEqual(hit[0], hit[1], 1e-3f, labels[w] + "：拖曳與不拖的出手結果相同");
                 Assert.AreEqual(picked[0], picked[1], labels[w] + "：拖曳與不拖挑到同一目標");
             }
         }
