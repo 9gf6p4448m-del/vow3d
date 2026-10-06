@@ -1,10 +1,19 @@
 ---
-description: "/handoff VOW — v0.21.0弓移動射擊已送達；PlayMode410過／1既有C03敗，手機手感待試玩。先讀最新段及同層vow-toolchain/bowmove-release-20261005.md。"
+description: "/handoff VOW — v0.22.0錘蓄力重擊已送達；PlayMode418過／1既有C03敗，手機手感、60%步速、M1 DASH繞過鎖步待裁定。先讀最新段及同層vow-toolchain/hammer-report-20261006.md。"
 ---
 
-# VOW 誓約 — Codex 接手紀錄（2026-10-05 更新）
+# VOW 誓約 — Codex 接手紀錄（2026-10-06 更新）
 
-## 最新：v0.21.0 弓移動射擊（網頁已更新、手機手感待試玩）
+## 最新：v0.22.0 錘蓄力重擊（網頁已更新、手機手感待試玩）
+
+- 範圍：只限 THIRD＋CAMERA LAB 灰盒的錘；TOP／弓／劍／鉤鎖行為不變。worktree `C:/Users/shung/.gemini/antigravity/scratch/vow-hammer`，分支 `hammer-20261006`（基底 26d0b66），未併 main。凍結驗收＋修訂一（線性曲線、冷卻 0.8＋0.4p、收招 0.15s、取代兩條舊斷言）＋修訂二（B8 錘分支）在同層 `vow-toolchain/acceptance-hammer-20261006.md`。
+- 玩法：按住 ATK 蓄力、放開才起手；未滿 0.2s＝現行橫掃（100°／3.5m／前搖 0.25s／1 倍／冷卻 0.8s）。p＝按住秒數/1.2，全角 100→130°、半徑 3.5→4.5m、傷害 1→1.6 倍、冷卻 0.8→1.2s 皆線性，預覽扇形同步放大。蓄力中步速 ×0.6；放開後前搖 0.25s＋收招 0.15s 原地鎖步。蓄力中 DASH／WPN／切 TOP 作廢不出手、不進冷卻；輸入被鎖（倒地／通風口／對局暫停）取消蓄力與前搖。數值全在 `WeaponSpec`（暫定、試玩即改）。
+- 改動：新 `Assets/Scripts/Core/Logic/HammerChargeLogic.cs`；`WeaponSpec.cs`（錘蓄力常數＋扇形重載）、`BowChargeLogic.cs`（錘預覽依蓄力）、`HeroController.cs`（武器步速倍率在 TickQuicksand 合成）、`CameraComparisonLab.cs`（HammerPress／HammerRelease／鎖步／前搖取消）、`VowVersion.cs`＋`ProjectSettings.asset` 0.22.0、`GDD.md` 錘條目下一段。新測試 `HammerChargePreviewTests.cs`、`HammerChargeLogicTests.cs`（EditMode）、`HammerChargePlayTests.cs`（PlayMode HA1–HA8）；依修訂一／二取代 `BowChargeLogicTests` 錘預覽列、`BowChargePlayTests` A7 錘分支、`BowAimPlayTests` B8 錘分支。
+- 證據（同層 `vow-toolchain/`，總表 `hammer-report-20261006.md`）：基底紅 `hammer-base-red-*.xml`／`hammer-base-red-summary.txt`／`hammer-base-red2-play.xml`（全紅在行為斷言）；突變 A2／A4／A5／A6 四處皆抓到並還原 `hammer-mut-journal.txt`；verify 398 過／1 略／ALL PASS `hammer-verify-1.log`；EditMode 391 過／8 既有略／0 敗 `hammer-full-edit.xml`；完整 PlayMode 419／418 過／1 既有 C03 敗 `hammer-r2-full-play.xml`（修訂二前一輪 `hammer-full-play.xml` 保留）。fresh 覆審 `hammer-review-20261006.md` 無 CRITICAL／HIGH。
+- 送達：隔離建置樹 `D:/vow-hammer-preview`（2d4261b），log `vow-toolchain/hammer-webgl.log` 實報 10.7MB／248s／0.22.0、exit 0。gh-pages `326c440d716d0ffa2ecfcd6c5149add3b79c744a`（2026-10-06 18:16:00 +0800）；18:17 HTTP 200 實讀 `VOW v0.22.0 / build 2026-10-06 10:15 UTC · 2d4261b`；6 檔線上／本機 SHA256 全相符 `vow-toolchain/hammer-online-artifact-proof.txt`。試玩網址 https://9gf6p4448m-del.github.io/vow3d/?v=0220 ，看到舊版先關分頁重開或強制重新整理。
+- 未驗證／待裁定：手機原生手感；蓄力 60% 步速是否好用；**M1（覆審 MEDIUM）DASH 可繞過放開後的原地鎖步**——前搖中 DASH 照樣位移，且結算以結算當下位置為頂點（可放開→DASH→新位置結算），基底快速橫掃本就如此；要禁止 DASH、DASH 取消這一掃或維持現狀，待使用者裁定。C03 既有失敗仍在，整套未全綠。
+
+## 前一版：v0.21.0 弓移動射擊（網頁已更新、手機手感待試玩）
 
 - 使用者手機回饋後同意「移動不中斷，蓄力與放箭都能邊走邊做」。範圍只限 THIRD＋Bow，保留現有輔助瞄準、步速、傷害、射程、穿透、冷卻；下一把錘尚未開工。
 - 現役 worktree `C:/Users/shung/.gemini/antigravity/scratch/vow-integrate`，分支 `bowmove-20261005`，可回退基底 `b54090c`。主 repo `vow` 的既存未提交 GDD／PLAYER_EXPERIENCE_BLUEPRINT 未動；不自動併 main。
