@@ -279,6 +279,9 @@ namespace Vow.Tests.PlayMode
                 for (int pass = 0; pass < 2; pass++)
                 {
                     string label = labels[w] + (pass == 0 ? " 不拖" : " 拖 15mm");
+                    // 錘蓄力拖曳瞄準（acceptance-hammer-20261006.md 修訂三，使用者 2026-10-07 同意取代）：錘拖曳時鏡頭追蹤出手方向（同弓），
+                    // 故錘「拖」那一趟不比對鏡頭 yaw／預覽方向不變；偏轉行為由 HammerAimDragPlayTests.HAIM1 守。
+                    bool hammerDrag = weapons[w] == 3 && pass == 1;
                     yield return Load();
                     DummyTarget dummy = Object.FindObjectOfType<DummyTarget>();
                     dummy.Configure(1000f, dummy.TargetFaction);
@@ -297,6 +300,7 @@ namespace Vow.Tests.PlayMode
                     {
                         yield return null;
                         if (firstHit < 0f && dummy.Health < h0) firstHit = h0 - dummy.Health;
+                        if (hammerDrag) continue;
                         Assert.AreEqual(0f, _lab.YawDegrees, 1e-3f, label + "：按住期間鏡頭 yaw 不變");
                         if (weapons[w] != 0) Assert.AreEqual(0f, YawDiff(PreviewYawDegrees(), 0f), AimTestYawTolerance, label + "：預覽方向＝鏡頭前方");
                     }
@@ -310,7 +314,7 @@ namespace Vow.Tests.PlayMode
                     }
                     hit[pass] = firstHit;   // 只量第一下（避免按住期間打幾下的時序差）
                     yield return WaitSeconds(0.3f);
-                    Assert.AreEqual(0f, _lab.YawDegrees, 1e-3f, label + "：放開後鏡頭 yaw 不變");
+                    if (!hammerDrag) Assert.AreEqual(0f, _lab.YawDegrees, 1e-3f, label + "：放開後鏡頭 yaw 不變");
                 }
                 Debug.Log("[BOWAIM TEST] B8 " + labels[w] + " noDrag=" + hit[0].ToString("F3") + "/" + picked[0]
                     + " drag=" + hit[1].ToString("F3") + "/" + picked[1]);

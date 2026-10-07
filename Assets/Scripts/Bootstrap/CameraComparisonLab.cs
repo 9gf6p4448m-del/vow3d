@@ -92,6 +92,8 @@ namespace Vow.Bootstrap
         public int BowReleaseCueCount => _arrowFx != null ? _arrowFx.ReleaseCueCount : 0;
         public int ArrowHitCueCount => _arrowFx != null ? _arrowFx.HitCueCount : 0;
         private bool BowAiming => _attackHeld && _weapon.CurrentId == WeaponId.Bow;
+        // 按住 ATK 可拖曳改出手方向：弓與錘共用同一套 aimYaw（錘蓄力重擊，2026-10-07 使用者回報蓄力時轉不了方向）。
+        private bool AimDragging => _attackHeld && (_weapon.CurrentId == WeaponId.Bow || _weapon.Current.IsSweep);
         private float BowAimYaw => BowAimLogic.NormalizeDegrees(_bowPressYaw + BowAimLogic.DeltaDegrees(_bowTrackedYaw, _yaw) + _bowAimOffset);
         private static readonly Color FallbackMarkerColor = new Color(1f, 0.92f, 0.5f, 0.85f);
         private const float SightHeight = 1.0f;
@@ -354,7 +356,7 @@ namespace Vow.Bootstrap
             _yaw = Mathf.Repeat(_yaw + router.LookDeltaX * sensitivity, 360f);
             _pitch = Mathf.Clamp(_pitch - router.LookDeltaY * sensitivity, 10f, 50f);
             router.ConsumeLook();
-            if (BowAiming && InputPermitted)
+            if (AimDragging && InputPermitted)
             {
                 _bowPressYaw = BowAimLogic.NormalizeDegrees(_bowPressYaw + BowAimLogic.DeltaDegrees(_bowTrackedYaw, _yaw));   // 收下手動轉動
                 _bowTrackedYaw = _yaw;
@@ -502,7 +504,7 @@ namespace Vow.Bootstrap
             if (hammer)
             {
                 _bowHoldTarget = null;
-                if (_ready && IsThirdPerson && InputPermitted) HammerRelease(heldSeconds);
+                if (_ready && IsThirdPerson && InputPermitted) HammerRelease(heldSeconds, aimYaw);
                 return;
             }
             if (!bow || !_ready || !IsThirdPerson || !InputPermitted) { _bowHoldTarget = null; return; }
@@ -520,7 +522,7 @@ namespace Vow.Bootstrap
         // 從 ATK 起手的拖曳：只有弓、而且按住中才吃（水平位移→出手偏角；垂直本批不用）。作廢後的拖曳一律不理。
         private void OnActionButtonDragged(LabActionButton button, float dxMillimeters, float dyMillimeters)
         {
-            if (button != LabActionButton.Attack || !BowAiming || !_ready || !IsThirdPerson) return;
+            if (button != LabActionButton.Attack || !AimDragging || !_ready || !IsThirdPerson) return;
             _bowAimOffset = BowAimLogic.OffsetDegrees(dxMillimeters);
         }
 
@@ -650,7 +652,7 @@ namespace Vow.Bootstrap
 
         // 錘放開：朝準星水平前方起手（錐內沒人也出手，使用者 2026-10-02 簽准）；冷卻內放開不起手。
         // 未滿 0.2s＝現行橫掃；其餘依 HammerChargeLogic 放大範圍／倍率／冷卻（2026-10-06）。起手後前搖＋收招原地鎖步。
-        private void HammerRelease(double heldSeconds)
+        private void HammerRelease(double heldSeconds, float aimYaw)
         {
             HammerStrike strike = HammerChargeLogic.Resolve(heldSeconds);
             if (!_sweep.TryStart(Time.time, strike.CooldownSeconds, strike.WindupSeconds)) return;
@@ -658,7 +660,7 @@ namespace Vow.Bootstrap
             SweepStartCount++;
             // 覆審 r2 F1：以起手為準清掉普攻目標——不論目標從哪個入口來（含 TOP 鎖定後切回 THIRD），錘下都不疊普攻。
             ClearTargetForSweepWeapon();
-            CameraLabAim.GroundForward(_yaw, out _sweepDirX, out _sweepDirZ);
+            CameraLabAim.GroundForward(aimYaw, out _sweepDirX, out _sweepDirZ);
             _hammerLocked = true;
             _hammerLockUntil = Time.time + strike.WindupSeconds + WeaponSpec.HammerRecoverySeconds;
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -937,7 +939,7 @@ namespace Vow.Bootstrap
             _previewLine.widthMultiplier = preview.Kind == WeaponPreviewKind.Line ? PreviewLineWidth : PreviewOutlineWidth;
             Vector3 apex = _hero.transform.position;
             apex.y += PreviewGroundOffset;
-            CameraLabAim.GroundForward(BowAiming ? BowAimYaw : _yaw, out float ax, out float az);   // 弓：預覽錐跟手指（aimYaw），不跟鏡頭
+            CameraLabAim.GroundForward(AimDragging ? BowAimYaw : _yaw, out float ax, out float az);   // 弓／錘：預覽跟手指（aimYaw），不跟鏡頭
             float baseDegrees = Mathf.Atan2(ax, az) * Mathf.Rad2Deg;
             float full = preview.FullAngleDegrees;
             float range = preview.RangeMeters;
