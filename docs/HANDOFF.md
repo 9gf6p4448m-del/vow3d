@@ -1,10 +1,18 @@
 ---
-description: "/handoff VOW — v0.22.0錘蓄力重擊已送達；PlayMode418過／1既有C03敗，手機手感、60%步速、M1 DASH繞過鎖步待裁定。先讀最新段及同層vow-toolchain/hammer-report-20261006.md。"
+description: "/handoff VOW — v0.22.1錘蓄力拖曳瞄準已送達（v0.22.0錘蓄力重擊之上）；PlayMode418過／1既有C03敗，手機手感、60%步速、M1 DASH繞過鎖步待裁定。先讀最新段及同層vow-toolchain/hammer-report-20261006.md。"
 ---
 
 # VOW 誓約 — Codex 接手紀錄（2026-10-06 更新）
 
-## 最新：v0.22.0 錘蓄力重擊（網頁已更新、手機手感待試玩）
+## 最新：v0.22.1 錘蓄力拖曳瞄準（網頁已更新、手機手感待試玩）
+
+- 起因：使用者手機試玩 v0.22.0 回報「錘蓄力時不能轉方向，只能打準星位置」。修法：錘按住 ATK 可拖曳偏轉出手方向，與弓共用 aimYaw（鏡頭追蹤、預覽、結算 `_sweepDirX/Z` 皆用 BowAimYaw）。實作 `CameraComparisonLab.cs`（新增 `AimDragging`＝按住 ATK 且為弓或錘；`HammerRelease(heldSeconds, aimYaw)`）。範圍只限 THIRD＋錘，不動策略／數值。
+- 測試：新增 `Assets/Tests/PlayMode/HammerAimDragPlayTests.cs`（HAIM1：拖 15mm＝偏 40°、按住 0.6s，+75° 目標被命中、−25° 目標不被命中、結算 yaw≈40；基底版紅在結算方向 Expected 40 But 0）。B8 錘「拖」那一趟不再比對鏡頭 yaw／預覽不變——依 `vow-toolchain/acceptance-hammer-20261006.md` 修訂三（使用者 2026-10-07 同意取代）。
+- 證據（同層 `vow-toolchain/`）：`hammer-aim-red.xml`（基底紅）／`hammer-aim-green2.xml`；全套 `hammer-aim3-verify.log` 398過／1略／ALL PASS、`hammer-aim3-edit.xml` 391過／8既有略／0敗、`hammer-aim3-play.xml` 420／419過／1既有C03敗；升版後 `hammer-v0221-verify.log`（398／ALL PASS）、`hammer-v0221-edit.xml`（391過／0敗）。PlayMode 未於升版後重跑（升版只改版本字串兩處、無測試斷言版本字串，且升版前全套已跑）。A12a／A12d3 曾偶發紅（BowA12PlayTests.cs:52／:161），重跑整套實作版 3 次＋基底版 1 次皆過，歸為時序偶發、未證實根因（`hammer-aim-repeat.out`）。
+- 送達：提交 44a9875（升版；功能 2ead92f），隔離樹 `D:/vow-hammer-preview` 建置 log `vow-toolchain/hammer-v0221-webgl.log`（10.7MB／148s／0.22.1），部署輸出 `hammer-v0221-deploy.out`。gh-pages 回退點（部署前）`326c440d716d0ffa2ecfcd6c5149add3b79c744a`（v0.22.0）→ 現行 `3ca3070b2ccdc71c2337363b24aeb8c3933d95b0`（2026-10-07 09:04:08 +0800，`deploy: VOW v0.22.1 from 44a9875`）；HTTP 200 實讀 https://9gf6p4448m-del.github.io/vow3d/?v=0221 版本列 `v0.22.1 / build 2026-10-07 01:04 UTC · 44a9875`。看到舊版先關分頁重開或強制重新整理（有 service worker 快取）。
+- 待辦：手機試玩錘蓄力拖曳手感；M1（DASH 繞過放開後鎖步）仍待裁定；C03 既有失敗仍在，整套未全綠。未併 main。
+
+## 前一版：v0.22.0 錘蓄力重擊（網頁已更新、手機手感待試玩）
 
 - 範圍：只限 THIRD＋CAMERA LAB 灰盒的錘；TOP／弓／劍／鉤鎖行為不變。worktree `C:/Users/shung/.gemini/antigravity/scratch/vow-hammer`，分支 `hammer-20261006`（基底 26d0b66），未併 main。凍結驗收＋修訂一（線性曲線、冷卻 0.8＋0.4p、收招 0.15s、取代兩條舊斷言）＋修訂二（B8 錘分支）在同層 `vow-toolchain/acceptance-hammer-20261006.md`。
 - 玩法：按住 ATK 蓄力、放開才起手；未滿 0.2s＝現行橫掃（100°／3.5m／前搖 0.25s／1 倍／冷卻 0.8s）。p＝按住秒數/1.2，全角 100→130°、半徑 3.5→4.5m、傷害 1→1.6 倍、冷卻 0.8→1.2s 皆線性，預覽扇形同步放大。蓄力中步速 ×0.6；放開後前搖 0.25s＋收招 0.15s 原地鎖步。蓄力中 DASH／WPN／切 TOP 作廢不出手、不進冷卻；輸入被鎖（倒地／通風口／對局暫停）取消蓄力與前搖。數值全在 `WeaponSpec`（暫定、試玩即改）。
