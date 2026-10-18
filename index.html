@@ -18,6 +18,18 @@
       #vow-bar { width: 60%; max-width: 420px; height: 6px; margin: 10px auto 0; background: rgba(255,255,255,0.18); border-radius: 3px; overflow: hidden; }
       #vow-bar-fill { width: 0%; height: 100%; background: #33f2ff; transition: width 0.15s linear; }
       #vow-error { display: none; color: #ff8a70; white-space: pre-wrap; padding: 0 16px; }
+      /* 新版更新鈕（2026-10-18，比照妖市 #updBar）：GitHub Pages 對 index.html 送 max-age=600，主畫面 App 重開常拿到舊版。
+         探針發現線上版本比手上新才亮這條，點了用 ?v=<新版> 重載（網址不同＝快取沒有這份）；不自動切換。
+         上方正中是對局倒數／聖所列（DebugHudLayout.MatchClock），所以右側留「×」可先收起，下次回前景仍有新版會再亮。 */
+      #vow-upd-bar { display: none; position: fixed; left: 50%; top: calc(6px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 20;
+                     align-items: center; border: 1px solid #33f2ff; border-radius: 20px; background: #15303a; white-space: nowrap;
+                     box-shadow: 0 2px 10px rgba(0,0,0,0.6); }
+      #vow-upd-bar.on { display: flex; animation: vow-upd-pop 0.25s ease-out; }
+      #vow-upd-bar button { margin: 0; border: 0; background: transparent; color: #33f2ff; font: 13px/1.3 system-ui, sans-serif; cursor: pointer;
+                            -webkit-tap-highlight-color: transparent; }
+      #vow-upd-bar #vow-upd { padding: 7px 8px 7px 16px; }
+      #vow-upd-bar #vow-upd-close { padding: 5px 14px 5px 10px; font-size: 18px; line-height: 1.2; border-left: 1px solid rgba(51,242,255,0.35); }
+      @keyframes vow-upd-pop { from { opacity: 0; transform: translateX(-50%) scale(0.85); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
     </style>
   </head>
   <body>
@@ -32,8 +44,80 @@
     <!-- 版本列：判斷「看到的是不是剛部署的那一版」只看這一行。版本號來自 Assets/Scripts/Core/VowVersion.cs，建置時間與 commit 由建置腳本寫入。 -->
     <div id="vow-version">VOW v0.22.1<br>build 2026-10-07 01:04 UTC · 44a9875</div>
 
-    <script src="Build/WebGL.loader.js"></script>
+    <!-- 新版更新鈕：探針發現線上版本比手上新才顯示，點了才重載；× 只收起。 -->
+    <div id="vow-upd-bar" role="status">
+      <button id="vow-upd" type="button" onclick="vowApplyUpdate()"></button>
+      <button id="vow-upd-close" type="button" aria-label="先不要更新" onclick="vowDismissUpdate()">×</button>
+    </div>
+
     <script>
+      // 版本字串的單一來源仍是 VowVersion.cs（→ PlayerSettings.bundleVersion → PRODUCT_VERSION）。
+      // 這一行的寫法不要改：已經在玩家手上的舊頁面，是用 /var VOW_VERSION = "…"/ 從線上 index.html 比對新版的。
+      var VOW_VERSION = "0.22.1";
+      var VOW_BUILD_STAMP = "build 2026-10-07 01:04 UTC · 44a9875";
+      // Build 檔名固定（沒有 hash）而 Pages 送 max-age=600：新的 index.html 可能配到瀏覽器快取裡舊版的 loader／wasm／data，
+      // 版本不一致就載入失敗。每次建置的 stamp（時間＋commit）都不同，接在 Build 網址後面當破快取參數。
+      var VOW_BUILD_QUERY = "?v=" + encodeURIComponent(VOW_VERSION + "-" + VOW_BUILD_STAMP.replace(/[^0-9A-Za-z]+/g, ""));
+
+      // ===== 新版探針（比照妖市 checkForUpdate／applyUpdate）=====
+      // 開頁 1.5 秒、從 bfcache 回來（pageshow）、切回前景（visibilitychange）時，用帶時間戳＋no-store 抓線上 index.html，
+      // 比 VOW_VERSION；版本較新，或版本相同但建置時間較晚（沒升版號的重部署），就亮更新條。節流 60 秒一次；只在 http(s) 下跑。
+      // 這段邏輯會凍結在玩家手上的舊頁面裡：VOW_VERSION／VOW_BUILD_STAMP 兩行的格式改了，舊頁面就再也偵測不到新版。
+      var vowUpdLast = 0, vowUpdNew = null;
+      function vowStampOf(text) {
+        var m = /var VOW_BUILD_STAMP = "(build \d{4}-\d\d-\d\d \d\d:\d\d UTC[^"]*)"/.exec(text);
+        return m ? m[1] : "";
+      }
+      function vowStampTime(stamp) {
+        var m = /^build (\d{4}-\d\d-\d\d \d\d:\d\d) UTC/.exec(stamp || "");
+        return m ? m[1] : "";
+      }
+      function vowVersionCompare(a, b) {
+        function seg(s) { var k = /^(\d+)([A-Za-z]?)/.exec(s) || []; return (Number(k[1]) || 0) + (k[2] ? (k[2].toLowerCase().charCodeAt(0) - 96) / 100 : 0); }
+        var x = String(a).split(".").map(seg), y = String(b).split(".").map(seg);
+        for (var i = 0; i < Math.max(x.length, y.length); i++) { var d = (x[i] || 0) - (y[i] || 0); if (d) return d; }
+        return 0;
+      }
+      function vowCheckForUpdate(force) {
+        try {
+          if (typeof fetch !== "function" || !/^https?:/.test(location.protocol)) return;
+          var now = Date.now();
+          if (!force && now - vowUpdLast < 60000) return;
+          vowUpdLast = now;
+          fetch(location.pathname.replace(/[^/]*$/, "") + "index.html?upd=" + now, { cache: "no-store" })
+            .then(function (r) { return r.ok ? r.text() : ""; })
+            .then(function (text) {
+              var m = /var VOW_VERSION = "([0-9A-Za-z.]+)"/.exec(text);
+              if (!m) return;
+              var cmp = vowVersionCompare(m[1], window.VOW_VERSION);
+              var remoteStamp = vowStampOf(text);
+              var remoteTime = vowStampTime(remoteStamp), localTime = vowStampTime(window.VOW_BUILD_STAMP);
+              var newer = cmp > 0 || (cmp === 0 && remoteTime !== "" && localTime !== "" && remoteTime > localTime);
+              if (!newer) return;
+              vowUpdNew = { version: m[1], build: remoteStamp.replace(/[^0-9A-Za-z]+/g, "") };
+              document.getElementById("vow-upd").textContent = "🆕 有新版 v" + vowUpdNew.version + "，點這裡更新";
+              document.getElementById("vow-upd-bar").classList.add("on");
+            })
+            .catch(function () {});
+        } catch (e) {}
+      }
+      // 網址第一個參數固定是 ?v=<新版>；&b=<建置> 讓同版號重部署也換一個快取裡沒有的網址；其他參數（如 devvanguard）保留。
+      function vowApplyUpdate() {
+        if (!vowUpdNew) return;
+        var rest = new URLSearchParams(location.search);
+        rest.delete("v");
+        rest.delete("b");
+        var tail = rest.toString();
+        location.replace(location.pathname + "?v=" + encodeURIComponent(vowUpdNew.version) +
+                         (vowUpdNew.build ? "&b=" + vowUpdNew.build : "") + (tail ? "&" + tail : ""));
+      }
+      function vowDismissUpdate() {
+        document.getElementById("vow-upd-bar").classList.remove("on");
+      }
+      document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") vowCheckForUpdate(false); });
+      window.addEventListener("pageshow", function (e) { if (e.persisted) vowCheckForUpdate(false); });
+      setTimeout(function () { vowCheckForUpdate(true); }, 1500);
+
       var canvas = document.querySelector("#unity-canvas");
       var loading = document.querySelector("#vow-loading");
       var barFill = document.querySelector("#vow-bar-fill");
@@ -45,25 +129,34 @@
         errorBox.textContent = message;
       }
 
-      createUnityInstance(canvas, {
-        dataUrl: "Build/WebGL.data.unityweb",
-        frameworkUrl: "Build/WebGL.framework.js.unityweb",
-        codeUrl: "Build/WebGL.wasm.unityweb",
-        streamingAssetsUrl: "StreamingAssets",
-        companyName: "VOW",
-        productName: "VOW",
-        productVersion: "0.22.1",
-        // 手機的 devicePixelRatio 常為 3：全解析度渲染對 WebGL 太重，上限壓在 2
-        devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
-        showBanner: function (message, type) { if (type === "error") showError(message); else console.warn(message); }
-      }, function (progress) {
-        barFill.style.width = Math.round(progress * 100) + "%";
-      }).then(function (instance) {
-        loading.style.display = "none";
-        window.vowUnityInstance = instance;
-      }).catch(function (message) {
-        showError(String(message));
-      });
+      function vowStartUnity() {
+        createUnityInstance(canvas, {
+          dataUrl: "Build/WebGL.data.unityweb" + VOW_BUILD_QUERY,
+          frameworkUrl: "Build/WebGL.framework.js.unityweb" + VOW_BUILD_QUERY,
+          codeUrl: "Build/WebGL.wasm.unityweb" + VOW_BUILD_QUERY,
+          streamingAssetsUrl: "StreamingAssets",
+          companyName: "VOW",
+          productName: "VOW",
+          productVersion: "0.22.1",
+          // 手機的 devicePixelRatio 常為 3：全解析度渲染對 WebGL 太重，上限壓在 2
+          devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+          showBanner: function (message, type) { if (type === "error") showError(message); else console.warn(message); }
+        }, function (progress) {
+          barFill.style.width = Math.round(progress * 100) + "%";
+        }).then(function (instance) {
+          loading.style.display = "none";
+          window.vowUnityInstance = instance;
+        }).catch(function (message) {
+          showError(String(message));
+        });
+      }
+
+      // loader 也要帶破快取參數，所以改成由這裡插入 <script>，載完才啟動 Unity。
+      var vowLoader = document.createElement("script");
+      vowLoader.src = "Build/WebGL.loader.js" + VOW_BUILD_QUERY;
+      vowLoader.onload = vowStartUnity;
+      vowLoader.onerror = function () { showError("載入器下載失敗：" + vowLoader.src); };
+      document.body.appendChild(vowLoader);
     </script>
   </body>
 </html>
