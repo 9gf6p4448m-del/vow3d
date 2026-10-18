@@ -4,6 +4,8 @@ description: "/handoff VOW — v0.21.0弓移動射擊已送達；PlayMode410過�
 
 # VOW 誓約 — Codex 接手紀錄（2026-10-05 更新）
 
+> **2026-10-18 指標：本檔（bowmove-20261005）已不是最新。** 線上是 v0.22.1（錘蓄力拖曳瞄準，分支 `hammer-20261006`@44a9875 建置），10-18 另加妖市式新版更新條＋Build 破快取（分支 `infra/update-bar`@f3e8d0c，從 hammer-20261006 開；gh-pages `3ca3070`→`942298d`，只換 index.html、未重建 Unity）。權威交接改讀 `infra/update-bar` 分支的 `docs/HANDOFF.md`（worktree `scratch/vow-update-bar`）。**併進 main 時要連 `infra/update-bar` 一起帶上。**
+
 ## 最新：v0.21.0 弓移動射擊（網頁已更新、手機手感待試玩）
 
 - 使用者手機回饋後同意「移動不中斷，蓄力與放箭都能邊走邊做」。範圍只限 THIRD＋Bow，保留現有輔助瞄準、步速、傷害、射程、穿透、冷卻；下一把錘尚未開工。
