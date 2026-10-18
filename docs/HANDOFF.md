@@ -1,10 +1,23 @@
 ---
-description: "/handoff VOW — v0.22.1錘蓄力拖曳瞄準已送達（v0.22.0錘蓄力重擊之上）；PlayMode418過／1既有C03敗，手機手感、60%步速、M1 DASH繞過鎖步待裁定。先讀最新段及同層vow-toolchain/hammer-report-20261006.md。"
+description: "/handoff VOW — 線上v0.22.1(錘蓄力拖曳瞄準)；10-18另加妖市式新版更新條＋Build破快取(分支infra/update-bar，gh-pages 942298d，未重建Unity)。手機手感、60%步速、M1 DASH繞過鎖步待裁定。併main要連infra/update-bar一起帶上。"
 ---
 
-# VOW 誓約 — Codex 接手紀錄（2026-10-06 更新）
+# VOW 誓約 — Codex 接手紀錄（2026-10-18 更新）
 
-## 最新：v0.22.1 錘蓄力拖曳瞄準（網頁已更新、手機手感待試玩）
+## 最新：新版更新條＋Build 破快取（2026-10-18，網頁已更新、iPhone 主畫面 App 需製作人真機確認）
+
+- 起因：製作人用 iPhone 主畫面 App 試玩，常拿到舊版；要求「有新版出現我可以按就直接更新」「每個專案都按著妖市這樣改」。比照妖市 `index.html` checkForUpdate／applyUpdate。
+- **分支 `infra/update-bar`（從 `hammer-20261006`@17585fd 開，也就是線上 v0.22.1 那條；已推 origin）**：`64a515b` 主體、`32080ee` 依覆審補強。**以後併進 main（或任何要重建部署的分支）時，必須連 `infra/update-bar` 這兩個 commit 一起帶上**，否則下次從別的分支重建，線上就會失去更新條與破快取。
+- 改動：`Assets/WebGLTemplates/VowMinimal/index.html`（更新條 CSS／HTML、`var VOW_VERSION`／`var VOW_BUILD_STAMP`、探針 `vowCheckForUpdate`、`vowApplyUpdate`、`vowDismissUpdate`；loader 改動態插入、四個 Build 網址加 `VOW_BUILD_QUERY`）；`Tools/deploy-webgl.sh` 產物檢查加三條 grep（`var VOW_VERSION = "<版本>";`、`var VOW_BUILD_STAMP = "build …"`、`id="vow-upd"`）。kill-switch `sw.js` 未動。
+- 行為：開頁 1.5 秒、pageshow（bfcache 還原）、visibilitychange 回前景時，以 `index.html?upd=<時間戳>`＋`cache:"no-store"` 抓線上首頁；版本較新，或同版號但建置時間較晚，才亮「🆕 有新版 vX，點這裡更新」，右側 × 只收起（下次回前景仍有新版會再亮）。點了才以 `?v=<新版>&b=<建置>`（保留其他參數如 devvanguard）重載，不自動切換。節流 60 秒。版本來源仍只有 `VowVersion.cs` → `PlayerSettings.bundleVersion` → `PRODUCT_VERSION`；**`var VOW_VERSION`／`var VOW_BUILD_STAMP` 兩行的格式不能改**（已在玩家手上的頁面靠它們比對）。
+- Build 快取：Build 檔名固定、GitHub Pages 全部送 `Cache-Control: max-age=600`。四個 Build 網址改帶 `?v=<版本>-<build stamp 去符號>`（例 `?v=0.22.1-build202610070104UTC44a9875`），每次建置都換網址，新首頁不會配到快取裡的舊 Build。Unity loader 依內容魔術位元組解壓，query 不影響（覆審查過 loader）。
+- 線上送達（未重建 Unity，只換 gh-pages 的 index.html）：用模擬 Unity 範本前處理的渲染器（先驗證舊模板渲染結果與線上舊 index.html 逐位元組相同）把新模板代入 v0.22.1 的值，在現行 gh-pages 上疊一個 commit（快轉、非 force）。**部署前 `3ca3070b2ccdc71c2337363b24aeb8c3933d95b0` → 部署後 `942298df9204030e22f649071f76609bd3b4cd98`（2026-10-18 23:25:51 +0800）**；`git diff --stat 3ca3070 942298d` 只有 index.html（sw.js／Build 0 位元組差異）。23:26:55 線上 index.html SHA256 `355ab11e…c030` 與本機產物相同；版本列部署前後皆為 `VOW v0.22.1 / build 2026-10-07 01:04 UTC · 44a9875`。
+- 驗收（凍結條件 `../vow-toolchain/acceptance-update-bar-20261018.md`；Playwright 393×852、獨立 browser context、線上網址）：(a) 同版本首檢已跑（`index.html?upd=` 200）、按鈕不可見、Unity 載入 13.2 秒、0 pageerror；(b) 首檢 61 秒後把 `VOW_VERSION` 覆寫成 0.22.0 並觸發 visibilitychange → 按鈕出現、文字「🆕 有新版 v0.22.1，點這裡更新」、中心點最上層元素就是按鈕、3 秒內網址未自行改變；(c) 點擊 → `?v=0.22.1&b=build202610070104UTC44a9875&live=…`、Unity 10.9 秒重新載入、0 pageerror；四個 Build 請求都帶 `?v=` 且 200。本機另驗：同版同建置不亮／同版較晚建置才亮／本機較新不亮／缺 stamp 不亮、× 收起、觸控 tap 兩顆鈕、devvanguard 保留；部署守衛對舊產物與格式改壞都會擋。
+- 覆審：fresh 對抗審查 r1 無 CRITICAL／HIGH（M1 同版重部署不亮、M2 蓋住上方正中倒數且不可關、M3 部署腳本沒守格式、LOW 丟掉 devvanguard）→ 全修 → fresh 三態覆審四項皆「真的修好」、APPROVE，無新 CRITICAL／HIGH／MEDIUM。
+- **已知限制（下次重建 Unity 時處理）**：LOW-1 部署守衛只檢查兩行「存在」，沒檢查「舊頁面 regex 的第一個匹配就是它」（例如之後在它前面的註解寫入帶數字的範例會被搶先匹配）；LOW-2 同版號重部署時更新條寫的仍是同一個版號（「有新版 v0.22.1」），可能被以為是 bug，可考慮加建置時間。其餘 LOW 記錄不修：建置戳記只到分鐘（同分鐘兩次部署不亮）、`VOWWebGLBuilder.cs:73` 戳記未指定 InvariantCulture、× 收起不記憶、`role="status"` 可拿掉、× 觸控面積約 38×32 CSS px。覆審全文在本次 session 暫存，未入 repo。
+- 未驗證：**iPhone 主畫面 App 真機行為（能否看到、點得到、點後是否在 App 內重載）需製作人真機確認**；舊 workbox service worker 殘留裝置是否攔截 `?upd=`／`?v=` 未知（kill-switch 仍保留）。
+
+## 線上遊戲內容：v0.22.1 錘蓄力拖曳瞄準（網頁已更新、手機手感待試玩）
 
 - 起因：使用者手機試玩 v0.22.0 回報「錘蓄力時不能轉方向，只能打準星位置」。修法：錘按住 ATK 可拖曳偏轉出手方向，與弓共用 aimYaw（鏡頭追蹤、預覽、結算 `_sweepDirX/Z` 皆用 BowAimYaw）。實作 `CameraComparisonLab.cs`（新增 `AimDragging`＝按住 ATK 且為弓或錘；`HammerRelease(heldSeconds, aimYaw)`）。範圍只限 THIRD＋錘，不動策略／數值。
 - 測試：新增 `Assets/Tests/PlayMode/HammerAimDragPlayTests.cs`（HAIM1：拖 15mm＝偏 40°、按住 0.6s，+75° 目標被命中、−25° 目標不被命中、結算 yaw≈40；基底版紅在結算方向 Expected 40 But 0）。B8 錘「拖」那一趟不再比對鏡頭 yaw／預覽不變——依 `vow-toolchain/acceptance-hammer-20261006.md` 修訂三（使用者 2026-10-07 同意取代）。
