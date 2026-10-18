@@ -38,6 +38,10 @@ fi
 [ -f "$OUT/index.html" ] || { echo "[deploy] 缺 $OUT/index.html"; exit 1; }
 grep -q "v$VERSION" "$OUT/index.html" || { echo "[deploy] index.html 沒有版本字串 v$VERSION"; exit 1; }
 grep -q "__VOW_BUILD_STAMP__" "$OUT/index.html" && { echo "[deploy] 建置時間戳記沒有被寫入"; exit 1; }
+# 新版更新條：玩家手上的舊頁面用這兩行的固定格式比對線上新版，格式跑掉會靜默失效（不報錯、只是永遠不亮）
+grep -qF "var VOW_VERSION = \"$VERSION\";" "$OUT/index.html" || { echo "[deploy] index.html 缺 var VOW_VERSION = \"$VERSION\";（新版探針靠它）"; exit 1; }
+grep -qE 'var VOW_BUILD_STAMP = "build [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} UTC' "$OUT/index.html" || { echo "[deploy] index.html 缺 var VOW_BUILD_STAMP 行（新版探針靠它）"; exit 1; }
+grep -q 'id="vow-upd"' "$OUT/index.html" || { echo "[deploy] index.html 缺新版更新鈕 #vow-upd"; exit 1; }
 ls "$OUT"/Build/*.wasm* >/dev/null 2>&1 || { echo "[deploy] 缺 wasm"; exit 1; }
 touch "$OUT/.nojekyll"
 echo "[deploy] 產物："; du -sh "$OUT" | cut -f1; grep -o 'build [0-9-]* [0-9:]* UTC · [0-9a-f]*' "$OUT/index.html" | head -1
